@@ -4,7 +4,7 @@ import initial_sizing as ins
 Sw = ins.Sw # m^2
 bw = ins.b # m
 cw = ins.c # m
-tc = ins.tc_root
+tc = ins.t_over_c_root
 rho = ins.foam_density
 
 Vv = 0.04 # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
