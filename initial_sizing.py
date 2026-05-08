@@ -47,7 +47,7 @@ R_air = 287.05   # [J/kg·K] specific gas constant for air
 # DERIVED VARIABLES
 #
 # --- Mass ---
-m_drone_loaded = m_drone_empty + (m_payload / n_drones)
+m_drone_loaded = m_drone_empty + (m_payload / n_drones)  # [kg]
 
 # --- Atmosphere (ISA) ---
 T_isa = 15.00 - 0.0065 * h_cruise                          # [°C]
@@ -62,15 +62,15 @@ Sw = b ** 2 / AR  # Wing area [m^2]
 c  = Sw / b       # Mean chord [m]
 
 # --- Aerodynamics ---
-q_cruise   = 0.5 * rho * V_cruise ** 2
-e          = 1.78 * (1 - 0.045 * AR ** 0.68) - 0.64
-CL         = (m_drone_loaded * g0) / (q_cruise * Sw)
-Cl_airfoil = (AR + 2) * CL / AR
-k          = 1 / (np.pi * e * AR)
-Cd         = Cd0 + k * CL ** 2 + (Cd_payload * S_payload / (n_drones * Sw))
-L          = CL * q_cruise * Sw
-D          = Cd * q_cruise * Sw
-LD_ratio   = L / D
+q_cruise   = 0.5 * rho * V_cruise ** 2                                         # [Pa]
+e          = 1.78 * (1 - 0.045 * AR ** 0.68) - 0.64                            # [-]
+CL         = (m_drone_loaded * g0) / (q_cruise * Sw)                           # [-]
+Cl_airfoil = (AR + 2) * CL / AR                                                # [-]
+k          = 1 / (np.pi * e * AR)                                              # [-]
+Cd         = Cd0 + k * CL ** 2 + (Cd_payload * S_payload / (n_drones * Sw))    # [-]
+L          = CL * q_cruise * Sw                                                # [N]
+D          = Cd * q_cruise * Sw                                                # [N]
+LD_ratio   = L / D                                                             # [-]
 
 # --- Propulsion ---
 A_prop        = (np.pi / 4) * D_prop ** 2
@@ -88,7 +88,6 @@ battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
 
 # --- Structural ---
 m_wing = foam_density * (t_over_c_root * c) * Sw  # [kg]
-
 
 
 print("\n--- Atmosphere ---")
@@ -120,6 +119,7 @@ print(f"  Cruise thrust        : {thrust_cruise:.2f}  N")
 print(f"  Take-off thrust      : {thrust_to:.2f}  N")
 print(f"  Cruise power         : {P_cruise:.2f}  W")
 print(f"  Take-off power       : {P_to:.2f}  W")
+print(f"  Propeller Diameter   : {D_prop:.2f}  m")
 
 print("\n--- Energy & Mission ---")
 print(f"  Cruise time          : {t_cruise:.1f}  s  ({t_cruise/60:.1f} min)")
