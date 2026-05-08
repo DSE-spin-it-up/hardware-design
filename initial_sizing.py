@@ -11,10 +11,10 @@ rho_0 = 1.225  # [kg/m^3]
 
 # Flight Conditions
 h_cruise = 300  # [m]
-R = 287.05
+R_air = 287.05
 T = 15.00 - 0.0065 * h_cruise  # [C]
 p = (101.325 * ((T + 273.1) / 288.15) ** (5.2559)) * 1000 # [Pa]
-rho = p / (R * (T + 273.15))
+rho = p / (R_air * (T + 273.15))
 V_cruise = 20  # [m/s]
 
 # Mission characteristics
