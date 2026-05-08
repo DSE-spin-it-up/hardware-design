@@ -58,16 +58,21 @@ m_wing = foam_density * (tc_root * c) * Sw
 
 L = CL * q_cruise * Sw
 D = Cd * q_cruise * Sw
+thrust = D
 
 eff_motor = 0.8
-eff_propeller = 0.7
-P_cruise = (D * V_cruise) / (eff_motor * eff_propeller)
+eff_nonideal = 0.9
+P_cruise = (D * V_cruise) / (eff_motor)
+n_props = 2
+A_prop = (thrust / 2) ** (3) / (2 * rho) / ((P_cruise / n_props) * eff_nonideal) ** 2
+D_blade = (4 * A_prop / np.pi) ** (0.5)
 E_cruise = (P_cruise * t_cruise)  # [J]
 specific_energy = 150
 Pmax = 4400  # [W]
 battery_mass = (1 / specific_energy) * (E_cruise / 3600)
 
 
+print(f"Diameter Prop - {D_blade}")
 print(f"CL - {CL}")
 print(f"Cl airfoil - {Cl_airfoil}")
 print(f"Wing Mass - {m_wing}")
