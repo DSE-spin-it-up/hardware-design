@@ -64,7 +64,6 @@ thrust_to = T_W_to * (m_drone_empty * g0)
 
 eff_motor = 0.8
 eff_nonideal = 0.9
-P_cruise = (D * V_cruise) / (eff_motor)
 n_props = 2
 D_prop = 0.3
 A_prop = (np.pi / 4) * D_prop ** 2
