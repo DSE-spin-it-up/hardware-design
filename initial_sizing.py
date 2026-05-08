@@ -26,8 +26,9 @@ Cd_payload = 1.0
 
 #Inputs
 b = 2.5  # [m]
-M = V_cruise / 340
-AR = 6
+M = V_cruise / 340.0
+AR = 6.0
+T_W_to = 2.0
 
 
 Sw = b**2 / AR
@@ -36,12 +37,12 @@ e = 1.78 * (1 - 0.045 * AR ** (0.68)) - 0.64
 CL = (m_drone_loaded * g0) / (q_cruise * Sw)
 k = 1 / (np.pi * e * AR)
 Cd0 = 0.045   # The drag should be lowered (the 0.6 factor) because we will not have landing gear
-Cd = Cd0 + k * CL ** 2 + (Cd_payload * S_payload / n_drones * Sw)
+Cd = Cd0 + k * CL ** 2 + (Cd_payload * S_payload / (n_drones * Sw))
 lam = 0.3
 c = Sw / b
 tc_root = 0.12
 N_z = 1.5
-Cl_airfoil = (AR + 2) / AR
+Cl_airfoil = (AR + 2) * CL / AR
 
 # Materials
 foam_density = 48  # [kg/m3]
@@ -58,21 +59,30 @@ m_wing = foam_density * (tc_root * c) * Sw
 
 L = CL * q_cruise * Sw
 D = Cd * q_cruise * Sw
-thrust = D
+thrust_cruise = D
+thrust_to = T_W_to * (m_drone_empty * g0)
 
 eff_motor = 0.8
 eff_nonideal = 0.9
 P_cruise = (D * V_cruise) / (eff_motor)
 n_props = 2
-A_prop = (thrust / 2) ** (3) / (2 * rho) / ((P_cruise / n_props) * eff_nonideal) ** 2
-D_blade = (4 * A_prop / np.pi) ** (0.5)
+D_prop = 0.3
+A_prop = (np.pi / 4) * D_prop ** 2
+P_cruise = ((thrust_cruise / n_props) ** (3 / 2) / (np.sqrt(2 * rho * A_prop) * eff_nonideal)) / eff_motor
+# A_prop = (thrust_cruise / 2) ** (3) / (2 * rho) / ((P_cruise / n_props) * eff_nonideal) ** 2
+# D_blade = (4 * A_prop / np.pi) ** (0.5)
+P_to = ((thrust_to / n_props) ** (3 / 2) / (np.sqrt(2 * rho * A_prop) * eff_nonideal)) / eff_motor
+
+
+
 E_cruise = (P_cruise * t_cruise)  # [J]
 specific_energy = 150
-Pmax = 4400  # [W]
 battery_mass = (1 / specific_energy) * (E_cruise / 3600)
 
-
-print(f"Diameter Prop - {D_blade}")
+print(f"Chord length - {c}")
+print(f"Take-off Power - {P_to}")
+print(f"Cruise Power - {P_cruise}")
+print(f"Thrust - {thrust_cruise}")
 print(f"CL - {CL}")
 print(f"Cl airfoil - {Cl_airfoil}")
 print(f"Wing Mass - {m_wing}")
