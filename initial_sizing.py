@@ -43,6 +43,14 @@ g0    = 9.80665  # [m/s^2]
 rho_0 = 1.225    # [kg/m^3] sea-level density
 R_air = 287.05   # [J/kg·K] specific gas constant for air
 
+# --- Tail ---
+# https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
+Vv = 0.04   # Vertical tail volume coefficient [-]
+Vh = 0.50   # Horizontal tail volume coefficient [-]
+# https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
+ARt = 4.5   # Tail aspect ratio [-]
+lam_t = 1   # Tail taper ratio [-]
+
 
 # DERIVED VARIABLES
 #
@@ -89,6 +97,24 @@ battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
 # --- Structural ---
 m_wing = foam_density * (t_over_c_root * c) * Sw  # [kg]
 
+# --- Tail Geometry ---
+bh = b * 0.365445026178           # [m] Desmos
+Sh = bh ** 2 / ARt                # [m^2]
+L_tail = Vh * Sw * c / Sh         # [m]
+Sv = Vv * Sw * b / L_tail         # [m^2]
+bv = np.sqrt(2 * ARt * Sw) / 2    # [m]
+St = Sh + Sv                      # [m^2]
+bt = np.sqrt(bh ** 2 + bv ** 2)   # [m]
+
+
+def tail_chord(yb):
+    return (2 * St) / ((1 + lam_t) * bt) * (1 - (1 - lam_t) * (2 * yb))
+
+
+ct = tail_chord(0.5)                          # [m]
+tt = ct * t_over_c_root                       # [m]
+m_tail = foam_density * St * tt               # [kg]
+
 if __name__ == "__main__":
     print("\n--- Atmosphere ---")
     print(f"  ISA Temperature      : {T_isa:.2f}  °C")
@@ -98,6 +124,7 @@ if __name__ == "__main__":
     print("\n--- Mass ---")
     print(f"  Loaded drone mass    : {m_drone_loaded:.2f}  kg")
     print(f"  Wing mass            : {m_wing:.3f}  kg")
+    print(f"  Tail mass            : {m_tail:.3f}  kg")
     print(f"  Battery mass         : {battery_mass:.3f}  kg")
 
     print("\n--- Wing Geometry ---")
@@ -124,3 +151,9 @@ if __name__ == "__main__":
     print("\n--- Energy & Mission ---")
     print(f"  Cruise time          : {t_cruise:.1f}  s  ({t_cruise/60:.1f} min)")
     print(f"  Cruise energy        : {E_cruise/3600:.2f}  Wh")
+
+    print("\n--- Tail ---")
+    print(f"  Horizontal tail area : {Sh:.4f}  m²")
+    print(f"  Vertical tail area   : {Sv:.4f}  m²")
+    print(f"  Tail length          : {L_tail:.4f}  m")
+    print(f"  Tail chord           : {ct:.4f}  m")
