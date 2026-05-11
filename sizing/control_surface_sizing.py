@@ -1,6 +1,6 @@
 import numpy as np
 import scipy as sci
-import initial_sizing as ins
+from sizing import initial_sizing as ins
 
 # Assumed parameters
 

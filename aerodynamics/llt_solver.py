@@ -42,7 +42,7 @@ from typing import Callable
 
 import numpy as np
 
-from airfoil_polar import AirfoilPolar
+from aerodynamics.airfoil_polar import AirfoilPolar
 
 
 # ---------------------------------------------------------------------------

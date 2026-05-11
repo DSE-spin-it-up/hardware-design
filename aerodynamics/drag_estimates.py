@@ -1,6 +1,6 @@
 import numpy as np
-import initial_sizing as si
-import airfoil_shape as airs
+from sizing import initial_sizing as si
+from aerodynamics import airfoil_shape as airs
 
 R_AIR = si.R_air
 GAMMA_AIR = si.gamma_air
@@ -8,7 +8,7 @@ T = si.T_isa
 V = si.V_cruise
 rho = si.rho
 C = si.c
-airfoil = airs.AirfoilGeometry()
+airfoil = airs.AirfoilGeometry("airfoils/MH112.dat")
 max_tc, max_tc_loc = airfoil.compute_maximum_thickness()
 S = si.Sw
 

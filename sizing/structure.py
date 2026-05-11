@@ -1,5 +1,5 @@
 import numpy as np
-import initial_sizing as si
+from sizing import initial_sizing as si
 
 CL = si.CL  # [-]
 q = si.q_cruise  # [kg/ms^2]

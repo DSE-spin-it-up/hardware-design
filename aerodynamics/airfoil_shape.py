@@ -1,24 +1,51 @@
-"""This file is made to find the cg-position of the fuel tank of the CRJ 1000"""
+"""Airfoil geometry utilities."""
+
+import re
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from initial_sizing import c
+
+
+def airfoil_thickness_to_chord(airfoil: str | Path) -> float:
+    """Maximum t/c of an airfoil specified by a .dat path or NACA digits.
+
+    For NACA 4-/5-digit designators, t/c is the last two digits / 100.
+    For .dat files (Selig format), thickness is computed from coordinates.
+    """
+    s = str(airfoil)
+    if s.endswith(".dat"):
+        coords = np.loadtxt(s, skiprows=1)
+        le = int(np.argmin(coords[:, 0]))
+        upper = coords[: le + 1][::-1]  # LE → TE, x ascending
+        lower = coords[le:]             # LE → TE, x ascending
+        xs = np.linspace(0.01, 0.99, 200)
+        y_upper = np.interp(xs, upper[:, 0], upper[:, 1])
+        y_lower = np.interp(xs, lower[:, 0], lower[:, 1])
+        return float(np.max(y_upper - y_lower))
+    digits = re.sub(r"[^0-9]", "", s)
+    if len(digits) in (4, 5):
+        return int(digits[-2:]) / 100.0
+    raise ValueError(
+        f"Cannot parse airfoil {airfoil!r}: expected .dat path or 4/5-digit NACA."
+    )
 
 
 class AirfoilGeometry:
+    """Coordinate-based airfoil geometry loaded from a Selig-format .dat file."""
 
-    file_name = "MH112.dat"
-
-    with open("airfoils/MH112.dat", "r") as f:
-        lines = f.read().splitlines()
-
-    polygon: np.ndarray = np.array(
-        [list(map(float, line.split())) for line in lines[1:] if line.strip()],
-        dtype=np.float64)
-
-    polygon_3d = np.hstack([polygon, np.zeros((len(polygon), 1))])
-    y_coords = polygon[:, 1]
-    global_thickness = np.max(y_coords) - np.min(y_coords)
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        with self.path.open() as f:
+            lines = f.read().splitlines()
+        self.name = lines[0].strip() if lines else self.path.stem
+        self.polygon: np.ndarray = np.array(
+            [list(map(float, line.split())) for line in lines[1:] if line.strip()],
+            dtype=np.float64,
+        )
+        self.polygon_3d = np.hstack([self.polygon, np.zeros((len(self.polygon), 1))])
+        self.y_coords = self.polygon[:, 1]
+        self.global_thickness = float(np.max(self.y_coords) - np.min(self.y_coords))
 
     def spline(self, poly, x):
         x_coords = poly[:, 0]
@@ -68,14 +95,15 @@ class AirfoilGeometry:
 
         return np.array([cx, cy])
 
-    def compute_airfoil_area(self):
-        p = self.polygon * c
+    def compute_airfoil_area(self, chord: float) -> float:
+        """Cross-sectional area [m^2] at the given chord length [m]."""
+        p = self.polygon * chord
         p_next = np.roll(p, -1, axis=0)
 
         cross = p[:, 0] * p_next[:, 1] - p_next[:, 0] * p[:, 1]
         return np.abs(0.5 * np.sum(cross))
 
-    def plot_airfoil_geometry(self):
+    def plot_airfoil_geometry(self, out_path: str = "airfoil.png") -> None:
         fig, ax = plt.subplots()
         _, x = self.compute_maximum_thickness()
         t, y_upper, y_lower = self.compute_thickness(x)
@@ -88,18 +116,19 @@ class AirfoilGeometry:
         ax.add_patch(circle)
         ax.set_aspect("equal")
         fig.tight_layout()
-        plt.savefig("airfoil.png", dpi=150)
+        plt.savefig(out_path, dpi=150)
         plt.close()
 
 
 if __name__ == "__main__":
-    airfoil = AirfoilGeometry()
+    import sys
+    path = sys.argv[1] if len(sys.argv) > 1 else "airfoils/MH112.dat"
+    airfoil = AirfoilGeometry(path)
     centroid = airfoil.compute_airfoil_centroid()
-    area = airfoil.compute_airfoil_area()
     global_tc = airfoil.global_thickness
     max_tc, max_tc_loc = airfoil.compute_maximum_thickness()
+    print("airfoil:", airfoil.name)
     print("centroid:", centroid)
-    print("area:", area)
     print("global thickness to chord ratio:", global_tc)
     print(
         "max thickness to chord ratio:",
@@ -108,5 +137,4 @@ if __name__ == "__main__":
         max_tc_loc * 100,
         "percent of the chord",
     )
-    print("maximum thickness", max_tc * c * 100, "cm")
     airfoil.plot_airfoil_geometry()
