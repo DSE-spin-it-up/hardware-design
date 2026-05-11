@@ -25,5 +25,7 @@ y_max = d / 2  # [m]
 
 sigma = M * y_max / Ixx  # [Pa]
 
-print(Y_cfrp - sigma)
-print(d, t)
+if __name__ == "__main__":
+    print(f"Strength margin: {(Y_cfrp - sigma) * 10**(-6)}MPa")
+    print(f"Outer rod diameter: {d * 10**3}mm")
+    print(f"Rod wall thickness: {t * 10**3}mm")
