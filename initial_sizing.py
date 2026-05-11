@@ -42,6 +42,7 @@ voltage_battery = n_cells * voltage_cell  # [V]
 
 # --- Materials ---
 foam_density = 48  # [kg/m^3]
+battery_density = 250 # [Wh/L]
 
 # --- Atmospheric constants ---
 g0 = 9.80665  # [m/s^2]
@@ -132,6 +133,11 @@ def battery_mass(E_cruise, n_cells, voltage_cell):
 
     mass = a * (C ** b)
     return mass / 1000
+
+
+def battery_volume(E_cruise, battery_density):
+    volume = battery_density * (E_cruise / 3600)  # [L]
+    return volume / 1000  # [m^3]
 
 
 # battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
