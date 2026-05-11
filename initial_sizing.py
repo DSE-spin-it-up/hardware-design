@@ -20,10 +20,11 @@ Cd_payload  = 1.0    # Payload drag coefficient [-]
 
 # --- Propulsion ---
 n_props     = 2     # Number of propellers [-]
-D_prop      = 0.3   # Propeller diameter [m]
 eff_motor   = 0.8   # Motor efficiency [-]
-eff_nonideal = 0.9  # Non-ideal propeller efficiency [-]
+eff_prop = 0.77 # Non-ideal propeller efficiency [-]
 T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
+J           = 0.4
+C_t         = 0.08
 
 # --- Flight Conditions ---
 h_cruise  = 300   # Cruise altitude [m]
@@ -34,6 +35,7 @@ R = 20000  # Range [m]
 
 # --- Battery ---
 specific_energy = 150  # [Wh/kg]
+voltage_battery = 22.2  # [V]
 
 # --- Materials ---
 foam_density = 48  # [kg/m^3]
@@ -81,14 +83,11 @@ D          = Cd * q_cruise * Sw                                                #
 LD_ratio   = L / D                                                             # [-]
 
 # --- Propulsion ---
-A_prop        = (np.pi / 4) * D_prop ** 2
 thrust_cruise = D
 thrust_to     = T_W_to * (m_drone_empty * g0)
 
-P_cruise = ((thrust_cruise / n_props) ** 1.5
-            / (np.sqrt(2 * rho * A_prop) * eff_nonideal)) / eff_motor
-P_to     = ((thrust_to / n_props) ** 1.5
-            / (np.sqrt(2 * rho * A_prop) * eff_nonideal)) / eff_motor
+P_cruise = D * V_cruise / (eff_prop)
+D_prop = ((thrust_cruise * J ** 2) / (C_t * rho * V_cruise ** 2)) ** (0.5)
 
 # --- Energy & Battery ---
 E_cruise     = P_cruise * t_cruise                  # [J]
@@ -145,7 +144,6 @@ if __name__ == "__main__":
     print(f"  Cruise thrust        : {thrust_cruise:.2f}  N")
     print(f"  Take-off thrust      : {thrust_to:.2f}  N")
     print(f"  Cruise power         : {P_cruise:.2f}  W")
-    print(f"  Take-off power       : {P_to:.2f}  W")
     print(f"  Propeller Diameter   : {D_prop:.2f}  m")
 
     print("\n--- Energy & Mission ---")
