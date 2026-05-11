@@ -206,7 +206,10 @@ def _run_xfoil_polar(
         if spec.naca_digits is not None:
             cmd_lines += [f"NACA {spec.naca_digits}"]
         else:
-            cmd_lines += [f"LOAD {spec.dat_path}"]
+            # XFOIL has a short filename buffer; copy locally and LOAD by basename.
+            local_dat = tmp / "airfoil.dat"
+            shutil.copyfile(spec.dat_path, local_dat)
+            cmd_lines += [f"LOAD {local_dat.name}"]
         cmd_lines += [
             "PANE",
             "OPER",
