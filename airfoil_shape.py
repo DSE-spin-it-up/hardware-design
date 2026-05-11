@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from initial_sizing import c
-
+import structure as struct
 
 class AirfoilGeometry:
 
@@ -80,12 +80,14 @@ class AirfoilGeometry:
         _, x = self.compute_maximum_thickness()
         t, y_upper, y_lower = self.compute_thickness(x)
         y = (y_upper + y_lower) / 2.0
-        circle = plt.Circle((x, y), radius=t / 2, color="black", fill=False)
+        circle1 = plt.Circle((x, y), radius= struct.d / c / 2, color="black", fill=False)
+        circle2 = plt.Circle((x, y), radius= ((struct.d / 2) - struct.t) / c , color="black", fill=False)
         centroid = self.compute_airfoil_centroid()
         closed_up = np.vstack([self.polygon, self.polygon[0]])
         ax.plot(closed_up[:, 0], closed_up[:, 1], color="black")
         ax.scatter(centroid[0], centroid[1], color="black")
-        ax.add_patch(circle)
+        ax.add_patch(circle1)
+        ax.add_patch(circle2)
         ax.set_aspect("equal")
         fig.tight_layout()
         plt.savefig("airfoil.png", dpi=150)
