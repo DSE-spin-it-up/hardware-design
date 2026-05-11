@@ -8,4 +8,5 @@ dependencies = [
     "numpy>=2.4.4",
     "scipy>=1.13",
     "matplotlib>=3.8",
+    "scipy-stubs~=1.17.1",
 ]

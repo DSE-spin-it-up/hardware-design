@@ -329,7 +329,7 @@ if __name__ == "__main__":
 
     p = argparse.ArgumentParser(description="Generate an XFOIL polar.")
     p.add_argument("airfoil", help="NACA digits (e.g. 2412) or path to .dat")
-    p.add_argument("--Re", type=float, default=1e6)
+    p.add_argument("--Re", type=float, default=4e5)
     p.add_argument("--M", type=float, default=0.0)
     p.add_argument("--alpha", nargs=3, type=float, metavar=("MIN", "MAX", "STEP"),
                    default=[-5.0, 15.0, 0.5])
