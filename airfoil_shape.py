@@ -1,5 +1,3 @@
-"""This file is made to find the cg-position of the fuel tank of the CRJ 1000"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 from initial_sizing import c
@@ -7,18 +5,20 @@ import structure as struct
 
 class AirfoilGeometry:
 
-    file_name = "MH112.dat"
+    def __init__(self, airfoil: str):
 
-    with open("airfoils/MH112.dat", "r") as f:
-        lines = f.read().splitlines()
+        self.file_name = airfoil
 
-    polygon: np.ndarray = np.array(
-        [list(map(float, line.split())) for line in lines[1:] if line.strip()],
-        dtype=np.float64)
+        with open(self.file_name, "r") as f:
+            lines = f.read().splitlines()
 
-    polygon_3d = np.hstack([polygon, np.zeros((len(polygon), 1))])
-    y_coords = polygon[:, 1]
-    global_thickness = np.max(y_coords) - np.min(y_coords)
+        self.polygon: np.ndarray = np.array(
+            [list(map(float, line.split())) for line in lines[1:] if line.strip()],
+            dtype=np.float64)
+
+        self.polygon_3d = np.hstack([self.polygon, np.zeros((len(self.polygon), 1))])
+        self.y_coords = self.polygon[:, 1]
+        self.global_thickness = np.max(self.y_coords) - np.min(self.y_coords)
 
     def spline(self, poly, x):
         x_coords = poly[:, 0]
@@ -95,7 +95,13 @@ class AirfoilGeometry:
 
 
 if __name__ == "__main__":
-    airfoil = AirfoilGeometry()
+    import argparse
+
+    p = argparse.ArgumentParser(description="LLT smoke test.")
+    p.add_argument("airfoil", help="NACA digits (e.g. 2412) or path to .dat")
+    args = p.parse_args()
+
+    airfoil = AirfoilGeometry(args.airfoil)
     centroid = airfoil.compute_airfoil_centroid()
     area = airfoil.compute_airfoil_area()
     global_tc = airfoil.global_thickness
