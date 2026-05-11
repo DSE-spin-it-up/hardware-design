@@ -12,4 +12,4 @@ tc = si.t_over_c_root # [-]
 tw = cw * tc # [m]
 
 dens_cfrp = 1.55 # [g/cm^3]
-rho_cfrp = dens_cfrp / 10**3 * 10**6 # [kg/m^3]
+rho_cfrp = dens_cfrp * 10**3 # [kg/m^3]
