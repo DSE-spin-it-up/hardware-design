@@ -8,8 +8,8 @@ m_drone_empty = 10  # [kg]
 n_drones = 3  # [-]
 
 # --- Geometry ---
-b = 2.5  # Wingspan [m]
-AR = 6.0  # Aspect ratio [-]
+b = 3  # Wingspan [m]
+AR = 7.5  # Aspect ratio [-]
 t_over_c_root = 0.12  # Root thickness-to-chord ratio [-]
 lam = 0.3  # Taper ratio [-]
 
