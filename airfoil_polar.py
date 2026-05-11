@@ -59,8 +59,12 @@ class AirfoilPolar:
         import matplotlib.pyplot as plt
 
         if ax is None:
-            fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+            fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+            ax = axes.flatten()
         a_deg = np.degrees(self.alpha)
+        Cd0 = float(self.Cd_p(0.0))
+        alpha_L0_deg = np.degrees(self.alpha_L0)
+
         ax[0].plot(a_deg, self.Cl, "o-", ms=3)
         a_lin = np.linspace(a_deg.min(), a_deg.max(), 50)
         ax[0].plot(
@@ -70,16 +74,29 @@ class AirfoilPolar:
             lw=1,
             label=f"linear fit  Cl_α={self.Cl_alpha:.3f} /rad",
         )
-        ax[0].axvline(np.degrees(self.alpha_L0), color="k", lw=0.5)
+        ax[0].axvline(alpha_L0_deg, color="k", lw=0.5)
         ax[0].set_xlabel(r"$\alpha$ [deg]")
         ax[0].set_ylabel(r"$C_l$")
         ax[0].legend()
+
         ax[1].plot(self.Cl, self.Cd, "o-", ms=3)
+        ax[1].plot(0.0, Cd0, "r*", ms=12, label=f"$C_{{d0}}$ = {Cd0:.4f}")
+        ax[1].axvline(0.0, color="k", lw=0.5)
         ax[1].set_xlabel(r"$C_l$")
         ax[1].set_ylabel(r"$C_d$")
-        ax[2].plot(a_deg, self.Cm, "o-", ms=3)
+        ax[1].legend()
+
+        ax[2].plot(a_deg, self.Cd, "o-", ms=3)
+        ax[2].plot(alpha_L0_deg, Cd0, "r*", ms=12, label=f"$C_{{d0}}$ = {Cd0:.4f}")
+        ax[2].axvline(alpha_L0_deg, color="k", lw=0.5)
         ax[2].set_xlabel(r"$\alpha$ [deg]")
-        ax[2].set_ylabel(r"$C_m$")
+        ax[2].set_ylabel(r"$C_d$")
+        ax[2].legend()
+
+        ax[3].plot(a_deg, self.Cm, "o-", ms=3)
+        ax[3].set_xlabel(r"$\alpha$ [deg]")
+        ax[3].set_ylabel(r"$C_m$")
+
         for a in ax:
             a.grid(True, alpha=0.3)
         return ax
