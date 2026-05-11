@@ -19,12 +19,13 @@ S_payload   = 0.25   # Payload frontal area [m^2]
 Cd_payload  = 1.0    # Payload drag coefficient [-]
 
 # --- Propulsion ---
-n_props     = 2     # Number of propellers [-]
+n_props     = 2   # Number of propellers [-]
 eff_motor   = 0.8   # Motor efficiency [-]
-eff_prop = 0.77 # Non-ideal propeller efficiency [-]
+eff_prop    = 0.7 # Non-ideal propeller efficiency [-]
 T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
 J           = 0.4
-C_t         = 0.08
+C_t         = 0.04
+D_prop      = 20 * 0.0254
 
 # --- Flight Conditions ---
 h_cruise  = 300   # Cruise altitude [m]
@@ -34,8 +35,10 @@ V_cruise  = 20    # Cruise speed [m/s]
 R = 20000  # Range [m]
 
 # --- Battery ---
-specific_energy = 150  # [Wh/kg]
-voltage_battery = 22.2  # [V]
+# specific_energy = 150  # [Wh/kg]
+n_cells = 6
+voltage_cell = 3.7  # [V]
+voltage_battery = n_cells * voltage_cell  # [V]
 
 # --- Materials ---
 foam_density = 48  # [kg/m^3]
@@ -70,6 +73,7 @@ t_cruise = R / V_cruise  # [s]
 # --- Wing Geometry ---
 Sw = b ** 2 / AR  # Wing area [m^2]
 c  = Sw / b       # Mean chord [m]
+c_root = 2 * Sw / (b * (1 + lam))
 
 # --- Aerodynamics ---
 q_cruise   = 0.5 * rho * V_cruise ** 2                                         # [Pa]
@@ -86,12 +90,52 @@ LD_ratio   = L / D                                                             #
 thrust_cruise = D
 thrust_to     = T_W_to * (m_drone_empty * g0)
 
-P_cruise = D * V_cruise / (eff_prop)
-D_prop = ((thrust_cruise * J ** 2) / (C_t * rho * V_cruise ** 2)) ** (0.5)
+P_required = D * V_cruise
+# D_prop = (((thrust_cruise / n_props) * J ** 2) / (C_t * rho * V_cruise ** 2)) ** (0.5)
+thrust_prop = C_t * rho * (V_cruise * D_prop / J) ** 2
+thrust_total_prop = thrust_prop * n_props
+C_p = (C_t / eff_prop) * J
+P_shaft = C_p * rho * ((V_cruise / J) ** 3) * (D_prop ** 2)
+KV = 60 * V_cruise / (J * D_prop * voltage_battery)
+
+def motor_weight(KV):
+    if KV < 100 or KV > 2000:
+        raise ValueError("Value out of range")
+
+    if KV > 100 and KV < 500:
+        slope = (900 - 300) / (500 - 100)
+        mass = 900 - (KV - 100) * slope
+
+    if KV > 500 and KV < 2000:
+        slope = (300 - 50) / (2000 - 500)
+        mass = 300 - (KV - 500) * slope
+
+    return mass / 1000  # return in [kg]
+
+motor_weight = motor_weight(KV)
+total_motor_weight = motor_weight * n_props
 
 # --- Energy & Battery ---
-E_cruise     = P_cruise * t_cruise                  # [J]
-battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
+I_battery = (P_shaft * n_props) / voltage_battery
+P_battery = voltage_battery * I_battery
+E_cruise     = P_battery * t_cruise                  # [J]
+
+
+def battery_mass(E_cruise, n_cells, voltage_cell):
+    voltage = n_cells * voltage_cell
+    C = (E_cruise * 1000 / (3600 * voltage))
+
+    if n_cells == 6:
+        a = 0.3988
+        b = 0.8810
+
+    mass = a * (C ** b)
+    return mass / 1000
+
+
+# battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
+battery_mass = battery_mass(E_cruise, n_cells, voltage_cell)
+
 
 # --- Structural ---
 m_wing = foam_density * (t_over_c_root * c) * Sw  # [kg]
@@ -114,6 +158,17 @@ ct = tail_chord(0.5)                          # [m]
 tt = ct * t_over_c_root                       # [m]
 m_tail = foam_density * St * tt               # [kg]
 
+
+# DESIGN CRITERIA TESTS
+
+# Testing delivered thrust vs. required thrust
+if thrust_total_prop > thrust_cruise:
+    print(f"Thrust margin of {thrust_total_prop - thrust_cruise} [N] available.")
+else:
+    print(f"Additional {thrust_cruise - thrust_total_prop} [N] required")
+
+
+# OUTPUTS
 if __name__ == "__main__":
     print("\n--- Atmosphere ---")
     print(f"  ISA Temperature      : {T_isa:.2f}  °C")
@@ -142,9 +197,15 @@ if __name__ == "__main__":
 
     print("\n--- Propulsion ---")
     print(f"  Cruise thrust        : {thrust_cruise:.2f}  N")
+    print(f"  Total prop. thrust   : {thrust_total_prop:.2f}  N")
     print(f"  Take-off thrust      : {thrust_to:.2f}  N")
-    print(f"  Cruise power         : {P_cruise:.2f}  W")
+    print(f"  Cruise power required : {P_required:.2f}  W")
     print(f"  Propeller Diameter   : {D_prop:.2f}  m")
+    print(f"  Shaft Power          : {P_shaft:.2f}  W")
+    print(f"  KV Motor             : {KV:.2f}  RPM/V")
+    print(f"  Battery Current      : {I_battery:.2f}  A")
+    print(f"  Battery Mass         : {battery_mass:.2f}  kg")
+    print(f"  Total Motor Mass     : {total_motor_weight:.2f}  kg")
 
     print("\n--- Energy & Mission ---")
     print(f"  Cruise time          : {t_cruise:.1f}  s  ({t_cruise/60:.1f} min)")
