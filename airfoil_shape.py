@@ -103,12 +103,13 @@ class AirfoilGeometry:
         return t
 
     def compute_maximum_thickness(self):
-        x = np.arange(0, 1, 0.001)
+        x = np.arange(0, 1, 0.0001)
         t = np.zeros(x.shape[0])
         for i in range(x.shape[0]):
             t[i] = self.compute_thickness(x[i])
         t_max = np.max(t)
-        return t_max
+        t_loc = x[np.where(t == t_max)][0]
+        return t_max, t_loc
 
     def compute_airfoil_centroid(self):
         p = self.polygon
@@ -146,9 +147,9 @@ if __name__ == "__main__":
     centroid = airfoil.compute_airfoil_centroid()
     area = airfoil.compute_airfoil_area()
     global_tc = airfoil.global_thickness
-    max_tc = airfoil.compute_maximum_thickness()
+    max_tc, max_tc_loc = airfoil.compute_maximum_thickness()
     print('centroid:', centroid)
     print('area:', area)
     print('global thickness to chord ratio:', global_tc)
-    print('max thickness to chord ratio:', max_tc)
+    print('max thickness to chord ratio:', max_tc, 'at', max_tc_loc * 100, 'percent of the chord')
     airfoil.plot_airfoil_geometry()
