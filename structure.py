@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import initial_sizing as si
 
 CL = si.CL  # [-]
@@ -27,3 +26,4 @@ y_max = d / 2  # [m]
 sigma = M * y_max / Ixx  # [Pa]
 
 print(Y_cfrp - sigma)
+print(d, t)
