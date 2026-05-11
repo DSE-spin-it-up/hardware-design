@@ -28,7 +28,7 @@ C_t         = 0.04
 D_prop      = 20 * 0.0254
 
 # --- Flight Conditions ---
-h_cruise = 300  # Cruise altitude [m]
+h_cruise = 100  # Cruise altitude [m]
 V_cruise = 20  # Cruise speed [m/s]
 
 # --- Mission ---
@@ -47,6 +47,7 @@ foam_density = 48  # [kg/m^3]
 g0 = 9.80665  # [m/s^2]
 rho_0 = 1.225  # [kg/m^3] sea-level density
 R_air = 287.05  # [J/kg·K] specific gas constant for air
+gamma_air = 1.4  # [-] heat capacity ratio for air
 
 # --- Tail ---
 # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
