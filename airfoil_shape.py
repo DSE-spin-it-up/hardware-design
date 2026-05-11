@@ -100,13 +100,13 @@ class AirfoilGeometry:
         y_upper = self.spline(poly_upper, x)
         y_lower = self.spline(poly_lower, x)
         t = y_upper - y_lower
-        return t
+        return t, y_upper, y_lower
 
     def compute_maximum_thickness(self):
         x = np.arange(0, 1, 0.0001)
         t = np.zeros(x.shape[0])
         for i in range(x.shape[0]):
-            t[i] = self.compute_thickness(x[i])
+            t[i], _, _ = self.compute_thickness(x[i])
         t_max = np.max(t)
         t_loc = x[np.where(t == t_max)][0]
         return t_max, t_loc
@@ -132,10 +132,15 @@ class AirfoilGeometry:
 
     def plot_airfoil_geometry(self):
         fig, ax = plt.subplots()
+        _, x = self.compute_maximum_thickness()
+        t, y_upper, y_lower = self.compute_thickness(x)
+        y = (y_upper + y_lower) / 2.0
+        circle = plt.Circle((x, y), radius=t/2, color="black", fill=False)
         centroid = self.compute_airfoil_centroid()
         closed_up = np.vstack([self.polygon, self.polygon[0]])
         ax.plot(closed_up[:, 0], closed_up[:, 1], color="black")
         ax.scatter(centroid[0], centroid[1], color="black")
+        ax.add_patch(circle)
         ax.set_aspect("equal")
         fig.tight_layout()
         plt.savefig("airfoil.png", dpi=150)
@@ -152,4 +157,5 @@ if __name__ == "__main__":
     print('area:', area)
     print('global thickness to chord ratio:', global_tc)
     print('max thickness to chord ratio:', max_tc, 'at', max_tc_loc * 100, 'percent of the chord')
+    print('maximum thickness', max_tc * c * 100, 'cm')
     airfoil.plot_airfoil_geometry()
