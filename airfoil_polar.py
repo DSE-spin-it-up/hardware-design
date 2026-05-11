@@ -43,12 +43,12 @@ class AirfoilPolar:
     name: str
     Re: float
     M: float
-    alpha: np.ndarray              # [rad]
+    alpha: np.ndarray  # [rad]
     Cl: np.ndarray
     Cd: np.ndarray
     Cm: np.ndarray
-    Cl_alpha: float                # [1/rad]
-    alpha_L0: float                # [rad]
+    Cl_alpha: float  # [1/rad]
+    alpha_L0: float  # [rad]
     Cd_p: Callable[[float | np.ndarray], np.ndarray] = field(repr=False)
 
     def Cl_at(self, alpha: float | np.ndarray) -> np.ndarray:
@@ -57,19 +57,29 @@ class AirfoilPolar:
 
     def plot(self, ax=None):
         import matplotlib.pyplot as plt
+
         if ax is None:
             fig, ax = plt.subplots(1, 3, figsize=(12, 4))
         a_deg = np.degrees(self.alpha)
         ax[0].plot(a_deg, self.Cl, "o-", ms=3)
         a_lin = np.linspace(a_deg.min(), a_deg.max(), 50)
-        ax[0].plot(a_lin, self.Cl_alpha * (np.radians(a_lin) - self.alpha_L0),
-                   "--", lw=1, label=f"linear fit  Cl_α={self.Cl_alpha:.3f} /rad")
+        ax[0].plot(
+            a_lin,
+            self.Cl_alpha * (np.radians(a_lin) - self.alpha_L0),
+            "--",
+            lw=1,
+            label=f"linear fit  Cl_α={self.Cl_alpha:.3f} /rad",
+        )
         ax[0].axvline(np.degrees(self.alpha_L0), color="k", lw=0.5)
-        ax[0].set_xlabel(r"$\alpha$ [deg]"); ax[0].set_ylabel(r"$C_l$"); ax[0].legend()
+        ax[0].set_xlabel(r"$\alpha$ [deg]")
+        ax[0].set_ylabel(r"$C_l$")
+        ax[0].legend()
         ax[1].plot(self.Cl, self.Cd, "o-", ms=3)
-        ax[1].set_xlabel(r"$C_l$"); ax[1].set_ylabel(r"$C_d$")
+        ax[1].set_xlabel(r"$C_l$")
+        ax[1].set_ylabel(r"$C_d$")
         ax[2].plot(a_deg, self.Cm, "o-", ms=3)
-        ax[2].set_xlabel(r"$\alpha$ [deg]"); ax[2].set_ylabel(r"$C_m$")
+        ax[2].set_xlabel(r"$\alpha$ [deg]")
+        ax[2].set_ylabel(r"$C_m$")
         for a in ax:
             a.grid(True, alpha=0.3)
         return ax
@@ -151,6 +161,7 @@ def get_airfoil_polar(
 @dataclass
 class _AirfoilSpec:
     """Resolved airfoil: either a NACA digit string or a path to a .dat file."""
+
     name: str
     naca_digits: str | None
     dat_path: Path | None
@@ -162,7 +173,9 @@ class _AirfoilSpec:
 
 
 def _resolve_airfoil(airfoil: str | Path) -> _AirfoilSpec:
-    if isinstance(airfoil, Path) or (isinstance(airfoil, str) and airfoil.endswith(".dat")):
+    if isinstance(airfoil, Path) or (
+        isinstance(airfoil, str) and airfoil.endswith(".dat")
+    ):
         path = Path(airfoil).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -218,7 +231,7 @@ def _run_xfoil_polar(
             f"MACH {M:.6f}",
             "PACC",
             str(polar_file),
-            "",                                    # no dump file
+            "",  # no dump file
             f"ASEQ {a_min} {a_max} {da}",
             "PACC",
             "",
@@ -270,7 +283,9 @@ def _parse_xfoil_polar(path: Path):
         parts = ln.split()
         try:
             # XFOIL polar columns: alpha CL CD CDp CM Top_xtr Bot_xtr ...
-            rows.append([float(parts[0]), float(parts[1]), float(parts[2]), float(parts[4])])
+            rows.append(
+                [float(parts[0]), float(parts[1]), float(parts[2]), float(parts[4])]
+            )
         except (ValueError, IndexError):
             continue
 
@@ -331,18 +346,28 @@ if __name__ == "__main__":
     p.add_argument("airfoil", help="NACA digits (e.g. 2412) or path to .dat")
     p.add_argument("--Re", type=float, default=4e5)
     p.add_argument("--M", type=float, default=0.0)
-    p.add_argument("--alpha", nargs=3, type=float, metavar=("MIN", "MAX", "STEP"),
-                   default=[-5.0, 15.0, 0.5])
+    p.add_argument(
+        "--alpha",
+        nargs=3,
+        type=float,
+        metavar=("MIN", "MAX", "STEP"),
+        default=[-5.0, 15.0, 0.5],
+    )
     p.add_argument("--no-cache", action="store_true")
     args = p.parse_args()
 
     polar = get_airfoil_polar(
-        args.airfoil, Re=args.Re, M=args.M,
-        alpha_range=tuple(args.alpha), use_cache=not args.no_cache,
+        args.airfoil,
+        Re=args.Re,
+        M=args.M,
+        alpha_range=tuple(args.alpha),
+        use_cache=not args.no_cache,
     )
-    print(f"{polar.name}: Cl_alpha = {polar.Cl_alpha:.4f} /rad "
-          f"({np.degrees(polar.Cl_alpha):.4f} /deg), "
-          f"alpha_L0 = {np.degrees(polar.alpha_L0):.3f} deg")
+    print(
+        f"{polar.name}: Cl_alpha = {polar.Cl_alpha:.4f} /rad "
+        f"({np.degrees(polar.Cl_alpha):.4f} /deg), "
+        f"alpha_L0 = {np.degrees(polar.alpha_L0):.3f} deg"
+    )
     polar.plot()
     plt.tight_layout()
     plt.show()

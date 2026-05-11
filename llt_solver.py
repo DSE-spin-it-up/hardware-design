@@ -66,8 +66,8 @@ class WingGeometry:
     b: float | None = None
     S: float | None = None
     AR: float | None = None
-    taper: float = 1.0                                  # λ = c_tip / c_root
-    sweep_le: float = 0.0                               # [rad] leading-edge sweep — informational, must stay 0
+    taper: float = 1.0  # λ = c_tip / c_root
+    sweep_le: float = 0.0  # [rad] leading-edge sweep — informational, must stay 0
     chord_func: Callable[[np.ndarray], np.ndarray] | None = None
     twist_func: Callable[[np.ndarray], np.ndarray] | None = None
     alpha_L0_func: Callable[[np.ndarray], np.ndarray] | None = None
@@ -85,12 +85,12 @@ class WingGeometry:
         if b is None:
             self.b = float(np.sqrt(AR * S))
         elif S is None:
-            self.S = float(self.b ** 2 / AR)
+            self.S = float(self.b**2 / AR)
         elif AR is None:
-            self.AR = float(self.b ** 2 / S)
+            self.AR = float(self.b**2 / S)
         else:
             # All three given — verify consistency.
-            if not np.isclose(self.b ** 2 / self.S, self.AR, rtol=1e-6):
+            if not np.isclose(self.b**2 / self.S, self.AR, rtol=1e-6):
                 raise ValueError(
                     f"WingGeometry: inconsistent (b={b}, S={S}, AR={AR}); "
                     f"b^2/S = {self.b**2 / self.S:.6f} != AR."
@@ -141,10 +141,10 @@ class FlightCondition:
 
     V_inf: float
     rho: float
-    alpha_root: float | None = None        # [rad]
+    alpha_root: float | None = None  # [rad]
     CL_target: float | None = None
-    M: float = 0.0                          # informational
-    mu: float = 1.7894e-5                   # dynamic viscosity [Pa·s], ISA SL
+    M: float = 0.0  # informational
+    mu: float = 1.7894e-5  # dynamic viscosity [Pa·s], ISA SL
 
     def __post_init__(self):
         if (self.alpha_root is None) == (self.CL_target is None):
@@ -153,7 +153,7 @@ class FlightCondition:
             )
 
     def q(self) -> float:
-        return 0.5 * self.rho * self.V_inf ** 2
+        return 0.5 * self.rho * self.V_inf**2
 
     def Re(self, chord_ref: float) -> float:
         return self.rho * self.V_inf * chord_ref / self.mu
@@ -166,27 +166,28 @@ class FlightCondition:
 
 @dataclass
 class LLTResult:
-    A: np.ndarray                                                # Fourier coefficients A_1..A_N
+    A: np.ndarray  # Fourier coefficients A_1..A_N
     CL: float
     CD_i: float
     e: float
     delta: float
-    alpha_root: float                                             # [rad]
+    alpha_root: float  # [rad]
     wing: WingGeometry
     flight: FlightCondition
     polar: AirfoilPolar
-    y_grid: np.ndarray                                            # uniform spanwise grid [m]
-    Gamma: np.ndarray                                             # Γ on y_grid [m^2/s]
-    ell: np.ndarray                                               # lift per span on y_grid [N/m]
-    Cl_local: np.ndarray                                          # section Cl on y_grid
-    CD0: float                                                    # zero-lift profile drag (= airfoil Cd_p(0))
+    y_grid: np.ndarray  # uniform spanwise grid [m]
+    Gamma: np.ndarray  # Γ on y_grid [m^2/s]
+    ell: np.ndarray  # lift per span on y_grid [N/m]
+    Cl_local: np.ndarray  # section Cl on y_grid
+    CD0: float  # zero-lift profile drag (= airfoil Cd_p(0))
 
     # ----- callables ------------------------------------------------------
 
     def Gamma_func(self, y: np.ndarray) -> np.ndarray:
         """Re-evaluate Γ(y) directly from the Fourier series (not interpolated)."""
-        return _gamma_from_A(self.A, np.asarray(y, dtype=float),
-                             self.wing.b, self.flight.V_inf)
+        return _gamma_from_A(
+            self.A, np.asarray(y, dtype=float), self.wing.b, self.flight.V_inf
+        )
 
     def ell_func(self, y: np.ndarray) -> np.ndarray:
         """Spanwise lift per unit span [N/m] via Kutta–Joukowski: ρ V∞ Γ(y)."""
@@ -298,22 +299,24 @@ def solve_llt(
     y_coll = -0.5 * b * np.cos(theta)
 
     c_coll = wing.chord(y_coll)
-    mu = c_coll * Cl_alpha / (4.0 * b)                                  # μ(θ_k)
+    mu = c_coll * Cl_alpha / (4.0 * b)  # μ(θ_k)
     twist = wing.twist(y_coll)
     aL0 = wing.alpha_L0(y_coll, polar.alpha_L0)
 
     # Linear system M · A = rhs(α_root). Because the equation is linear in
     # α_root, decompose A_n = α_root · A_n^(1) + A_n^(0) and solve once.
     n_idx = np.arange(1, N + 1)
-    sin_ntheta = np.sin(np.outer(theta, n_idx))                         # [N x N], rows=collocation, cols=mode
-    sin_theta = np.sin(theta)[:, None]                                  # [N x 1]
-    M_mat = sin_ntheta * (sin_theta + n_idx[None, :] * mu[:, None])     # coefficient matrix
+    sin_ntheta = np.sin(np.outer(theta, n_idx))  # [N x N], rows=collocation, cols=mode
+    sin_theta = np.sin(theta)[:, None]  # [N x 1]
+    M_mat = sin_ntheta * (
+        sin_theta + n_idx[None, :] * mu[:, None]
+    )  # coefficient matrix
 
-    rhs_unit = mu * sin_theta[:, 0]                                      # contribution from α_root = 1, aL0=0, twist=0
-    rhs_geom = mu * (twist - aL0) * sin_theta[:, 0]                      # twist + zero-lift offset
+    rhs_unit = mu * sin_theta[:, 0]  # contribution from α_root = 1, aL0=0, twist=0
+    rhs_geom = mu * (twist - aL0) * sin_theta[:, 0]  # twist + zero-lift offset
 
-    A_unit = np.linalg.solve(M_mat, rhs_unit)                            # A_n^(1)
-    A_geom = np.linalg.solve(M_mat, rhs_geom)                            # A_n^(0)
+    A_unit = np.linalg.solve(M_mat, rhs_unit)  # A_n^(1)
+    A_geom = np.linalg.solve(M_mat, rhs_geom)  # A_n^(0)
 
     # Trim to alpha_root or CL_target.
     if flight.alpha_root is not None:
@@ -336,7 +339,7 @@ def solve_llt(
         higher = np.arange(2, N + 1)
         delta = float(np.sum(higher * (A[1:] / A1) ** 2))
         e = 1.0 / (1.0 + delta)
-    CD_i = float(CL ** 2 / (np.pi * AR) * (1.0 + delta))
+    CD_i = float(CL**2 / (np.pi * AR) * (1.0 + delta))
 
     # Evaluate Γ, ℓ, local Cl on a uniform y-grid for the NVM stage.
     y_grid = np.linspace(-b / 2.0, b / 2.0, n_y_grid)
@@ -380,7 +383,7 @@ def _gamma_from_A(A: np.ndarray, y: np.ndarray, b: float, V_inf: float) -> np.nd
     cos_theta = np.clip(-2.0 * y / b, -1.0, 1.0)
     theta = np.arccos(cos_theta)
     n_idx = np.arange(1, len(A) + 1)
-    sin_ntheta = np.sin(np.outer(theta, n_idx))                          # [n_y, N]
+    sin_ntheta = np.sin(np.outer(theta, n_idx))  # [n_y, N]
     return 2.0 * b * V_inf * sin_ntheta @ A
 
 
@@ -411,7 +414,8 @@ if __name__ == "__main__":
 
     wing = WingGeometry(b=args.b, AR=args.AR, taper=args.taper)
     flight = FlightCondition(
-        V_inf=args.V, rho=args.rho,
+        V_inf=args.V,
+        rho=args.rho,
         alpha_root=np.radians(args.alpha) if args.alpha is not None else None,
         CL_target=args.CL,
     )
@@ -423,6 +427,7 @@ if __name__ == "__main__":
 
     if args.plot:
         import matplotlib.pyplot as plt
+
         result.plot(normalize=args.normalize)
         plt.tight_layout()
         plt.show()

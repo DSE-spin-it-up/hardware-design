@@ -3,32 +3,32 @@ import numpy as np
 # INPUTS
 
 # --- Payload & Fleet ---
-m_payload       = 60        # [kg]
-m_drone_empty   = 10        # [kg]
-n_drones        = 3         # [-]
+m_payload = 60  # [kg]
+m_drone_empty = 10  # [kg]
+n_drones = 3  # [-]
 
 # --- Geometry ---
-b       = 2.5   # Wingspan [m]
-AR      = 6.0   # Aspect ratio [-]
+b = 2.5  # Wingspan [m]
+AR = 6.0  # Aspect ratio [-]
 t_over_c_root = 0.12  # Root thickness-to-chord ratio [-]
-lam     = 0.3   # Taper ratio [-]
+lam = 0.3  # Taper ratio [-]
 
 # --- Aerodynamics ---
-Cd0         = 0.045  # Zero-lift drag coefficient [-]
-S_payload   = 0.25   # Payload frontal area [m^2]
-Cd_payload  = 1.0    # Payload drag coefficient [-]
+Cd0 = 0.045  # Zero-lift drag coefficient [-]
+S_payload = 0.25  # Payload frontal area [m^2]
+Cd_payload = 1.0  # Payload drag coefficient [-]
 
 # --- Propulsion ---
-n_props     = 2     # Number of propellers [-]
-eff_motor   = 0.8   # Motor efficiency [-]
-eff_prop = 0.77 # Non-ideal propeller efficiency [-]
-T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
-J           = 0.4
-C_t         = 0.08
+n_props = 2  # Number of propellers [-]
+eff_motor = 0.8  # Motor efficiency [-]
+eff_prop = 0.77  # Non-ideal propeller efficiency [-]
+T_W_to = 2.0  # Thrust-to-weight ratio at take-off [-]
+J = 0.4
+C_t = 0.08
 
 # --- Flight Conditions ---
-h_cruise  = 300   # Cruise altitude [m]
-V_cruise  = 20    # Cruise speed [m/s]
+h_cruise = 300  # Cruise altitude [m]
+V_cruise = 20  # Cruise speed [m/s]
 
 # --- Mission ---
 R = 20000  # Range [m]
@@ -41,17 +41,17 @@ voltage_battery = 22.2  # [V]
 foam_density = 48  # [kg/m^3]
 
 # --- Atmospheric constants ---
-g0    = 9.80665  # [m/s^2]
-rho_0 = 1.225    # [kg/m^3] sea-level density
-R_air = 287.05   # [J/kg·K] specific gas constant for air
+g0 = 9.80665  # [m/s^2]
+rho_0 = 1.225  # [kg/m^3] sea-level density
+R_air = 287.05  # [J/kg·K] specific gas constant for air
 
 # --- Tail ---
 # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
-Vv = 0.04   # Vertical tail volume coefficient [-]
-Vh = 0.50   # Horizontal tail volume coefficient [-]
+Vv = 0.04  # Vertical tail volume coefficient [-]
+Vh = 0.50  # Horizontal tail volume coefficient [-]
 # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
-ARt = 4.5   # Tail aspect ratio [-]
-lam_t = 1   # Tail taper ratio [-]
+ARt = 4.5  # Tail aspect ratio [-]
+lam_t = 1  # Tail taper ratio [-]
 
 
 # DERIVED VARIABLES
@@ -60,59 +60,59 @@ lam_t = 1   # Tail taper ratio [-]
 m_drone_loaded = m_drone_empty + (m_payload / n_drones)  # [kg]
 
 # --- Atmosphere (ISA) ---
-T_isa = 15.00 - 0.0065 * h_cruise                          # [°C]
-p     = 101.325e3 * ((T_isa + 273.15) / 288.15) ** 5.2559  # [Pa]
-rho   = p / (R_air * (T_isa + 273.15))                     # [kg/m^3]
+T_isa = 15.00 - 0.0065 * h_cruise  # [°C]
+p = 101.325e3 * ((T_isa + 273.15) / 288.15) ** 5.2559  # [Pa]
+rho = p / (R_air * (T_isa + 273.15))  # [kg/m^3]
 
 # --- Mission Profile ---
 t_cruise = R / V_cruise  # [s]
 
 # --- Wing Geometry ---
-Sw = b ** 2 / AR  # Wing area [m^2]
-c  = Sw / b       # Mean chord [m]
+Sw = b**2 / AR  # Wing area [m^2]
+c = Sw / b  # Mean chord [m]
 
 # --- Aerodynamics ---
-q_cruise   = 0.5 * rho * V_cruise ** 2                                         # [Pa]
-e          = 1.78 * (1 - 0.045 * AR ** 0.68) - 0.64                            # [-]
-CL         = (m_drone_loaded * g0) / (q_cruise * Sw)                           # [-]
-Cl_airfoil = (AR + 2) * CL / AR                                                # [-]
-k          = 1 / (np.pi * e * AR)                                              # [-]
-Cd         = Cd0 + k * CL ** 2 + (Cd_payload * S_payload / (n_drones * Sw))    # [-]
-L          = CL * q_cruise * Sw                                                # [N]
-D          = Cd * q_cruise * Sw                                                # [N]
-LD_ratio   = L / D                                                             # [-]
+q_cruise = 0.5 * rho * V_cruise**2  # [Pa]
+e = 1.78 * (1 - 0.045 * AR**0.68) - 0.64  # [-]
+CL = (m_drone_loaded * g0) / (q_cruise * Sw)  # [-]
+Cl_airfoil = (AR + 2) * CL / AR  # [-]
+k = 1 / (np.pi * e * AR)  # [-]
+Cd = Cd0 + k * CL**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
+L = CL * q_cruise * Sw  # [N]
+D = Cd * q_cruise * Sw  # [N]
+LD_ratio = L / D  # [-]
 
 # --- Propulsion ---
 thrust_cruise = D
-thrust_to     = T_W_to * (m_drone_empty * g0)
+thrust_to = T_W_to * (m_drone_empty * g0)
 
 P_cruise = D * V_cruise / (eff_prop)
-D_prop = ((thrust_cruise * J ** 2) / (C_t * rho * V_cruise ** 2)) ** (0.5)
+D_prop = ((thrust_cruise * J**2) / (C_t * rho * V_cruise**2)) ** (0.5)
 
 # --- Energy & Battery ---
-E_cruise     = P_cruise * t_cruise                  # [J]
+E_cruise = P_cruise * t_cruise  # [J]
 battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
 
 # --- Structural ---
 m_wing = foam_density * (t_over_c_root * c) * Sw  # [kg]
 
 # --- Tail Geometry ---
-bh = b * 0.365445026178           # [m] Desmos
-Sh = bh ** 2 / ARt                # [m^2]
-L_tail = Vh * Sw * c / Sh         # [m]
-Sv = Vv * Sw * b / L_tail         # [m^2]
-bv = np.sqrt(2 * ARt * Sw) / 2    # [m]
-St = Sh + Sv                      # [m^2]
-bt = np.sqrt(bh ** 2 + bv ** 2)   # [m]
+bh = b * 0.365445026178  # [m] Desmos
+Sh = bh**2 / ARt  # [m^2]
+L_tail = Vh * Sw * c / Sh  # [m]
+Sv = Vv * Sw * b / L_tail  # [m^2]
+bv = np.sqrt(2 * ARt * Sw) / 2  # [m]
+St = Sh + Sv  # [m^2]
+bt = np.sqrt(bh**2 + bv**2)  # [m]
 
 
 def tail_chord(yb):
     return (2 * St) / ((1 + lam_t) * bt) * (1 - (1 - lam_t) * (2 * yb))
 
 
-ct = tail_chord(0.5)                          # [m]
-tt = ct * t_over_c_root                       # [m]
-m_tail = foam_density * St * tt               # [kg]
+ct = tail_chord(0.5)  # [m]
+tt = ct * t_over_c_root  # [m]
+m_tail = foam_density * St * tt  # [kg]
 
 if __name__ == "__main__":
     print("\n--- Atmosphere ---")
@@ -147,8 +147,8 @@ if __name__ == "__main__":
     print(f"  Propeller Diameter   : {D_prop:.2f}  m")
 
     print("\n--- Energy & Mission ---")
-    print(f"  Cruise time          : {t_cruise:.1f}  s  ({t_cruise/60:.1f} min)")
-    print(f"  Cruise energy        : {E_cruise/3600:.2f}  Wh")
+    print(f"  Cruise time          : {t_cruise:.1f}  s  ({t_cruise / 60:.1f} min)")
+    print(f"  Cruise energy        : {E_cruise / 3600:.2f}  Wh")
 
     print("\n--- Tail ---")
     print(f"  Horizontal tail area : {Sh:.4f}  m²")
