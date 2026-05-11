@@ -64,9 +64,9 @@ lam_t = 1  # Tail taper ratio [-]
 m_drone_loaded = m_drone_empty + (m_payload / n_drones)  # [kg]
 
 # --- Atmosphere (ISA) ---
-T_isa = 15.00 - 0.0065 * h_cruise  # [°C]
-p = 101.325e3 * ((T_isa + 273.15) / 288.15) ** 5.2559  # [Pa]
-rho = p / (R_air * (T_isa + 273.15))  # [kg/m^3]
+T_isa = 15.00 + 273.15 - 0.0065 * h_cruise  # [°C]
+p = 101.325e3 * ((T_isa) / 288.15) ** 5.2559  # [Pa]
+rho = p / (R_air * (T_isa))  # [kg/m^3]
 
 # --- Mission Profile ---
 t_cruise = R / V_cruise  # [s]
@@ -160,17 +160,17 @@ tt = ct * t_over_c_root  # [m]
 m_tail = foam_density * St * tt  # [kg]
 
 
-# DESIGN CRITERIA TESTS
-
-# Testing delivered thrust vs. required thrust
-if thrust_total_prop > thrust_cruise:
-    print(f"Thrust margin of {thrust_total_prop - thrust_cruise} [N] available.")
-else:
-    print(f"Additional {thrust_cruise - thrust_total_prop} [N] required")
-
 
 # OUTPUTS
 if __name__ == "__main__":
+    # DESIGN CRITERIA TESTS
+
+    # Testing delivered thrust vs. required thrust
+    if thrust_total_prop > thrust_cruise:
+        print(f"Thrust margin of {thrust_total_prop - thrust_cruise} [N] available.")
+    else:
+        print(f"Additional {thrust_cruise - thrust_total_prop} [N] required")
+
     print("\n--- Atmosphere ---")
     print(f"  ISA Temperature      : {T_isa:.2f}  °C")
     print(f"  Pressure             : {p:.1f}  Pa")
