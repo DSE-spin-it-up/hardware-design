@@ -108,7 +108,7 @@ def get_airfoil_polar(
     M: float = 0.0,
     alpha_range: tuple[float, float, float] = (-5.0, 15.0, 0.5),
     *,
-    use_cache: bool = True,
+    use_cache: bool = False,
     xfoil_bin: str = "xfoil",
 ) -> AirfoilPolar:
     """Run XFOIL and return an AirfoilPolar.
@@ -370,7 +370,7 @@ if __name__ == "__main__":
         metavar=("MIN", "MAX", "STEP"),
         default=[-5.0, 15.0, 0.5],
     )
-    p.add_argument("--no-cache", action="store_true")
+    p.add_argument("--cache", action="store_true", help="Enable on-disk polar cache.")
     args = p.parse_args()
 
     polar = get_airfoil_polar(
@@ -378,7 +378,7 @@ if __name__ == "__main__":
         Re=args.Re,
         M=args.M,
         alpha_range=tuple(args.alpha),
-        use_cache=not args.no_cache,
+        use_cache=args.cache,
     )
     print(
         f"{polar.name}: Cl_alpha = {polar.Cl_alpha:.4f} /rad "
