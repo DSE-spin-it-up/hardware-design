@@ -35,7 +35,7 @@ SIZING = SizingInputs(
     m_drone_empty=10,
     n_drones=3,
     b=3.0,
-    AR=6.0,
+    AR=7.5,
     lam=1.0,
     Cd0=0.045,            # initial guess; refined after fuselage sizing
     S_payload=0.25,
@@ -63,9 +63,12 @@ ELECTRICAL = ElectricalInputs(
     battery_density=250,
 )
 
-# .dat path or NACA digits (e.g. "2412"). If None, the pipeline prompts at runtime.
+# Wing airfoil: .dat path or NACA digits (e.g. "2412"). If None, the pipeline prompts at runtime.
 AIRFOIL: str | None = "airfoils/MH112.dat"
-AIRFOIL: str | None = "4412"
+# AIRFOIL: str | None = "4412"
+
+# Tail airfoil: .dat path or NACA digits. Symmetric sections are typical.
+TAIL_AIRFOIL: str = "airfoils/NACA0010.dat"
 
 # Alpha sweep used to build the wing drag polar for the CL/CD plot [deg].
 ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
@@ -191,7 +194,8 @@ def main() -> None:
 
     # ----- Step 3: size fuselage and refine CD0 from a component buildup -----
     fus = fuselage.run(sizing)
-    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil)
+    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+    print(f">>> CD0 estimate (pass 1, Cd0_guess={sizing_inputs.Cd0:.5f}) : {drag.CD0:.5f}")
     sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
 
     # ----- Step 4: re-run sizing + electrical with refined Cd0 -----
@@ -200,7 +204,8 @@ def main() -> None:
     sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
     electrical = electrical_system.run(sizing, electrical_inputs)
     fus = fuselage.run(sizing)
-    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil)
+    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+    print(f">>> CD0 estimate (pass 2, refined)                          : {drag.CD0:.5f}")
 
     print("========== INITIAL SIZING ==========")
     initial_sizing.summary(sizing)

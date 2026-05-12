@@ -3,15 +3,26 @@
 Uses Raymer-style component buildup:
     CD0 = sum_i (Cf_i * FF_i * Q_i * Swet_i) / S_ref
 
-with Q_i = 1.0 (interference factor) and S_ref = wing area.
+where Q_i is the per-component interference factor and S_ref = wing area.
 """
 from dataclasses import dataclass
 
 import numpy as np
 
-from aerodynamics.airfoil_shape import AirfoilGeometry
+from aerodynamics.airfoil_shape import AirfoilGeometry, airfoil_thickness_to_chord
 from sizing.initial_sizing import R_air, SizingResult, gamma_air
 from sizing.fuselage import FuselageResult
+
+
+def _max_tc_with_location(airfoil: str) -> tuple[float, float]:
+    """Return (max t/c, x/c at max thickness) for either a .dat path or NACA digits.
+
+    NACA 4-/5-digit airfoils have their max thickness at x/c ≈ 0.30, which is
+    the Raymer-recommended default when an explicit polygon isn't available.
+    """
+    if str(airfoil).endswith(".dat"):
+        return AirfoilGeometry(airfoil).compute_maximum_thickness()
+    return airfoil_thickness_to_chord(airfoil), 0.30
 
 
 # Air dynamic viscosity at standard cruise temperature [Pa·s].
@@ -24,7 +35,11 @@ class DragInputs:
     tail_airfoil: str = "airfoils/NACA0010.dat"
     sweep_wing: float = 0.0       # quarter-chord sweep [rad]
     sweep_tail: float = 0.0       # [rad]
-    Vh_V: float = 0.85            # tail-to-wing dynamic-pressure ratio (V_tail/V_cruise)
+    Vh_V: float = 0.85            # V_tail/V_cruise — used for tail Re/Mach only
+    # Raymer interference factors (Q_i in CD0 buildup)
+    Q_wing: float = 1.0
+    Q_tail: float = 1.03          # conventional aft tail
+    Q_fus: float = 1.0
 
 
 @dataclass
@@ -88,10 +103,8 @@ def run(
     V_tail = i.Vh_V * V
 
     # Airfoil thicknesses
-    wing_af = AirfoilGeometry(i.wing_airfoil)
-    tc_w, xtc_w = wing_af.compute_maximum_thickness()
-    tail_af = AirfoilGeometry(i.tail_airfoil)
-    tc_t, xtc_t = tail_af.compute_maximum_thickness()
+    tc_w, xtc_w = _max_tc_with_location(i.wing_airfoil)
+    tc_t, xtc_t = _max_tc_with_location(i.tail_airfoil)
 
     # Reynolds numbers
     Re_wing = rho * V * s.c / MU_AIR
@@ -113,13 +126,12 @@ def run(
     Swet_tail = 2.0 * s.St
     Swet_fus = f.Swet
 
-    # Per-component CD0 referenced to wing area.
+    # Per-component CD0 referenced to wing area. Q is the Raymer interference factor.
     S_ref = s.Sw
-    CD0_wing = Cf_wing * FF_wing * Swet_wing / S_ref
-    CD0_tail = Cf_tail * FF_tail * Swet_tail / S_ref * (i.Vh_V ** 2)
-    CD0_fus = Cf_fus * FF_fus * Swet_fus / S_ref
+    CD0_wing = Cf_wing * FF_wing * i.Q_wing * Swet_wing / S_ref
+    CD0_tail = Cf_tail * FF_tail * i.Q_tail * Swet_tail / S_ref
+    CD0_fus = Cf_fus * FF_fus * i.Q_fus * Swet_fus / S_ref
     CD0 = CD0_wing + CD0_tail + CD0_fus
-
     return DragResult(
         inputs=inputs,
         Re_wing=Re_wing, Re_tail=Re_tail, Re_fus=Re_fus,
