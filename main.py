@@ -21,7 +21,7 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
 from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import electrical_system, fuselage, initial_sizing
+from sizing import electrical_system, fuselage, initial_sizing, mass_estimates
 from sizing.electrical_system import ElectricalInputs, ElectricalResult
 from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
@@ -213,6 +213,19 @@ def main() -> None:
     electrical_system.summary(electrical)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(fus)
+    print("\n========== MASS ESTIMATES ==========")
+    masses = mass_estimates.total_mass(
+        sizing=sizing,
+        electrical=electrical,
+        airfoil_path=airfoil,
+        tail_airfoil_path=TAIL_AIRFOIL,
+    )
+    print(f"  Battery mass : {masses['battery']:.3f} kg")
+    print(f"  Motor mass   : {masses['motors']:.3f} kg")
+    print(f"  Wing mass    : {masses['wing']:.3f} kg")
+    print(f"  Tail mass    : {masses['tail']:.3f} kg")
+    print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
+    print(f"  Total mass   : {masses['total']:.3f} kg")
     print("\n========== DRAG BUILDUP ==========")
     drag_estimates.summary(drag)
 
