@@ -16,11 +16,14 @@ import dataclasses
 import matplotlib.pyplot as plt
 import numpy as np
 
+from aerodynamics import drag_estimates
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
+from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import electrical_system, initial_sizing
+from sizing import electrical_system, fuselage, initial_sizing
 from sizing.electrical_system import ElectricalInputs, ElectricalResult
+from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
 
 # ============================================================
@@ -72,28 +75,27 @@ ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
 # PLACEHOLDERS — replace as teammates' modules land
 # ============================================================
 
-def fuselage_cd0(sizing: SizingResult, electrical: ElectricalResult) -> float:
-    """Wing Cd0 refined from fuselage sizing.
+def estimate_cd0(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    wing_airfoil: str,
+    tail_airfoil: str = "airfoils/NACA0010.dat",
+) -> DragResult:
+    """Component drag buildup for wing + tail + fuselage."""
+    return drag_estimates.run(
+        sizing,
+        fus,
+        DragInputs(wing_airfoil=wing_airfoil, tail_airfoil=tail_airfoil),
+    )
 
-    Teammate's module will take battery volume (and other payload-volume
-    drivers) and return a refined parasite-drag estimate. For now, return
-    the input Cd0 unchanged so the pipeline runs end-to-end.
-    """
-    # TODO: integrate fuselage sizing → CD0 estimator
-    _ = electrical.battery_volume
-    return sizing.inputs.Cd0
 
-
-def full_drag_estimate(sizing: SizingResult, llt: LLTResult) -> float:
-    """Total wing-level CD at the operating point from a full drag buildup.
-
-    Teammate's module will sum CD0 contributions (wing, fuselage, tail,
-    payload) and add induced drag from LLT. For now, return the wing-level
-    CD already computed by initial_sizing.
-    """
-    # TODO: integrate full drag buildup
-    _ = llt.CD_i
-    return sizing.Cd
+def full_drag_estimate(
+    sizing: SizingResult,
+    drag: DragResult,
+    llt: LLTResult,
+) -> float:
+    """Total wing-level CD at the operating point: CD0 buildup + induced drag."""
+    return drag.CD0 + llt.CD_i
 
 
 # ============================================================
@@ -187,20 +189,27 @@ def main() -> None:
     # ----- Step 2: battery + propulsion -----
     electrical = electrical_system.run(sizing, electrical_inputs)
 
-    # ----- Step 3: refine Cd0 from fuselage sizing (placeholder) -----
-    new_cd0 = fuselage_cd0(sizing, electrical)
-    sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=new_cd0)
+    # ----- Step 3: size fuselage and refine CD0 from a component buildup -----
+    fus = fuselage.run(sizing)
+    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil)
+    sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
 
     # ----- Step 4: re-run sizing + electrical with refined Cd0 -----
     # (One re-pass for now; turn into a `while not converged` loop once the
-    # fuselage estimator returns a non-trivial Cd0.)
+    # CD0 estimator and sizing converge non-trivially.)
     sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
     electrical = electrical_system.run(sizing, electrical_inputs)
+    fus = fuselage.run(sizing)
+    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil)
 
     print("========== INITIAL SIZING ==========")
     initial_sizing.summary(sizing)
     print("\n========== ELECTRICAL SYSTEM ==========")
     electrical_system.summary(electrical)
+    print("\n========== FUSELAGE ==========")
+    fuselage.summary(fus)
+    print("\n========== DRAG BUILDUP ==========")
+    drag_estimates.summary(drag)
 
     # ----- Step 5: LLT at the required CL -----
     CL_req = sizing.CL
@@ -234,10 +243,12 @@ def main() -> None:
           f"(operating CL = {CL_req:.3f})")
     plot_wing_ld(CL_sweep, CD_sweep, CL_op=CL_req, airfoil_name=polar.name)
 
-    # ----- Step 7: full drag estimate (placeholder) -----
-    CD_full = full_drag_estimate(sizing, llt)
-    print(f"\nFull-buildup CD (placeholder)        : {CD_full:.5f}")
-    print(f"Final L/D at operating CL (placeholder): {CL_req / CD_full:.2f}")
+    # ----- Step 7: full drag estimate = CD0 buildup + induced drag -----
+    CD_full = full_drag_estimate(sizing, drag, llt)
+    print(f"\nFull-buildup CD                       : {CD_full:.5f}")
+    print(f"  CD0 (buildup)                       : {drag.CD0:.5f}")
+    print(f"  CD_i  (LLT)                         : {llt.CD_i:.5f}")
+    print(f"Final L/D at operating CL             : {CL_req / CD_full:.2f}")
 
 
 if __name__ == "__main__":
