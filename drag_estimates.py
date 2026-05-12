@@ -79,20 +79,79 @@ Cf_fuselage = 0.455 / (np.log10(Re_fuselage)**2.58 * (1 + 0.144 * M_cruise**2)**
 Swet_fuselage = 2 * (fuselage_length * fuselage_width + fuselage_length * fuselage_height + fuselage_width * fuselage_height)
 
 # ------------------------------
-# Downwash and effective angle
-# ------------------------------
-downwash_angle = (2 * CL_wing) / (np.pi * AR_wing)
-alpha_horizontal = alpha_wing - downwash_angle
-
-# ------------------------------
 # Zero-lift drag coefficient
 # ------------------------------
 CD0 = (Cf_wing * FF_wing * Swet_wing + Cf_fuselage * FF_fuselage * Swet_fuselage + Cf_tail * FF_tail * Swet_tail * Q) / S_wing
 # ------------------------------
 # Main
 # ------------------------------
-if __name__ == "__main__":
+if __name__ == "__mai\n__":
     print("CD0:", CD0)
     print("Wing wetted area:", Swet_wing)
     print("Tail max thickness:", max_tc_tail, "at", max_tc_loc_tail*100, "% chord")
     print("Fuselage wetted area:", Swet_fuselage)
+
+
+# ==================================================
+# PAYLOAD GEOMETRY (CUBE)
+# ==================================================
+
+cube_side = 0.56  # [m]
+
+A_cube = cube_side**2  # frontal area [m^2]
+
+CD_cube = 1.05  # bluff body drag coefficient (cube)
+
+# ==================================================
+# NET GEOMETRY (7 inch webbing net example)
+# ==================================================
+
+mesh_size_inch = 7
+mesh_size = mesh_size_inch * 0.0254  # [m]
+
+webbing_width_inch = 1
+webbing_width = webbing_width_inch * 0.0254  # [m]
+
+# ------------------------------
+# SOLIDITY CALCULATION
+# ------------------------------
+# square mesh approximation:
+# 2 strands per cell (horizontal + vertical)
+
+A_cell = mesh_size**2
+
+A_solid = (2 * webbing_width * mesh_size) - (webbing_width**2)
+
+sigma_net = A_solid / A_cell
+
+# ==================================================
+# NET DRAG MODEL PARAMETERS
+# ==================================================
+
+CD_screen = 1.0  # porous screen drag coefficient
+
+A_net_effective = sigma_net * A_cube  # projected blockage on cube reference area
+
+# ==================================================
+# FLOW CONDITIONS (use aircraft model inputs)
+# ==================================================
+
+q = 0.5 * rho_air * V_cruise**2  # dynamic pressure
+
+# ==================================================
+# DRAG COMPONENTS
+# ==================================================
+
+D_cube = q * CD_cube * A_cube
+
+D_net = q * CD_screen * A_net_effective
+
+D_payload = D_cube + D_net
+
+if __name__ == "__main__":
+    print("===== PAYLOAD DRAG MODULE =====")
+    
+    print("Cube drag [N]:", D_cube)
+    print("Net solidity sigma:", sigma_net)
+    print("Net drag [N]:", D_net)
+    print("Total payload drag [N]:", D_payload)
