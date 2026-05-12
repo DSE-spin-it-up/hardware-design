@@ -8,7 +8,7 @@ m_drone_empty = 10  # [kg]
 n_drones = 3  # [-]
 
 # --- Geometry ---
-b = 2.5  # Wingspan [m]
+b = 3  # Wingspan [m]
 AR = 6.0  # Aspect ratio [-]
 t_over_c_root = 0.12  # Root thickness-to-chord ratio [-]
 lam = 0.3  # Taper ratio [-]
@@ -133,11 +133,6 @@ def battery_mass(E_cruise, n_cells, voltage_cell):
 
     mass = a * (C ** b)
     return mass / 1000
-
-
-def battery_volume(E_cruise, battery_density):
-    volume = battery_density * (E_cruise / 3600)  # [L]
-    return volume / 1000  # [m^3]
 
 
 # battery_mass = E_cruise / (specific_energy * 3600)  # [kg]
