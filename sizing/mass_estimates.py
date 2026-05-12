@@ -2,9 +2,12 @@
 
 from pathlib import Path
 
+import numpy as np
+
 from .electrical_system import battery_mass_from_energy, motor_mass_from_kv, ElectricalResult
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
+from .structure import rho_cfrp, d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 
 
@@ -109,6 +112,38 @@ def tail_mass(
     return tail_volume * foam_density
 
 
+def rod_mass(
+    sizing: SizingResult,
+    density: float = rho_cfrp,
+    outer_diameter: float = rod_d,
+    thickness: float = rod_t,
+) -> float:
+    """Estimate carbon-fiber rod mass using span, diameter, thickness, and density.
+
+    Parameters
+    ----------
+    sizing : SizingResult
+        Sizing result containing wing span `b`
+    density : float
+        Carbon fiber density [kg/m^3]
+    outer_diameter : float
+        Rod outer diameter [m]
+    thickness : float
+        Rod wall thickness [m]
+
+    Returns
+    -------
+    float
+        Rod mass [kg]
+    """
+    length = sizing.inputs.b
+    inner_diameter = outer_diameter - 2.0 * thickness
+    if inner_diameter < 0.0:
+        raise ValueError("Rod thickness exceeds outer diameter")
+    volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
+    return volume * density
+
+
 def fuselage_mass(sizing: SizingResult, fuselage_inputs: FuselageInputs | None = None) -> float:
     """Get fuselage structural mass from fuselage sizing.
     
@@ -174,15 +209,17 @@ def total_mass(
     m_motors = motor_mass(electrical)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness, foam_density)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness, foam_density)
+    m_rod = rod_mass(sizing)
     m_fuselage = fuselage_mass(sizing, fuselage_inputs)
     
-    m_total = m_battery + m_motors + m_wing + m_tail + m_fuselage
+    m_total = m_battery + m_motors + m_wing + m_tail + m_rod + m_fuselage
     
     return {
         'battery': m_battery,
         'motors': m_motors,
         'wing': m_wing,
         'tail': m_tail,
+        'rod': m_rod,
         'fuselage': m_fuselage,
         'total': m_total,
     }

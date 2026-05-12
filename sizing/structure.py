@@ -25,5 +25,6 @@ y_max = d / 2  # [m]
 
 sigma = M * y_max / Ixx  # [Pa]
 
-print(Y_cfrp - sigma)
-print(d, t)
+if __name__ == "__main__":
+    print(Y_cfrp - sigma)
+    print(d, t)
