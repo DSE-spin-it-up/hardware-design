@@ -3,7 +3,9 @@ import numpy as np
 import control_surface_sizing as css
 
 # INPUTS
-
+n=6000/60  # [RPM] Propeller rotational speed
+C_p_climb=0.03  # Power coefficient during climb [-]
+t_climb=30  # Climb time [s]
 # --- Payload & Fleet ---
 m_payload = 60  # [kg]
 m_drone_empty = 10  # [kg]
@@ -25,13 +27,15 @@ n_props     = 2   # Number of propellers [-]
 eff_motor   = 0.8   # Motor efficiency [-]
 eff_prop    = 0.7 # Non-ideal propeller efficiency [-]
 T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
-J           = 0.4
+J           = 0.47
 C_t         = 0.04
 D_prop      = 20 * 0.0254
 
 # --- Flight Conditions ---
 h_cruise = 300  # Cruise altitude [m]
 V_cruise = 20  # Cruise speed [m/s]
+climb_rate = 10/3  # Climb rate [m/s]
+throttle_climb = 0.9  # Throttle setting during climb [-]
 
 # --- Mission ---
 R = 20000  # Range [m]
@@ -93,6 +97,18 @@ Cd = Cd0 + k * CL**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
 L = CL * q_cruise * Sw  # [N]
 D = Cd * q_cruise * Sw  # [N]
 LD_ratio = L / D  # [-]
+# --- Climby ---
+C_L_climb = (3*Cd0/k)**(1/2)
+V_climb = (2 * m_drone_loaded * g0 / (rho * Sw * C_L_climb))**0.5
+Cd_climb = Cd0 + k * C_L_climb**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
+D_climb = Cd_climb * 0.5 * rho * V_climb**2 * Sw
+T_climb=(D_climb+climb_rate*m_drone_loaded*g0/V_climb)/n_props
+P_climb=C_p_climb*rho*(V_climb/J)**3*D_prop**2*n_props
+
+c_t_required=T_climb/(rho*n**2*D_prop**4)
+J_climb=V_climb/(n*D_prop)
+KV=n*60/throttle_climb/voltage_battery
+  
 
 # --- Propulsion ---
 thrust_cruise = D
@@ -104,7 +120,9 @@ thrust_prop = C_t * rho * (V_cruise * D_prop / J) ** 2
 thrust_total_prop = thrust_prop * n_props
 C_p = (C_t / eff_prop) * J
 P_shaft = C_p * rho * ((V_cruise / J) ** 3) * (D_prop ** 2)
-KV = 60 * V_cruise / (J * D_prop * voltage_battery)
+rpm_cruise=V_cruise/(J*D_prop)*60
+throttle_cruise=rpm_cruise/(KV*voltage_battery)
+
 
 def motor_weight(KV):
     if KV < 100 or KV > 2000:
@@ -126,7 +144,7 @@ total_motor_weight = motor_weight * n_props
 # --- Energy & Battery ---
 I_battery = (P_shaft * n_props) / voltage_battery
 P_battery = voltage_battery * I_battery
-E_cruise     = P_battery * t_cruise                  # [J]
+E_cruise     = P_battery * t_cruise +P_climb* t_climb            # [J]
 
 
 def battery_mass(E_cruise, n_cells, voltage_cell):
@@ -232,3 +250,11 @@ if __name__ == "__main__":
     print(f"  Tail length          : {L_tail:.4f}  m")
     print(f"  Tail chord           : {ct:.4f}  m")
     print(f"  Cmde                 : {Cmde:.4f}  [-]")
+    print(f"  c_t_required         : {c_t_required:.4f}  [-]")
+    print(f"  J_climb              : {J_climb:.4f}  [-]")
+    print(f"  J for cruise            : {J:.2f}  m/s")
+    print(f"  Power required       : {P_climb:.2f}  W")
+    print(f"  Throttle for Climb   : {throttle_climb:.2f}  [-]")
+    print(f"  Throttle for Cruise  : {throttle_cruise:.2f}  [-]")
+    print(f"  Climb speed          : {V_climb:.2f}  m/s")
+    print(f"  Climb thrust         : {T_climb:.2f}  N")
