@@ -6,36 +6,40 @@ from initial_sizing import c
 
 
 class AirfoilGeometry:
-
-    file_name = "MH112.dat"
-
-    with open("airfoils/MH112.dat", "r") as f:
-        lines = f.read().splitlines()
-
-    polygon: np.ndarray = np.array(
-        [list(map(float, line.split())) for line in lines[1:] if line.strip()],
-        dtype=np.float64)
-
-    polygon_3d = np.hstack([polygon, np.zeros((len(polygon), 1))])
-    y_coords = polygon[:, 1]
-    global_thickness = np.max(y_coords) - np.min(y_coords)
+    def __init__(self, file_name="MH112.dat"):
+        self.file_name = file_name
+        with open(f"airfoils/{self.file_name}", "r") as f:
+            lines = f.read().splitlines()
+        self.polygon: np.ndarray = np.array(
+            [list(map(float, line.split())) for line in lines[1:] if line.strip()],
+            dtype=np.float64,
+        )
+        self.polygon_3d = np.hstack([self.polygon, np.zeros((len(self.polygon), 1))])
+        self.y_coords = self.polygon[:, 1]
+        self.global_thickness = np.max(self.y_coords) - np.min(self.y_coords)
 
     def spline(self, poly, x):
         x_coords = poly[:, 0]
-        diff = np.abs(x_coords - x)
-        diff_sorted = np.sort(diff, axis=0)
-        locs_x = np.array(
-            [
-                np.where(diff == diff_sorted[0])[0][0],
-                np.where(diff == diff_sorted[1])[0][0],
-            ]
-        )
-        locs_x = np.sort(locs_x)
-        points = np.array([poly[locs_x[0]], poly[locs_x[1]]])
-        a = (points[1, 1] - points[0, 1]) / (points[1, 0] - points[0, 0])
-        b = points[0, 1] - a * points[0, 0]
-        t = a * x + b
-        return t
+
+        # sort by distance to requested x
+        idx_sorted = np.argsort(np.abs(x_coords - x))
+
+        # find first pair with different x-values
+        p1 = poly[idx_sorted[0]]
+
+        for idx in idx_sorted[1:]:
+            p2 = poly[idx]
+
+            if not np.isclose(p1[0], p2[0]):
+                break
+        else:
+            return p1[1]
+
+        # linear interpolation
+        a = (p2[1] - p1[1]) / (p2[0] - p1[0])
+        b = p1[1] - a * p1[0]
+
+        return a * x + b
 
     def compute_thickness(self, x):
         poly = self.polygon
