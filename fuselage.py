@@ -16,7 +16,7 @@ battery_height=0.060
 housing_factor=1.5
 casing_factor=1.1
 
-fuselage_length=max(c_root,battery_length * housing_factor*casing_factor)
+fuselage_length=max(casing_factor*c_root,battery_length * housing_factor*casing_factor)
 fuselage_width=battery_width * casing_factor
 fuselage_height=battery_height * casing_factor
 

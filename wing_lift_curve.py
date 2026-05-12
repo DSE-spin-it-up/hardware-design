@@ -201,7 +201,7 @@ def sweep_alpha_llt(
     wing,
     polar,
     flight_base,
-    alpha_range_deg=(-5.0, 15.0, 1.0),
+    alpha_range_deg=(-15.0, 25.0, 1.0),
     *,
     N=50,
     n_y_grid=200,

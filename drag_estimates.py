@@ -15,6 +15,9 @@ S = si.Sw
 L = fus.fuselage_length
 W = fus.fuselage_width
 H = fus.fuselage_height
+CLw = si.CL
+ARw=si.AR
+alphaw = np.radians(5)  # angle of attack for downwash estimate [rad]
 
 MU = 1.82 * 10**(-5)
 LAM = 0
@@ -31,10 +34,15 @@ Re_fus = rho * V * L / MU
 Cf_fus = 0.455 / (np.log10(Re_wing)**2.58 * (1 + 0.144 * M**2)**0.65)
 Sw_fus = 2 * (L * W + L * H + W * H)
 
+downwash=(2*CLw)/(np.pi*ARw)
+alphah=alphaw-downwash
 
 
 CD0 = 1 / (Sw_fus + Sw_wing) * (Cf_wing * FF_wing * Sw_wing + Cf_fus * FF_fus * Sw_fus)
 
 
+
+
 if __name__ == "__main__":
     print("CD0", CD0)
+    print(Sw_fus)
