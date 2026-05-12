@@ -23,6 +23,7 @@ fuselage_length = fus.fuselage_length
 fuselage_width = fus.fuselage_width
 fuselage_height = fus.fuselage_height
 fineness_ratio = fus.fineness
+Q = 1.03
 
 AR_wing = si.AR
 CL_wing = si.CL
@@ -45,8 +46,7 @@ max_tc_tail, max_tc_loc_tail = tail_airfoil.compute_maximum_thickness()
 mu_air = 1.82e-5  # dynamic viscosity
 lam_wing = 0           # sweep angle
 lam_tail = 0           # sweep angle
-Vh_V = 0.85
-V_tail = Vh_V * V_cruise  # tail speed (assumed to be lower than wing speed due to downwash)
+V_tail = 0.85 * V_cruise  # tail speed (assumed to be lower than wing speed due to downwash)
 
 # Reynolds numbers
 Re_wing = rho_air * V_cruise * C_wing / mu_air
@@ -54,7 +54,6 @@ Re_tail = rho_air * V_tail * C_tail / mu_air
 
 # Mach number
 M_cruise = V_cruise / np.sqrt(R_air * gamma_air * T_isa)
-M_tail = Vh_V * M_cruise
 
 # ------------------------------
 # Skin friction and form factor
@@ -66,9 +65,9 @@ FF_wing = (1 + 0.6 / max_tc_loc_wing * max_tc_wing + 100 * max_tc_wing**4) * \
 Swet_wing = 2 * S_wing
 
 # Tail
-Cf_tail = 0.455 / (np.log10(Re_tail)**2.58 * (1 + 0.144 * M_cruise**2)**0.65)
+Cf_tail = 0.455 / (np.log10(Re_tail)**2.58 * (1 + 0.144 * (0.85 * M_cruise)**2)**0.65)
 FF_tail = (1 + 0.6 / max_tc_loc_tail * max_tc_tail + 100 * max_tc_tail**4) * \
-          (1.34 * M_tail**0.18 * (np.cos(lam_tail))**0.28)
+          (1.34 * (0.85 * M_cruise)**0.18 * (np.cos(lam_tail))**0.28)
 Swet_tail = 2 * S_tail  # or use actual tail area if different
 
 # ------------------------------
@@ -88,9 +87,7 @@ alpha_horizontal = alpha_wing - downwash_angle
 # ------------------------------
 # Zero-lift drag coefficient
 # ------------------------------
-CD0 = (Cf_wing * FF_wing * Swet_wing + Cf_fuselage * FF_fuselage * Swet_fuselage + Cf_tail * FF_tail * Swet_tail) / (Swet_fuselage + Swet_wing)
-
-
+CD0 = (Cf_wing * FF_wing * Swet_wing + Cf_fuselage * FF_fuselage * Swet_fuselage + Cf_tail * FF_tail * Swet_tail * Q) / S_wing
 # ------------------------------
 # Main
 # ------------------------------
