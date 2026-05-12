@@ -225,6 +225,7 @@ def main() -> None:
     print(f"  Wing mass    : {masses['wing']:.3f} kg")
     print(f"  Tail mass    : {masses['tail']:.3f} kg")
     print(f"  Rod mass     : {masses['rod']:.3f} kg")
+    print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
     print(f"  Total mass   : {masses['total']:.3f} kg")
     print("\n========== DRAG BUILDUP ==========")
