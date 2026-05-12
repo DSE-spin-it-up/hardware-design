@@ -1,4 +1,6 @@
+from matplotlib.pylab import radians, sin, cos
 import numpy as np
+import control_surface_sizing as css
 
 # INPUTS
 
@@ -53,10 +55,14 @@ R_air = 287.05  # [J/kg·K] specific gas constant for air
 Vv = 0.04  # Vertical tail volume coefficient [-]
 Vh = 0.50  # Horizontal tail volume coefficient [-]
 # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
-ARt = 4.5  # Tail aspect ratio [-]
+ARt = 6  # Tail aspect ratio [-]
 lam_t = 1  # Tail taper ratio [-]
-
-
+c_cont_to_c_wing = 0.3  # Ratio of control surface chord to wing chord at the same spanwise station [-]
+Cl_a_tail=5.72  # Lift curve slope of tail airfoil [-]
+Flying_wing = True  # Whether the design is a flying wing (no tail) or not
+sweep=15  # Sweep angle of the wing [degrees]
+St_Sw=0.25  # Tail area to wing area ratio [-]
+Cl_a_wing=5.72  # Lift curve slope of wing airfoil [-]
 # DERIVED VARIABLES
 #
 # --- Mass ---
@@ -80,6 +86,8 @@ q_cruise = 0.5 * rho * V_cruise**2  # [Pa]
 e = 1.78 * (1 - 0.045 * AR**0.68) - 0.64  # [-]
 CL = (m_drone_loaded * g0) / (q_cruise * Sw)  # [-]
 Cl_airfoil = (AR + 2) * CL / AR  # [-]
+if Flying_wing==True:
+    Cl_airfoil=Cl_airfoil/cos(radians(sweep))
 k = 1 / (np.pi * e * AR)  # [-]
 Cd = Cd0 + k * CL**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
 L = CL * q_cruise * Sw  # [N]
@@ -148,6 +156,10 @@ Sv = Vv * Sw * b / L_tail  # [m^2]
 bv = np.sqrt(2 * ARt * Sw) / 2  # [m]
 St = Sh + Sv  # [m^2]
 bt = np.sqrt(bh**2 + bv**2)  # [m]
+if Flying_wing==False:
+    Cmde=Vh*css.tau(c_cont_to_c_wing)*Cl_a_tail
+else:
+    Cmde=(c+b/2*sin(np.radians(sweep)))/c*St_Sw*css.tau(c_cont_to_c_wing)*Cl_a_wing
 
 
 def tail_chord(yb):
@@ -157,6 +169,9 @@ def tail_chord(yb):
 ct = tail_chord(0.5)  # [m]
 tt = ct * t_over_c_root  # [m]
 m_tail = foam_density * St * tt  # [kg]
+
+
+
 
 
 # DESIGN CRITERIA TESTS
@@ -216,3 +231,4 @@ if __name__ == "__main__":
     print(f"  Vertical tail area   : {Sv:.4f}  m²")
     print(f"  Tail length          : {L_tail:.4f}  m")
     print(f"  Tail chord           : {ct:.4f}  m")
+    print(f"  Cmde                 : {Cmde:.4f}  [-]")
