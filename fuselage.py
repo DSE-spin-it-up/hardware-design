@@ -23,10 +23,12 @@ fuselage_height=battery_height * casing_factor
 
 d_eq=np.sqrt(fuselage_width*fuselage_height)
 fineness=fuselage_length/d_eq
-print(c_root)
-print(fuselage_length)
-print(fuselage_width)
-print(fuselage_height)
-print(fineness)
+
+if __name__ == "__main__":
+    print(c_root)
+    print(fuselage_length)
+    print(fuselage_width)
+    print(fuselage_height)
+    print(fineness)
 
 
