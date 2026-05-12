@@ -133,7 +133,7 @@ def run(
     Sh = bh ** 2 / i.ARt
     L_tail = i.Vh * Sw * c / Sh
     Sv = i.Vv * Sw * i.b / L_tail
-    bv = np.sqrt(2 * i.ARt * Sw) / 2
+    bv = np.sqrt(2 * i.ARt * Sv) / 2
     St = Sh + Sv
     bt = np.sqrt(bh ** 2 + bv ** 2)
     ct = tail_chord(0.5, St, bt, i.lam_t)
