@@ -12,7 +12,7 @@ class FuselageInputs:
     battery_width: float = 0.090
     battery_height: float = 0.060
     # Battery aspect ratios. If both > 0, dimensions are recomputed from the
-    # required battery volume (from electrical sizing) and these ratios,
+    # required battery volume (from propulsion sizing) and these ratios,
     # overriding battery_length/width/height above.
     AR_lw: float = 0.0  # length / width
     AR_lh: float = 0.0  # length / height

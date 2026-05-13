@@ -4,7 +4,7 @@ Edit the design knobs below and run `python main.py`. The pipeline:
   1. Initial sizing with a guessed wing Cd0
   2. Battery + propulsion sizing
   3. Re-estimate Cd0 from fuselage (PLACEHOLDER — teammate)
-  4. Re-run sizing + electrical with the refined Cd0
+  4. Re-run sizing + propulsion with the refined Cd0
   5. Pick airfoil → LLT solve at the required wing CL
   6. Wing CL/CD vs CL sweep; check whether operating CL sits near max L/D
   7. Full-buildup CD / final L/D (PLACEHOLDER — teammate)
@@ -120,7 +120,7 @@ ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
 # Coarser sweep used inside the iteration loop to find max-L/D CL each pass.
 ALPHA_SWEEP_LOOP_DEG = (-2.0, 12.0, 15)
 
-# Sizing↔electrical↔fuselage↔drag↔mass↔wing-area iteration.
+# Sizing↔propulsion↔fuselage↔drag↔mass↔wing-area iteration.
 #   MASS_CLOSURE = False  → hold m_drone_empty at SIZING.m_drone_empty (requirement).
 #   MASS_CLOSURE = True   → feed total drone mass back into m_drone_empty each pass.
 #   SW_CLOSURE   = False  → hold b, AR (and therefore Sw) at the SIZING values.
@@ -215,11 +215,12 @@ def plot_convergence(
     CD0_history: list[float],
     mass_history: list[float],
     Sw_history: list[float],
+    cg_history: list[float],
     Cd0_guess: float,
     m_drone_guess: float,
     Sw_guess: float,
 ) -> None:
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+    fig, axes = plt.subplots(1, 4, figsize=(20, 4.5))
 
     cd_iters = np.arange(len(CD0_history) + 1)
     cd_values = np.array([Cd0_guess, *CD0_history])
@@ -253,6 +254,19 @@ def plot_convergence(
     axes[2].set_title("Wing area progression")
     axes[2].grid(True, alpha=0.3)
     axes[2].legend()
+
+    # CG only exists from iter 1 onward (depends on propulsion result).
+    cg_iters = np.arange(1, len(cg_history) + 1)
+    cg_values = np.array(cg_history)
+    axes[3].plot(cg_iters, cg_values, "o-")
+    axes[3].axhline(cg_values[-1], color="g", ls="--",
+                    label=f"converged x_cg = {cg_values[-1]:.4f} m")
+    cg_excursion = cg_values.max() - cg_values.min()
+    axes[3].set_xlabel("iteration")
+    axes[3].set_ylabel("x_cg from LEMAC [m]")
+    axes[3].set_title(f"CG excursion (Δ = {cg_excursion * 1000:.1f} mm)")
+    axes[3].grid(True, alpha=0.3)
+    axes[3].legend()
 
     fig.tight_layout()
     plt.show()
@@ -316,7 +330,7 @@ def main() -> None:
     print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
           f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
 
-    # ----- Steps 2-4: iterate electrical → fuselage → drag → mass → wing-area → sizing -----
+    # ----- Steps 2-4: iterate propulsion → fuselage → drag → mass → wing-area → sizing -----
     # Each pass feeds the refined CD0 back into sizing. If MASS_CLOSURE is True,
     # the buildup drone mass is also fed back into m_drone_empty. If SW_CLOSURE
     # is True, the wing area is resized so the operating CL sits at the max-L/D
@@ -324,7 +338,7 @@ def main() -> None:
     mode_bits = []
     mode_bits.append("mass-closure" if MASS_CLOSURE else "fixed m_drone")
     mode_bits.append("Sw-closure" if SW_CLOSURE else "fixed Sw")
-    print(f">>> Iterating electrical → fuselage → drag → mass → wing-area → sizing  "
+    print(f">>> Iterating propulsion → fuselage → drag → mass → wing-area → sizing  "
           f"[{', '.join(mode_bits)}]")
     exit_bits = [f"|ΔCD0| < {CD0_TOL:.0e}"]
     if MASS_CLOSURE:
@@ -340,6 +354,7 @@ def main() -> None:
     CD0_history: list[float] = []
     mass_history: list[float] = []
     Sw_history: list[float] = []
+    cg_history: list[float] = []
     CD0_prev = Cd0_guess
     m_prev = m_drone_guess
     Sw_prev = Sw_guess
@@ -366,6 +381,14 @@ def main() -> None:
             fuselage_inputs=FUSELAGE,
         )
         m_drone = masses["total"]
+        cg = mass_estimates.compute_cg(
+            sizing=sizing,
+            propulsion=propulsion,
+            airfoil_path=airfoil,
+            tail_airfoil_path=TAIL_AIRFOIL,
+            fuselage_inputs=FUSELAGE,
+        )
+        x_cg = cg["overall"]
 
         # --- Wing-area closure: resize Sw to put op-point at max-L/D for drone+payload ---
         if SW_CLOSURE:
@@ -395,6 +418,7 @@ def main() -> None:
         CD0_history.append(drag.CD0)
         mass_history.append(m_drone)
         Sw_history.append(sizing.Sw)
+        cg_history.append(x_cg)
         dCD0 = abs(drag.CD0 - CD0_prev)
         dM = abs(m_drone - m_prev)
         dSw = abs(sizing.Sw - Sw_prev)
@@ -404,6 +428,7 @@ def main() -> None:
               f"m_drone={m_drone:.3f}(Δ={dM:.1e})  "
               f"Sw={sizing.Sw:.4f}(Δ={dSw:.1e})  "
               f"b={sizing.inputs.b:.3f}  {cl_str}"
+              f"x_cg={x_cg:.4f}  "
               f"m_batt={propulsion.battery_mass:.3f}  "
               f"fus={fus.length:.3f}×{fus.width:.3f}×{fus.height:.3f}")
         mass_ok = (dM < MASS_TOL) if MASS_CLOSURE else True
@@ -432,7 +457,7 @@ def main() -> None:
             last_bits.append(f"|ΔSw|={dSw:.2e}")
         print(f"    ✗ Did NOT converge after {N_ITER_MAX} iterations "
               f"(last {', '.join(last_bits)}).")
-    # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
+    # Final pass with the converged Cd0 so propulsion/fus/drag match the latest sizing.
     propulsion = propulsion_sizing.run(sizing, PROPULSION)
     fus = fuselage.run(
         sizing,
@@ -443,7 +468,7 @@ def main() -> None:
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
     control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_convergence(
-        CD0_history, mass_history, Sw_history,
+        CD0_history, mass_history, Sw_history, cg_history,
         Cd0_guess, m_drone_guess, Sw_guess,
     )
 
