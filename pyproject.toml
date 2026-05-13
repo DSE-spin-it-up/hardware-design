@@ -10,4 +10,5 @@ dependencies = [
     "matplotlib>=3.8",
     "scipy-stubs~=1.17.1",
     "ruff>=0.15.12",
+    "pandas>=3.0.3",
 ]

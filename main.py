@@ -314,24 +314,6 @@ def main() -> None:
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
     print(f"  Total mass   : {masses['total']:.3f} kg")
-
-    print("\n========== CENTER OF GRAVITY ==========")
-    cgs = mass_estimates.compute_cg(
-        sizing=sizing,
-        electrical=electrical,
-        airfoil_path=airfoil,
-        tail_airfoil_path=TAIL_AIRFOIL,
-    )
-
-    print(f"  Fuselage CG    : {cgs['fuselage']:.3f} m")
-    print(f"  Battery CG     : {cgs['battery']:.3f} m")
-    print(f"  Motors CG      : {cgs['motors']:.3f} m")
-    print(f"  Wing rod CG    : {cgs['rod_wing']:.3f} m")
-    print(f"  Aileron rod CG : {cgs['rod_aileron']:.3f} m")
-    print(f"  Tail CG        : {cgs['tail']:.3f} m")
-    print(f"  PVC tubes CG   : {cgs['pvc_tubes']:.3f} m")
-    print(f"  Overall CG     : {cgs['overall']:.3f} m")
-
     print("\n========== DRAG BUILDUP ==========")
     drag_estimates.summary(drag)
 
