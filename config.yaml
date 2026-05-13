@@ -1,0 +1,129 @@
+# Design knobs for the sizing pipeline.
+# Edit values here and run `python main.py`. The loader at pipeline/config.py
+# reads this file and exposes each section as a dataclass on the same module.
+
+# Wing airfoil: .dat path or NACA digits (e.g. "2412"). Set to null to prompt at runtime.
+airfoil: airfoils/NACA4412.dat
+
+# Tail airfoil: .dat path or NACA digits. Symmetric sections are typical.
+tail_airfoil: airfoils/NACA0010.dat
+
+# Alpha sweep used to build the wing drag polar for the CL/CD plot [deg].
+# [start, end, n_points]
+alpha_sweep_deg: [-2.0, 12.0, 30]
+
+# Coarser sweep used inside the iteration loop to find max-L/D CL each pass.
+alpha_sweep_loop_deg: [-2.0, 12.0, 15]
+
+# ----- Convergence loop -----
+# Sizing ↔ propulsion ↔ fuselage ↔ drag ↔ mass ↔ wing-area iteration.
+#   mass_closure: false → hold m_drone_empty at sizing.m_drone_empty (requirement).
+#   mass_closure: true  → feed total drone mass back into m_drone_empty each pass.
+#   sw_closure:   false → hold b, AR (and therefore Sw) at the sizing values.
+#   sw_closure:   true  → resize Sw each pass so the operating CL sits at the max
+#                         L/D point of the drone+payload polar; AR is held fixed,
+#                         so b = sqrt(AR · Sw) floats.
+# Convergence requires every active criterion (CD0 always; m_drone if mass_closure;
+# Sw if sw_closure) to be inside its tolerance.
+mass_closure: true
+sw_closure: true
+n_iter_max: 20
+cd0_tol: 1.0e-4
+mass_tol: 1.0e-3   # kg
+sw_tol: 1.0e-3     # m²
+
+# ----- Initial / wing sizing -----
+sizing:
+  # Payload & fleet
+  m_payload: 60          # [kg]
+  m_drone_empty: 10      # [kg]
+  n_drones: 4            # [-]
+  # Geometry
+  b: 3.0                 # wingspan [m]
+  AR: 7.5                # aspect ratio [-]
+  lam: 1.0               # taper ratio [-]
+  # Aerodynamics
+  Cd0: 0.03              # initial guess; refined after fuselage sizing [-]
+  S_payload: 0.25        # payload frontal area [m^2]
+  Cd_payload: 1.0        # payload drag coefficient [-]
+  # Flight conditions
+  h_cruise: 100          # cruise altitude [m]
+  V_cruise: 20           # cruise speed [m/s]
+  # Mission
+  R: 20000               # range [m]
+  # Materials
+  foam_density: 48       # [kg/m^3]
+  # Tail
+  Vv: 0.04
+  Vh: 0.50
+  ARt: 4.5
+  lam_t: 1.0
+
+# ----- Propulsion -----
+propulsion:
+  # Propeller
+  csv_prop: data/20x10E_performance.csv
+  n_props: 2
+  D_prop: 0.508          # [m]  (= 20 * 0.0254 ; null to derive from csv_prop name)
+  prop_mass: 0.1         # [kg] mass per propeller
+  # Motor / drivetrain
+  eff_motor: 0.8
+  T_W_to: 2.0            # thrust-to-weight for take-off / VTOL [-]
+  throttle_max: 0.9      # design throttle cap at the sizing RPM [-]
+  # Climb segment
+  climb_rate: 3.333333   # [m/s]  (= 10 / 3)
+  t_climb: 30            # [s]
+  # Battery
+  n_cells: 6
+  voltage_cell: 3.7      # [V]
+  battery_density: 250   # [Wh/L]
+  # Propeller solver tuning (shared between cruise & climb)
+  cruise_rpm_init: 7000
+  climb_rpm_init: 12000
+  rpm_tol: 1.0
+  thrust_tol: 1.0        # matched to rpm_step (50 RPM ≈ 1 N thrust step)
+  max_iter: 200
+  rpm_step: 50.0
+  # VTOL/hover solver tuning — looser thrust tol because the table-step
+  # resolution (rpm_step) easily exceeds 0.5 N near hover RPM.
+  vtol_rpm_init: 5000
+  vtol_thrust_tol: 2.0
+  vtol_max_iter: 400
+  vtol_rpm_step: 25.0
+  # Verbosity — solver prints per-iteration tables; off by default.
+  verbose: false
+
+# ----- Fuselage -----
+# Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
+# in which case dimensions are recomputed from the required battery volume.
+# AR_lw / AR_lh below match the off-the-shelf 0.212 × 0.090 × 0.060 cell so the
+# starting shape is preserved but the cell scales with the propulsion-sized volume.
+fuselage:
+  battery_length: 0.212
+  battery_width: 0.090
+  battery_height: 0.060
+  AR_lw: 2.355555555555556   # length / width  (= 0.212 / 0.090)
+  AR_lh: 3.533333333333333   # length / height (= 0.212 / 0.060)
+  housing_factor: 1.5
+  casing_factor: 1.1
+
+# ----- Aileron / control surface -----
+control_surface:
+  cl_alpha: 6.283185307179586   # = 2 * pi [1/rad]
+  cd0_section: 0.04
+  roll_req_deg: 60.0
+  max_da_deg: 10.0
+  max_y_frac: 0.8
+  c_aileron_to_c_wing: 0.3
+
+# ----- CFRP rod sizing -----
+# Both rods solved closed-form for the thinnest wall that passes both a
+# tip-deflection (defl_max) and a compressive-stress (s_c / safety_factor)
+# limit. d is fixed by geometry (rod must fit inside the local section
+# thickness). tail_tc must match tail_airfoil.
+structure:
+  safety_factor: 1.2
+  defl_max: 0.05             # [m] 50 mm tip deflection budget
+  d_to_section_ratio: 0.8    # rod OD as fraction of section thickness
+  CLt_max: 1.0
+  tail_tc: 0.10              # matches NACA0010 tail
