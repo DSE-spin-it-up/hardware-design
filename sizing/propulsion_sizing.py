@@ -15,11 +15,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from sizing import initial_sizing, propeller_operating_point as prop_solver
-from sizing.electrical_system import (
-    battery_mass_from_energy,
-    battery_volume_from_energy,
-    motor_mass_from_kv,
-)
 from sizing.initial_sizing import SizingResult, g0
 
 
@@ -29,6 +24,39 @@ def _diameter_from_csv_name(csv_path: str) -> float:
     head = stem.split("x")[0]
     return int(head) * 0.0254
 
+def motor_mass_from_kv(KV: float) -> float:
+    """Linear motor-mass fit from KV rating; returns kg."""
+    if KV < 100 or KV > 2000:
+        raise ValueError(f"KV={KV} out of fit range [100, 2000]")
+    if KV < 500:
+        slope = (900 - 300) / (500 - 100)
+        mass_g = 900 - (KV - 100) * slope
+    else:
+        slope = (300 - 50) / (2000 - 500)
+        mass_g = 300 - (KV - 500) * slope
+    return mass_g / 1000
+
+
+def battery_mass_from_energy(E_cruise: float, n_cells: int, voltage_cell: float) -> float:
+    """Battery mass [kg] from required cruise energy [J]."""
+    voltage = n_cells * voltage_cell
+    C = E_cruise * 1000 / (3600 * voltage)
+    if n_cells == 6:
+        a, b = 0.3988, 0.8810
+    else:
+        raise NotImplementedError(f"battery_mass fit not available for n_cells={n_cells}")
+    mass_g = a * (C ** b)
+    return mass_g / 1000
+
+
+def battery_volume_from_energy(E_cruise: float, battery_density: float) -> float:
+    """Battery volume [m^3] from required cruise energy [J].
+
+    battery_density is in [Wh/L], so volume_L = E_Wh / battery_density.
+    """
+    volume_L = (E_cruise / 3600) / battery_density
+    return volume_L / 1000
+
 
 @dataclass
 class PropulsionInputs:
@@ -36,6 +64,7 @@ class PropulsionInputs:
     csv_prop: str = "data/20x10E_performance.csv"
     n_props: int = 2
     D_prop: float | None = None  # [m] — derived from csv_prop name if None
+    prop_mass: float = 0.1       # [kg] — mass per propeller
     # Motor / drivetrain
     eff_motor: float = 0.8
     T_W_to: float = 2.0          # thrust-to-weight for take-off / VTOL [-]

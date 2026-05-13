@@ -7,26 +7,26 @@ import numpy as np
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
 from .materials import CFRP, EPP
-from .electrical_system import ElectricalResult
+from .propulsion_sizing import PropulsionInputs, PropulsionResult
 from .structure import d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 from .config import MaterialsConfig
 
 CONFIG = MaterialsConfig()
 
-def battery_mass(electrical: ElectricalResult) -> float:
-    """Battery mass [kg] from the electrical sizing result."""
-    return electrical.battery_mass
+def battery_mass(propulsion: PropulsionResult) -> float:
+    """Battery mass [kg] from the propulsion sizing result."""
+    return propulsion.battery_mass
 
 
-def motor_mass(electrical: ElectricalResult) -> float:
-    """Total motor mass [kg] from the electrical sizing result."""
-    return electrical.total_motor_mass
+def motor_mass(propulsion: PropulsionResult) -> float:
+    """Total motor mass [kg] from the propulsion sizing result."""
+    return propulsion.total_motor_mass
 
 
-def prop_mass(electrical: ElectricalResult) -> float:
-    """Total propeller mass [kg] from the electrical sizing result."""
-    return electrical.total_prop_mass
+def prop_mass(propulsion: PropulsionResult) -> float:
+    """Total propeller mass [kg] from the propulsion sizing result."""
+    return propulsion.inputs.n_props * propulsion.inputs.prop_mass
 
 
 def wing_mass(
@@ -375,7 +375,7 @@ def pvc_tubes_mass() -> float:
 
 def compute_cg(
     sizing: SizingResult,
-    electrical: ElectricalResult,
+    propulsion: PropulsionResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -390,8 +390,8 @@ def compute_cg(
     ----------
     sizing : SizingResult
         Sizing result
-    electrical : ElectricalResult
-        Electrical system result
+    propulsion : PropulsionResult
+        Propulsion system result
     airfoil_path : str | Path
         Wing airfoil path
     tail_airfoil_path : str | Path
@@ -431,8 +431,8 @@ def compute_cg(
 
     # Get component masses
     m_fus = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
-    m_batt = battery_mass(electrical)
-    m_motor = motor_mass(electrical)
+    m_batt = battery_mass(propulsion)
+    m_motor = motor_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path)
     m_rod_single = rod_mass(sizing)
     m_tail = tail_mass(sizing, tail_airfoil_path)
@@ -472,7 +472,7 @@ def compute_cg(
 
 def total_mass(
     sizing: SizingResult,
-    electrical: ElectricalResult,
+    propulsion: PropulsionResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -480,9 +480,9 @@ def total_mass(
     tail_thickness: float = 0.08,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components."""
-    m_battery = battery_mass(electrical)
-    m_motors = motor_mass(electrical)
-    m_props = prop_mass(electrical)
+    m_battery = battery_mass(propulsion)
+    m_motors = motor_mass(propulsion)
+    m_props = prop_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = 2 * rod_mass(sizing)

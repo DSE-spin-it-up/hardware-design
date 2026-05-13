@@ -21,9 +21,9 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
 from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import control_surface_sizing, electrical_system, fuselage, initial_sizing, mass_estimates
+from sizing import control_surface_sizing, propulsion_sizing, fuselage, initial_sizing, mass_estimates
 from sizing.control_surface_sizing import ControlSurfaceInputs
-from sizing.electrical_system import ElectricalInputs, ElectricalResult
+from sizing.propulsion_sizing import PropulsionInputs
 from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
 
@@ -34,11 +34,11 @@ from sizing.initial_sizing import SizingInputs, SizingResult
 SIZING = SizingInputs(
     m_payload=60,
     m_drone_empty=10,
-    n_drones=3,
+    n_drones=4,
     b=3.0,
     AR=7.5,
     lam=1.0,
-    Cd0=0.045,            # initial guess; refined after fuselage sizing
+    Cd0=0.03,            # initial guess; refined after fuselage sizing
     S_payload=0.25,
     Cd_payload=1.0,
     h_cruise=100,
@@ -51,19 +51,38 @@ SIZING = SizingInputs(
     lam_t=1.0,
 )
 
-ELECTRICAL = ElectricalInputs(
+PROPULSION = PropulsionInputs(
+    csv_prop="data/20x10E_performance.csv",
     n_props=2,
+    D_prop=20 * 0.0254,  # [m] — derived from csv_prop name if None
+    prop_mass=0.1,       # [kg] — mass per propeller
+    # Motor / drivetrain
     eff_motor=0.8,
-    eff_prop=0.7,
-    T_W_to=2.0,
-    J=0.4,
-    C_t=0.04,
-    D_prop=20 * 0.0254,
-    prop_mass=0.1,
+    T_W_to=2.0,          # thrust-to-weight for take-off / VTOL [-]
+    throttle_max=0.9,    # design throttle cap at the sizing RPM [-]
+    # Climb segment
+    climb_rate=10 / 3,   # [m/s]
+    t_climb=30,          # [s]
+    # Battery
     n_cells=6,
-    voltage_cell=3.7,
-    battery_density=250,
-    eff_battery=0.90,
+    voltage_cell=3.7,    # [V]
+    battery_density=250, # [Wh/L]
+    # Propeller solver tuning (shared between cruise & climb)
+    cruise_rpm_init=10000,
+    climb_rpm_init=10000,
+    rpm_tol=1.0,
+    thrust_tol=0.5,
+    max_iter=200,
+    rpm_step=50.0,
+    # VTOL/hover solver tuning — looser thrust tol because the table-step
+    # resolution (rpm_step) easily exceeds 0.5 N near hover RPM.
+    vtol_rpm_init=5000,
+    vtol_thrust_tol=2.0,
+    vtol_max_iter=400,
+    vtol_rpm_step=25.0,
+    # Verbosity — solver prints per-iteration tables; off by default so the
+    # main.py iteration loop stays readable.
+    verbose=True,
 )
 
 # Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
@@ -274,7 +293,7 @@ def plot_drone_ld(
 # ============================================================
 
 def main() -> None:
-    electrical_inputs = ELECTRICAL
+    propulsion_inputs = PROPULSION
 
     # ----- Step 0: resolve airfoil → read t/c from its geometry -----
     airfoil = resolve_airfoil(AIRFOIL)
@@ -326,11 +345,11 @@ def main() -> None:
     Sw_prev = Sw_guess
     converged = False
     for it in range(N_ITER_MAX):
-        electrical = electrical_system.run(sizing, electrical_inputs)
+        propulsion = propulsion_sizing.run(sizing, propulsion_inputs)
         fus = fuselage.run(
             sizing,
             FUSELAGE,
-            battery_volume=electrical.battery_volume,
+            battery_volume=propulsion.battery_volume,
             airfoil_path=airfoil,
         )
         if np.isclose(fus.height, FUSELAGE.casing_factor * fus.battery_height):
@@ -341,7 +360,7 @@ def main() -> None:
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
         masses = mass_estimates.total_mass(
             sizing=sizing,
-            electrical=electrical,
+            propulsion=propulsion,
             airfoil_path=airfoil,
             tail_airfoil_path=TAIL_AIRFOIL,
             fuselage_inputs=FUSELAGE,
@@ -385,7 +404,7 @@ def main() -> None:
               f"m_drone={m_drone:.3f}(Δ={dM:.1e})  "
               f"Sw={sizing.Sw:.4f}(Δ={dSw:.1e})  "
               f"b={sizing.inputs.b:.3f}  {cl_str}"
-              f"m_batt={electrical.battery_mass:.3f}  "
+              f"m_batt={propulsion.battery_mass:.3f}  "
               f"fus={fus.length:.3f}×{fus.width:.3f}×{fus.height:.3f}")
         mass_ok = (dM < MASS_TOL) if MASS_CLOSURE else True
         sw_ok = (dSw < SW_TOL) if SW_CLOSURE else True
@@ -414,11 +433,11 @@ def main() -> None:
         print(f"    ✗ Did NOT converge after {N_ITER_MAX} iterations "
               f"(last {', '.join(last_bits)}).")
     # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
-    electrical = electrical_system.run(sizing, electrical_inputs)
+    propulsion = propulsion_sizing.run(sizing, PROPULSION)
     fus = fuselage.run(
         sizing,
         FUSELAGE,
-        battery_volume=electrical.battery_volume,
+        battery_volume=propulsion.battery_volume,
         airfoil_path=airfoil,
     )
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
@@ -430,8 +449,8 @@ def main() -> None:
 
     print("========== INITIAL SIZING ==========")
     initial_sizing.summary(sizing)
-    print("\n========== ELECTRICAL SYSTEM ==========")
-    electrical_system.summary(electrical)
+    print("\n========== PROPULSION SYSTEM ==========")
+    propulsion_sizing.summary(propulsion)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(fus)
     print("\n========== CONTROL SURFACES ==========")
@@ -439,7 +458,7 @@ def main() -> None:
     print("\n========== MASS ESTIMATES ==========")
     masses = mass_estimates.total_mass(
         sizing=sizing,
-        electrical=electrical,
+        propulsion=propulsion,
         airfoil_path=airfoil,
         tail_airfoil_path=TAIL_AIRFOIL,
     )
