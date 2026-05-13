@@ -342,4 +342,5 @@ def summary(r: PropulsionResult) -> None:
 
 
 if __name__ == "__main__":
-    summary(run(initial_sizing._default))
+    from sizing.initial_sizing import SizingInputs
+    summary(run(initial_sizing.run(SizingInputs())))

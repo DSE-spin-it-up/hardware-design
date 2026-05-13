@@ -21,11 +21,12 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
 from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import control_surface_sizing, propulsion_sizing, fuselage, initial_sizing, mass_estimates
+from sizing import control_surface_sizing, propulsion_sizing, fuselage, initial_sizing, mass_estimates, structure
 from sizing.control_surface_sizing import ControlSurfaceInputs
 from sizing.propulsion_sizing import PropulsionInputs
 from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
+from sizing.structure import StructureInputs
 
 # ============================================================
 # DESIGN KNOBS
@@ -34,7 +35,7 @@ from sizing.initial_sizing import SizingInputs, SizingResult
 SIZING = SizingInputs(
     m_payload=60,
     m_drone_empty=10,
-    n_drones=4,
+    n_drones=3,
     b=3.0,
     AR=7.5,
     lam=1.0,
@@ -68,8 +69,8 @@ PROPULSION = PropulsionInputs(
     voltage_cell=3.7,    # [V]
     battery_density=250, # [Wh/L]
     # Propeller solver tuning (shared between cruise & climb)
-    cruise_rpm_init=10000,
-    climb_rpm_init=10000,
+    cruise_rpm_init=7000,
+    climb_rpm_init=12000,
     rpm_tol=1.0,
     thrust_tol=0.5,
     max_iter=200,
@@ -82,7 +83,7 @@ PROPULSION = PropulsionInputs(
     vtol_rpm_step=25.0,
     # Verbosity — solver prints per-iteration tables; off by default so the
     # main.py iteration loop stays readable.
-    verbose=True,
+    verbose=False,
 )
 
 # Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
@@ -106,6 +107,18 @@ CONTROL_SURFACE = ControlSurfaceInputs(
     max_da_deg=10.0,
     max_y_frac=0.8,
     c_aileron_to_c_wing=0.3,
+)
+
+# CFRP rod sizing — both rods solved closed-form for the thinnest wall that
+# passes both a tip-deflection (defl_max) and a compressive-stress
+# (s_c / safety_factor) limit. d is fixed by geometry (rod must fit inside
+# the local section thickness). tail_tc must match TAIL_AIRFOIL.
+STRUCTURE = StructureInputs(
+    safety_factor=1.2,
+    defl_max=0.05,             # [m] 50 mm tip deflection budget
+    d_to_section_ratio=0.8,    # rod OD as fraction of section thickness
+    CLt_max=1.0,
+    tail_tc=0.10,              # matches NACA0010 tail
 )
 
 # Wing airfoil: .dat path or NACA digits (e.g. "2412"). If None, the pipeline prompts at runtime.
@@ -373,9 +386,11 @@ def main() -> None:
                 "airfoil height is not being used for fuselage sizing."
             )
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+        struct = structure.run(sizing, STRUCTURE)
         masses = mass_estimates.total_mass(
             sizing=sizing,
             propulsion=propulsion,
+            structure=struct,
             airfoil_path=airfoil,
             tail_airfoil_path=TAIL_AIRFOIL,
             fuselage_inputs=FUSELAGE,
@@ -384,6 +399,7 @@ def main() -> None:
         cg = mass_estimates.compute_cg(
             sizing=sizing,
             propulsion=propulsion,
+            structure=struct,
             airfoil_path=airfoil,
             tail_airfoil_path=TAIL_AIRFOIL,
             fuselage_inputs=FUSELAGE,
@@ -429,6 +445,8 @@ def main() -> None:
               f"Sw={sizing.Sw:.4f}(Δ={dSw:.1e})  "
               f"b={sizing.inputs.b:.3f}  {cl_str}"
               f"x_cg={x_cg:.4f}  "
+              f"t_w={struct.t_w * 1000:.2f}mm({struct.fail_mode_w[:4]})  "
+              f"t_t={struct.t_t * 1000:.2f}mm({struct.fail_mode_t[:4]})  "
               f"m_batt={propulsion.battery_mass:.3f}  "
               f"fus={fus.length:.3f}×{fus.width:.3f}×{fus.height:.3f}")
         mass_ok = (dM < MASS_TOL) if MASS_CLOSURE else True
@@ -466,6 +484,7 @@ def main() -> None:
         airfoil_path=airfoil,
     )
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+    struct = structure.run(sizing, STRUCTURE)
     control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_convergence(
         CD0_history, mass_history, Sw_history, cg_history,
@@ -480,12 +499,16 @@ def main() -> None:
     fuselage.summary(fus)
     print("\n========== CONTROL SURFACES ==========")
     control_surface_sizing.summary(control_surface)
+    print("\n========== STRUCTURE ==========")
+    structure.summary(struct)
     print("\n========== MASS ESTIMATES ==========")
     masses = mass_estimates.total_mass(
         sizing=sizing,
         propulsion=propulsion,
+        structure=struct,
         airfoil_path=airfoil,
         tail_airfoil_path=TAIL_AIRFOIL,
+        fuselage_inputs=FUSELAGE,
     )
     print(f"  Battery mass : {masses['battery']:.3f} kg")
     print(f"  Motor mass   : {masses['motors']:.3f} kg")
@@ -503,6 +526,7 @@ def main() -> None:
     cg = mass_estimates.compute_cg(
         sizing=sizing,
         propulsion=propulsion,
+        structure=struct,
         airfoil_path=airfoil,
         tail_airfoil_path=TAIL_AIRFOIL,
         fuselage_inputs=FUSELAGE,

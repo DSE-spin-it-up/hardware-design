@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -209,16 +209,5 @@ def summary(r: SizingResult) -> None:
     print(f"  Tail chord           : {r.ct:.4f}  m")
 
 
-# Default run at module load — exposes inputs+result fields as module attributes
-# so downstream modules (drag_estimates, structure, airfoil_shape,
-# control_surface_sizing) keep working with `from initial_sizing import …`.
-_default = run()
-for _f in fields(SizingInputs):
-    globals()[_f.name] = getattr(_default.inputs, _f.name)
-for _f in fields(SizingResult):
-    if _f.name != "inputs":
-        globals()[_f.name] = getattr(_default, _f.name)
-
-
 if __name__ == "__main__":
-    summary(_default)
+    summary(run(SizingInputs()))

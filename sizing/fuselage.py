@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
 from sizing.initial_sizing import SizingResult
@@ -112,14 +112,7 @@ def summary(r: FuselageResult) -> None:
     print(f"  Shell volume         : {r.volume_shell:.6f}  m³")
 
 
-# Default run at module load — exposes inputs+result fields as module attributes.
-from sizing import initial_sizing as _is  # noqa: E402
-_default = run(_is._default)
-for _f in fields(FuselageInputs):
-    globals()[_f.name] = getattr(_default.inputs, _f.name)
-for _f in fields(FuselageResult):
-    if _f.name != "inputs":
-        globals()[_f.name] = getattr(_default, _f.name)
-
 if __name__ == "__main__":
-    summary(_default)
+    from sizing import initial_sizing
+    from sizing.initial_sizing import SizingInputs
+    summary(run(initial_sizing.run(SizingInputs())))

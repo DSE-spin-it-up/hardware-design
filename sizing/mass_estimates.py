@@ -8,7 +8,7 @@ from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
 from .materials import CFRP, EPP
 from .propulsion_sizing import PropulsionInputs, PropulsionResult
-from .structure import d_w as rod_d, t_w as rod_t
+from .structure import StructureResult
 from aerodynamics.airfoil_shape import AirfoilGeometry
 from .config import MaterialsConfig
 
@@ -82,64 +82,6 @@ def tail_mass(
     tail_span = sizing.bt
     tail_volume = airfoil_area * tail_span * thickness
     return CONFIG.tail.mass(tail_volume)
-
-
-def rod_mass(
-    sizing: SizingResult,
-    outer_diameter: float = rod_d,
-    thickness: float = rod_t,
-) -> float:
-    """Estimate carbon-fiber rod mass using span, diameter, thickness, and material.
-
-    Parameters
-    ----------
-    sizing : SizingResult
-        Sizing result containing wing span `b`
-    outer_diameter : float
-        Rod outer diameter [m]
-    thickness : float
-        Rod wall thickness [m]
-
-    Returns
-    -------
-    float
-        Rod mass [kg]
-    """
-    length = sizing.inputs.b
-    inner_diameter = outer_diameter - 2.0 * thickness
-    if inner_diameter < 0.0:
-        raise ValueError("Rod thickness exceeds outer diameter")
-    volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return CONFIG.rod.mass(volume)
-
-
-def tail_rod_mass(
-    sizing: SizingResult,
-    outer_diameter: float = rod_d,
-    thickness: float = rod_t,
-) -> float:
-    """Estimate carbon-fiber rod mass using tail length, diameter, thickness, and material.
-
-    Parameters
-    ----------
-    sizing : SizingResult
-        Sizing result containing tail length `L_tail`
-    outer_diameter : float
-        Rod outer diameter [m]
-    thickness : float
-        Rod wall thickness [m]
-
-    Returns
-    -------
-    float
-        Tail rod mass [kg]
-    """
-    length = sizing.L_tail
-    inner_diameter = outer_diameter - 2.0 * thickness
-    if inner_diameter < 0.0:
-        raise ValueError("Rod thickness exceeds outer diameter")
-    volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return CONFIG.rod.mass(volume)
 
 
 def fuselage_mass(
@@ -376,6 +318,7 @@ def pvc_tubes_mass() -> float:
 def compute_cg(
     sizing: SizingResult,
     propulsion: PropulsionResult,
+    structure: StructureResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -392,6 +335,8 @@ def compute_cg(
         Sizing result
     propulsion : PropulsionResult
         Propulsion system result
+    structure : StructureResult
+        Rod sizing result; supplies wing/tail rod masses.
     airfoil_path : str | Path
         Wing airfoil path
     tail_airfoil_path : str | Path
@@ -434,9 +379,9 @@ def compute_cg(
     m_batt = battery_mass(propulsion)
     m_motor = motor_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path)
-    m_rod_single = rod_mass(sizing)
+    m_rod_single = structure.mass_w
     m_tail = tail_mass(sizing, tail_airfoil_path)
-    m_tail_rod = tail_rod_mass(sizing)
+    m_tail_rod = structure.mass_t
     m_pvc = pvc_tubes_mass_override if pvc_tubes_mass_override is not None else pvc_tubes_mass()
 
     # Compute weighted CG
@@ -473,6 +418,7 @@ def compute_cg(
 def total_mass(
     sizing: SizingResult,
     propulsion: PropulsionResult,
+    structure: StructureResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -485,8 +431,8 @@ def total_mass(
     m_props = prop_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
-    m_rod = 2 * rod_mass(sizing)
-    m_tail_rod = tail_rod_mass(sizing)
+    m_rod = 2 * structure.mass_w
+    m_tail_rod = structure.mass_t
     m_fuselage = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
     m_pvc = pvc_tubes_mass()
 

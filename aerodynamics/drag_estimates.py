@@ -162,7 +162,7 @@ def summary(r: DragResult) -> None:
 
 if __name__ == "__main__":
     from sizing import initial_sizing, fuselage as fus_mod
-    s = initial_sizing._default
-    f = fus_mod._default
-    r = run(s, f)
-    summary(r)
+    from sizing.initial_sizing import SizingInputs
+    s = initial_sizing.run(SizingInputs())
+    f = fus_mod.run(s)
+    summary(run(s, f))
