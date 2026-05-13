@@ -1,9 +1,9 @@
 class Material:
     def __init__(self, E, rho, Y, s_t):
-        self.E = E
-        self.rho = rho
-        self.Y = Y
-        self.s_t = s_t
+        self.E = E  # Pa
+        self.rho = rho  # kg/m^3
+        self.Y = Y  # Pa
+        self.s_t = s_t  # Pa
 
     def mass(self, volume: float) -> float:
         """Compute mass from a volume using this material density."""
@@ -24,7 +24,7 @@ class CFRP(Material):  # https://www.researchgate.net/publication/342938721_Expe
 class EPP(Material):  # https://www.foambymail.com/polypropylene-foam-sheet.html?srsltid=AfmBOorBTKilq9ebl6LLzYihjew-KWV77s8RLA2MVI6mPx15FnjyM8NA
     def __init__(self):
         super().__init__(
-            E=230e9,
+            E=5*262e3,
             rho=20.824002386148,
             Y=262e3,
             s_t=262e3
@@ -35,6 +35,15 @@ class CF_PLA(Material):  # https://www.iemai3d.com/wp-content/uploads/2020/12/CF
         super().__init__(
             E=4950e6,
             rho=1.29e3,
-            Y= 48e6,
-            s_t = 48e6
+            Y=48e6,
+            s_t=48e6
+        )
+
+class PLA(Material):  # https://www.sciencedirect.com/science/article/pii/S0169409X16302058#s0010
+    def __init__(self):
+        super().__init__(
+            E=3.5e9,
+            rho=1.252e3,
+            Y=70e6,
+            s_t=59e6,
         )
