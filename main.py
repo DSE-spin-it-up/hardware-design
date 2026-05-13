@@ -325,7 +325,27 @@ def main() -> None:
     print(f"  Rod mass     : {masses['rod']:.3f} kg")
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
+    if 'pvc_tubes' in masses:
+        print(f"  PVC tubes    : {masses['pvc_tubes']:.3f} kg")
     print(f"  Total mass   : {masses['total']:.3f} kg")
+    
+    print("\n========== CENTER OF GRAVITY ==========")
+    cg = mass_estimates.compute_cg(
+        sizing=sizing,
+        electrical=electrical,
+        airfoil_path=airfoil,
+        tail_airfoil_path=TAIL_AIRFOIL,
+    )
+    print(f"  Fuselage CG     : {cg['fuselage']:8.4f}  m from LEMAC")
+    print(f"  Battery CG      : {cg['battery']:8.4f}  m from LEMAC")
+    print(f"  Motors CG       : {cg['motors']:8.4f}  m from LEMAC")
+    print(f"  Rod wing CG     : {cg['rod_wing']:8.4f}  m from LEMAC")
+    print(f"  Rod aileron CG  : {cg['rod_aileron']:8.4f}  m from LEMAC")
+    print(f"  Tail CG         : {cg['tail']:8.4f}  m from LEMAC")
+    print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
+    print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
+    print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")
+    
     print("\n========== DRAG BUILDUP ==========")
     drag_estimates.summary(drag)
 
