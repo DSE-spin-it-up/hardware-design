@@ -172,6 +172,121 @@ def solve(csv_file, target_thrust, cruise_speed, diameter,
     print(f"\n  Did not converge within {max_iter} iterations.")
     return None
 
+def static_thrust_at_rpm(df, rpm):
+    """
+    Return the static thrust (J = 0) at a given RPM by interpolating
+    between the two nearest RPM datasets in the table.
+ 
+    At hover / VTOL the forward speed is zero, so J = 0 regardless of RPM.
+    The table rows with the smallest J value for each RPM are used as the
+    J=0 proxy (most propeller tables start at J=0 or near-zero).
+    """
+    rpms = np.sort(df["RPM"].unique())
+    rpm  = float(np.clip(rpm, rpms[0], rpms[-1]))
+ 
+    idx_hi = int(np.searchsorted(rpms, rpm))
+    idx_hi = max(1, min(idx_hi, len(rpms) - 1))
+    idx_lo = idx_hi - 1
+ 
+    rpm_lo, rpm_hi = rpms[idx_lo], rpms[idx_hi]
+    w = 0.0 if rpm_lo == rpm_hi else (rpm - rpm_lo) / (rpm_hi - rpm_lo)
+ 
+    def j0_lookup(r):
+        sub = df[df["RPM"] == r].sort_values("J")
+        # Use the row with the smallest J as the static (J=0) condition
+        row = sub.iloc[0]
+        return float(row["Thrust (N)"]), float(row["Ct"]), float(row["Cp"])
+ 
+    t_lo, ct_lo, cp_lo = j0_lookup(rpm_lo)
+    t_hi, ct_hi, cp_hi = j0_lookup(rpm_hi)
+ 
+    return ((1 - w) * t_lo  + w * t_hi,
+            (1 - w) * ct_lo + w * ct_hi,
+            (1 - w) * cp_lo + w * cp_hi)
+
+def vtolsolve(csv_file, max_thrust, diameter,
+              rpm_init=5000, thrust_tol=1, max_iter=400, rpm_step=50):
+    """
+    VTOL / Hover Operating Point Finder
+    =====================================
+    Finds the RPM required to produce `max_thrust` [N] at zero forward
+    speed (hover condition).
+ 
+    At V = 0 the advance ratio J = V / (n*D) = 0 for every RPM, so
+    the algorithm walks RPM directly until the static thrust matches
+    the target within `thrust_tol`.
+ 
+    Parameters
+    ----------
+    csv_file   : str    Path to the propeller performance CSV.
+    max_thrust : float  Required hover thrust [N].
+    diameter   : float  Propeller diameter [m].
+    rpm_init   : float  Initial RPM guess (defaults to mid-range of table).
+    thrust_tol : float  Convergence tolerance [N]  (default 0.5 N).
+    max_iter   : int    Maximum iterations          (default 200).
+    rpm_step   : float  RPM walk step size          (default 50 RPM).
+ 
+    Returns
+    -------
+    dict with keys RPM, J, Thrust, Ct, Cp  — or None if not converged.
+    """
+    df   = load_data(csv_file)
+    rpms = np.sort(df["RPM"].unique())
+ 
+    # Default initial RPM: mid-range of available table
+    if rpm_init is None:
+        rpm_init = float(rpms[len(rpms) // 2])
+ 
+    print(f"\n{'='*60}")
+    print(f"  [VTOL / Hover mode]")
+    print(f"  Target thrust  : {max_thrust:.2f} N")
+    print(f"  Forward speed  : 0.00 m/s  (hover)")
+    print(f"  J              : 0.0000  (fixed, V = 0)")
+    print(f"  Diameter       : {diameter/0.0254:.1f} in  ({diameter*1000:.0f} mm)")
+    print(f"  Starting RPM   : {rpm_init:.0f}")
+    print(f"{'='*60}")
+    print(f"{'Iter':>4}  {'RPM':>10}  {'J':>8}  {'Thrust':>8}  {'Error':>8}")
+    print(f"{'----':>4}  {'----------':>10}  {'--------':>8}  {'--------':>8}  {'--------':>8}")
+ 
+    rpm = float(rpm_init)
+ 
+    # Determine walk direction from initial evaluation
+    T0, _, _ = static_thrust_at_rpm(df, rpm)
+    direction = +1 if T0 < max_thrust else -1   # need more thrust -> raise RPM
+ 
+    for i in range(1, max_iter + 1):
+        # Clamp RPM to table bounds
+        rpm = float(np.clip(rpm, rpms[0], rpms[-1]))
+ 
+        T, Ct, Cp = static_thrust_at_rpm(df, rpm)
+        err = T - max_thrust
+ 
+        print(f"{i:>4}  {rpm:>10.0f}  {'0.0000':>8}  "
+              f"{T:>8.3f}  {err:>+8.3f}")
+ 
+        if abs(err) <= thrust_tol:
+            print(f"\n  Converged in {i} iteration(s).")
+            print(f"\n{chr(8212)*60}")
+            print(f"  VTOL Operating point:")
+            print(f"    RPM        = {rpm:.0f} RPM")
+            print(f"    J          = 0.0000  (hover)")
+            print(f"    Thrust     = {T:.3f} N   (target: {max_thrust:.2f} N)")
+            print(f"    Ct         = {Ct:.4f}")
+            print(f"    Cp         = {Cp:.4f}")
+            print(f"{chr(8212)*60}\n")
+            return {"RPM": rpm, "J": 0.0, "Thrust": T, "Ct": Ct, "Cp": Cp}
+ 
+        # Detect if we've hit table bounds without converging
+        if (direction == +1 and rpm >= rpms[-1]) or \
+           (direction == -1 and rpm <= rpms[0]):
+            print(f"\n  Reached table boundary (RPM = {rpm:.0f}) without converging.")
+            print(f"  Max available static thrust may not reach {max_thrust:.2f} N.")
+            return None
+ 
+        rpm += direction * rpm_step
+ 
+    print(f"\n  Did not converge within {max_iter} iterations.")
+    return None
 
 if __name__ == "__main__":
     result = solve(

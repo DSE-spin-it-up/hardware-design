@@ -1,14 +1,14 @@
 from matplotlib.pylab import radians, sin, cos
 import numpy as np
 import control_surface_sizing as css
-from propeller_operating_point import solve
+from propeller_operating_point import solve,vtolsolve
 
 # INPUTS
 t_climb=30  # Climb time [s]
 # --- Payload & Fleet ---
 m_payload = 60  # [kg]
 m_drone_empty = 10  # [kg]
-n_drones = 3  # [-]
+n_drones = 4  # [-]
 
 # --- Geometry ---
 b = 2.5  # Wingspan [m]
@@ -22,17 +22,17 @@ S_payload = 0.25  # Payload frontal area [m^2]
 Cd_payload = 1.0  # Payload drag coefficient [-]
 
 # --- Propulsion ---
-csv_prop = "18x6W_performance.csv"
+csv_prop = "20x10E_performance.csv"
 n_props     = 2   # Number of propellers [-]
 eff_motor   = 0.8   # Motor efficiency [-]
 T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
-D_prop      = 18 * 0.0254
+D_prop      = int(csv_prop.split('x')[0]) * 0.0254
 
 # --- Flight Conditions ---
 h_cruise = 300  # Cruise altitude [m]
 V_cruise = 20  # Cruise speed [m/s]
 climb_rate = 10/3  # Climb rate [m/s]
-throttle_climb = 0.9  # Throttle setting during climb [-]
+throttle_max = 0.9  # Throttle setting during climb [-]
 
 # --- Mission ---
 R = 20000  # Range [m]
@@ -110,7 +110,7 @@ J_climb = operating_point_climb["J"]
 
 
 P_climb=Cp_climb*rho*(V_climb/J_climb)**3*D_prop**2*n_props
-KV=n_climb*60/throttle_climb/voltage_battery
+
   
 
 # --- Propulsion ---
@@ -126,8 +126,22 @@ J_cruise = operating_point_cruise["J"]
 P_required = D * V_cruise
 # D_prop = (((thrust_cruise / n_props) * J ** 2) / (C_t * rho * V_cruise ** 2)) ** (0.5)
 P_shaft = Cp_cruise * rho * ((V_cruise / J_cruise) ** 3) * (D_prop ** 2)*n_props
-throttle_cruise=n_cruise * 60 / (KV*voltage_battery)
 
+
+# --- VTOL ---
+T_VTOL = m_drone_empty * g0 *T_W_to # [N]
+operating_point_vtol= vtolsolve(csv_prop, T_VTOL / n_props, 0, D_prop,)
+Cp_vtol = operating_point_vtol["Cp"]
+n_vtol = operating_point_vtol["RPM"] / 60
+J_vtol = operating_point_vtol["J"]
+P_vtol = Cp_vtol * rho * n_vtol**3 * D_prop**5 * n_props
+
+
+max_rpm=max(n_climb, n_cruise, n_vtol)*60
+KV=max_rpm/throttle_max/voltage_battery
+throttle_cruise=n_cruise * 60 / (KV*voltage_battery)
+throttle_vtol=n_vtol * 60 / (KV*voltage_battery)
+throttle_climb=n_climb * 60 / (KV*voltage_battery)
 
 def motor_weight(KV):
     if KV < 100 or KV > 2000:
@@ -231,6 +245,7 @@ if __name__ == "__main__":
 
     print("\n--- Propulsion ---")
     print(f"  Cruise thrust        : {thrust_cruise:.2f}  N")
+    print(f"  Cruise efficiency        : {eff_cruise:.2f}  [-]]")
     print(f"  RPM during cruise      : {n_cruise * 60:.2f}  RPM")
     print(f"  Take-off thrust      : {thrust_to:.2f}  N")
     print(f"  Cruise power required : {P_required:.2f}  W")
@@ -258,3 +273,9 @@ if __name__ == "__main__":
     print(f"  Throttle for Cruise  : {throttle_cruise:.2f}  [-]")
     print(f"  Climb speed          : {V_climb:.2f}  m/s")
     print(f"  Climb thrust         : {T_climb*n_props:.2f}  N")
+
+    print("\n--- VTOL ---")
+    print(f"  VTOL thrust          : {T_VTOL:.2f}  N")
+    print(f"  J for VTOL            : {J_vtol:.4f}  [-]")
+    print(f"  VTOL power       : {P_vtol:.2f}  W")
+    print(f"  Throttle for VTOL    : {throttle_vtol:.2f}  [-]")
