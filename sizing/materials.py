@@ -32,7 +32,7 @@ class CF_PLA(Material):  # https://www.iemai3d.com/wp-content/uploads/2020/12/CF
             s_t=48e6
         )
 
-class PLA(Material):
+class PLA(Material):  # https://www.sciencedirect.com/science/article/pii/S0169409X16302058#s0010
     def __init__(self):
         super().__init__(
             E=3.5e9,
