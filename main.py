@@ -502,9 +502,10 @@ def main() -> None:
     print("\n========== CENTER OF GRAVITY ==========")
     cg = mass_estimates.compute_cg(
         sizing=sizing,
-        electrical=electrical,
+        propulsion=propulsion,
         airfoil_path=airfoil,
         tail_airfoil_path=TAIL_AIRFOIL,
+        fuselage_inputs=FUSELAGE,
     )
     print(f"  Fuselage CG     : {cg['fuselage']:8.4f}  m from LEMAC")
     print(f"  Battery CG      : {cg['battery']:8.4f}  m from LEMAC")

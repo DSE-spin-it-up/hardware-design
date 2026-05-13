@@ -8,7 +8,7 @@ from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
 from .materials import CFRP, EPP
 from .propulsion_sizing import PropulsionInputs, PropulsionResult
-from .structure import d as rod_d, t as rod_t
+from .structure import d_w as rod_d, t_w as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 from .config import MaterialsConfig
 
