@@ -54,7 +54,7 @@ PROPULSION = PropulsionInputs(
     cruise_rpm_init=7000,
     climb_rpm_init=12000,
     rpm_tol=1.0,
-    thrust_tol=0.5,
+    thrust_tol=1.0,
     max_iter=200,
     rpm_step=50.0,
     # VTOL/hover solver tuning — looser thrust tol because the table-step

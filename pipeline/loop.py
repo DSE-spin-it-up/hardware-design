@@ -153,18 +153,18 @@ def run_pipeline(config) -> PipelineResult:
             sizing=sizing,
             propulsion=propulsion,
             structure=struct,
+            fus=fus,
             airfoil_path=airfoil,
             tail_airfoil_path=config.TAIL_AIRFOIL,
-            fuselage_inputs=config.FUSELAGE,
         )
         m_drone = masses["total"]
         cg = weights_mass.compute_cg(
             sizing=sizing,
             propulsion=propulsion,
             structure=struct,
+            fus=fus,
             airfoil_path=airfoil,
             tail_airfoil_path=config.TAIL_AIRFOIL,
-            fuselage_inputs=config.FUSELAGE,
         )
         x_cg = cg["overall"]
 
@@ -254,17 +254,17 @@ def run_pipeline(config) -> PipelineResult:
         sizing=sizing,
         propulsion=propulsion,
         structure=struct,
+        fus=fus,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
-        fuselage_inputs=config.FUSELAGE,
     )
     cg = weights_mass.compute_cg(
         sizing=sizing,
         propulsion=propulsion,
         structure=struct,
+        fus=fus,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
-        fuselage_inputs=config.FUSELAGE,
     )
 
     # ----- Step 5: LLT at the required CL -----

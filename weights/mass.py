@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sizing.fuselage import run as run_fuselage, FuselageInputs
+from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP, EPP
 from propulsion.sizing import PropulsionInputs, PropulsionResult
@@ -84,58 +84,17 @@ def tail_mass(
     return CONFIG.tail.mass(tail_volume)
 
 
-def fuselage_mass(
-    sizing: SizingResult,
-    fuselage_inputs: FuselageInputs | None = None,
-    airfoil_path: str | Path | None = None,
-) -> float:
-    """Estimate fuselage structural mass.
-
-    Parameters
-    ----------
-    sizing : SizingResult
-        Sizing result
-    fuselage_inputs : FuselageInputs, optional
-        Fuselage design inputs
-    airfoil_path : str | Path, optional
-        Wing airfoil path for fuselage height sizing
-
-    Returns
-    -------
-    float
-        Fuselage mass [kg]
-    """
-    fus = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+def fuselage_mass(fus: FuselageResult) -> float:
+    """Fuselage structural mass [kg] from its shell volume."""
     return CONFIG.fuselage.mass(fus.volume_shell)
 
 
-def cg_fuselage(
-    sizing: SizingResult,
-    fuselage_inputs: FuselageInputs | None = None,
-    airfoil_path: str | Path | None = None,
-) -> float:
-    """Compute fuselage CG x-position relative to LEMAC.
-    
-    Assumes fuselage starts at LEMAC (x = 0) and extends rearward.
-    CG is at the centroid of the fuselage box.
-    
-    Parameters
-    ----------
-    sizing : SizingResult
-        Sizing result
-    fuselage_inputs : FuselageInputs, optional
-        Fuselage design inputs
-    airfoil_path : str | Path, optional
-        Wing airfoil path for fuselage height sizing
-    
-    Returns
-    -------
-    float
-        Fuselage CG x-position relative to LEMAC [m]
+def cg_fuselage(fus: FuselageResult) -> float:
+    """Fuselage CG x-position [m] relative to LEMAC.
+
+    Fuselage starts at LEMAC and extends rearward; CG is at the centroid
+    of the fuselage box.
     """
-    if fuselage_inputs is None:
-        fuselage_inputs = FuselageInputs()
-    fus = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
     return fus.length / 2.0
 
 
@@ -319,9 +278,9 @@ def compute_cg(
     sizing: SizingResult,
     propulsion: PropulsionResult,
     structure: RodResult,
+    fus: FuselageResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
-    fuselage_inputs: FuselageInputs | None = None,
     battery_x: float | None = None,
     pvc_tubes_mass_override: float | None = None,
 ) -> dict[str, float]:
@@ -337,12 +296,12 @@ def compute_cg(
         Propulsion system result
     structure : RodResult
         Rod sizing result; supplies wing/tail rod masses.
+    fus : FuselageResult
+        Pre-computed fuselage geometry; supplies length and shell volume.
     airfoil_path : str | Path
         Wing airfoil path
     tail_airfoil_path : str | Path
         Tail airfoil path
-    fuselage_inputs : FuselageInputs, optional
-        Fuselage design inputs
     battery_x : float, optional
         Battery CG x-position; if None, defaults to midpoint between wing rods
     pvc_tubes_mass_override : float, optional
@@ -364,7 +323,7 @@ def compute_cg(
         - 'overall': weighted overall aircraft CG
     """
     # Compute individual component CGs
-    x_fus = cg_fuselage(sizing, fuselage_inputs, airfoil_path)
+    x_fus = cg_fuselage(fus)
     x_motor = cg_motors(sizing)
     x_wing = cg_wing(airfoil_path, sizing)
     x_rod_wing = cg_rod_wing(airfoil_path, sizing)
@@ -375,7 +334,7 @@ def compute_cg(
     x_pvc = cg_pvc_tubes(x_rod_wing, x_rod_aileron)
 
     # Get component masses
-    m_fus = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    m_fus = fuselage_mass(fus)
     m_batt = battery_mass(propulsion)
     m_motor = motor_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path)
@@ -419,9 +378,9 @@ def total_mass(
     sizing: SizingResult,
     propulsion: PropulsionResult,
     structure: RodResult,
+    fus: FuselageResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
-    fuselage_inputs: FuselageInputs | None = None,
     wing_thickness: float = 0.1,
     tail_thickness: float = 0.08,
 ) -> dict[str, float]:
@@ -433,7 +392,7 @@ def total_mass(
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = 2 * structure.mass_w
     m_tail_rod = structure.mass_t
-    m_fuselage = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    m_fuselage = fuselage_mass(fus)
     m_pvc = pvc_tubes_mass()
 
     m_total = (
