@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from aerodynamics import drag_estimates
+from aerodynamics import drag_buildup
 from pipeline.loop import PipelineResult
-from sizing import control_surface_sizing, fuselage, initial_sizing, propulsion_sizing, structure
+from propulsion import sizing as prop_sizing
+from sizing import aileron, fuselage, wing
+from structures import rods
 
 
 def print_main_summary(result: PipelineResult) -> None:
@@ -21,15 +23,15 @@ def print_main_summary(result: PipelineResult) -> None:
     cg = result.cg
 
     print("========== INITIAL SIZING ==========")
-    initial_sizing.summary(sizing)
+    wing.summary(sizing)
     print("\n========== PROPULSION SYSTEM ==========")
-    propulsion_sizing.summary(result.propulsion)
+    prop_sizing.summary(result.propulsion)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(result.fus)
     print("\n========== CONTROL SURFACES ==========")
-    control_surface_sizing.summary(result.control_surface)
+    aileron.summary(result.control_surface)
     print("\n========== STRUCTURE ==========")
-    structure.summary(result.struct)
+    rods.summary(result.struct)
 
     print("\n========== MASS ESTIMATES ==========")
     print(f"  Battery mass : {masses['battery']:.3f} kg")
@@ -56,7 +58,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")
 
     print("\n========== DRAG BUILDUP ==========")
-    drag_estimates.summary(drag)
+    drag_buildup.summary(drag)
 
     # ----- LLT at the required CL -----
     print(f"\nRequired wing CL for L = W : {result.cl_req:.4f}")

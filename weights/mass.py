@@ -4,15 +4,15 @@ from pathlib import Path
 
 import numpy as np
 
-from .fuselage import run as run_fuselage, FuselageInputs
-from .initial_sizing import SizingResult
-from .materials import CFRP, EPP
-from .propulsion_sizing import PropulsionInputs, PropulsionResult
-from .structure import StructureResult
-from aerodynamics.airfoil_shape import AirfoilGeometry
-from .config import MaterialsConfig
+from sizing.fuselage import run as run_fuselage, FuselageInputs
+from sizing.wing import SizingResult
+from structures.materials import CFRP, EPP
+from propulsion.sizing import PropulsionInputs, PropulsionResult
+from structures.rods import RodResult
+from aerodynamics.airfoil_geometry import AirfoilGeometry
+from weights.part_materials import PartMaterials
 
-CONFIG = MaterialsConfig()
+CONFIG = PartMaterials()
 
 def battery_mass(propulsion: PropulsionResult) -> float:
     """Battery mass [kg] from the propulsion sizing result."""
@@ -318,7 +318,7 @@ def pvc_tubes_mass() -> float:
 def compute_cg(
     sizing: SizingResult,
     propulsion: PropulsionResult,
-    structure: StructureResult,
+    structure: RodResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -335,7 +335,7 @@ def compute_cg(
         Sizing result
     propulsion : PropulsionResult
         Propulsion system result
-    structure : StructureResult
+    structure : RodResult
         Rod sizing result; supplies wing/tail rod masses.
     airfoil_path : str | Path
         Wing airfoil path
@@ -418,7 +418,7 @@ def compute_cg(
 def total_mass(
     sizing: SizingResult,
     propulsion: PropulsionResult,
-    structure: StructureResult,
+    structure: RodResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,

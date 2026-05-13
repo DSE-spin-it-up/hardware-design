@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from aerodynamics.airfoil_geometry import airfoil_thickness_to_chord
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
-from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
-from aerodynamics.drag_estimates import DragResult
-from aerodynamics.llt_solver import LLTResult
+from aerodynamics.drag_buildup import DragResult
+from aerodynamics.llt import LLTResult
 from pipeline.helpers import (
     estimate_cd0,
     full_drag_estimate,
@@ -22,19 +22,15 @@ from pipeline.helpers import (
     resolve_airfoil,
     wing_drag_polar,
 )
-from sizing import (
-    control_surface_sizing,
-    fuselage,
-    initial_sizing,
-    mass_estimates,
-    propulsion_sizing,
-    structure,
-)
-from sizing.control_surface_sizing import ControlSurfaceResult
+from propulsion import sizing as prop_sizing
+from propulsion.sizing import PropulsionResult
+from sizing import aileron, fuselage, wing
+from sizing.aileron import AileronResult
 from sizing.fuselage import FuselageResult
-from sizing.initial_sizing import SizingResult
-from sizing.propulsion_sizing import PropulsionResult
-from sizing.structure import StructureResult
+from sizing.wing import SizingResult
+from structures import rods
+from structures.rods import RodResult
+from weights import mass as weights_mass
 
 
 @dataclass
@@ -51,8 +47,8 @@ class PipelineResult:
     propulsion: PropulsionResult
     fus: FuselageResult
     drag: DragResult
-    struct: StructureResult
-    control_surface: ControlSurfaceResult
+    struct: RodResult
+    control_surface: AileronResult
     masses: dict[str, float]
     cg: dict[str, float]
 
@@ -92,7 +88,7 @@ def run_pipeline(config) -> PipelineResult:
     sizing_inputs = config.SIZING
 
     # ----- Step 1: initial sizing with guessed Cd0 -----
-    sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
+    sizing = wing.run(sizing_inputs, t_over_c_root=tc)
 
     # ----- Step 1b: load airfoil polar once (Re from initial sizing) -----
     # Reused inside the loop for control-surface section Cd, and after the loop for LLT.
@@ -139,7 +135,7 @@ def run_pipeline(config) -> PipelineResult:
     masses = cg = {}
     it = -1
     for it in range(config.N_ITER_MAX):
-        propulsion = propulsion_sizing.run(sizing, config.PROPULSION)
+        propulsion = prop_sizing.run(sizing, config.PROPULSION)
         fus = fuselage.run(
             sizing,
             config.FUSELAGE,
@@ -152,8 +148,8 @@ def run_pipeline(config) -> PipelineResult:
                 "airfoil height is not being used for fuselage sizing."
             )
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=config.TAIL_AIRFOIL)
-        struct = structure.run(sizing, config.STRUCTURE)
-        masses = mass_estimates.total_mass(
+        struct = rods.run(sizing, config.STRUCTURE)
+        masses = weights_mass.total_mass(
             sizing=sizing,
             propulsion=propulsion,
             structure=struct,
@@ -162,7 +158,7 @@ def run_pipeline(config) -> PipelineResult:
             fuselage_inputs=config.FUSELAGE,
         )
         m_drone = masses["total"]
-        cg = mass_estimates.compute_cg(
+        cg = weights_mass.compute_cg(
             sizing=sizing,
             propulsion=propulsion,
             structure=struct,
@@ -194,8 +190,8 @@ def run_pipeline(config) -> PipelineResult:
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
         sizing_inputs = dataclasses.replace(sizing_inputs, **replace_kwargs)
-        sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
-        control_surface = control_surface_sizing.run(sizing, config.CONTROL_SURFACE, polar=polar)
+        sizing = wing.run(sizing_inputs, t_over_c_root=tc)
+        control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
 
         CD0_history.append(drag.CD0)
         mass_history.append(m_drone)
@@ -244,7 +240,7 @@ def run_pipeline(config) -> PipelineResult:
               f"(last {', '.join(last_bits)}).")
 
     # Final pass with the converged Cd0 so propulsion/fus/drag match the latest sizing.
-    propulsion = propulsion_sizing.run(sizing, config.PROPULSION)
+    propulsion = prop_sizing.run(sizing, config.PROPULSION)
     fus = fuselage.run(
         sizing,
         config.FUSELAGE,
@@ -252,9 +248,9 @@ def run_pipeline(config) -> PipelineResult:
         airfoil_path=airfoil,
     )
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=config.TAIL_AIRFOIL)
-    struct = structure.run(sizing, config.STRUCTURE)
-    control_surface = control_surface_sizing.run(sizing, config.CONTROL_SURFACE, polar=polar)
-    masses = mass_estimates.total_mass(
+    struct = rods.run(sizing, config.STRUCTURE)
+    control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
+    masses = weights_mass.total_mass(
         sizing=sizing,
         propulsion=propulsion,
         structure=struct,
@@ -262,7 +258,7 @@ def run_pipeline(config) -> PipelineResult:
         tail_airfoil_path=config.TAIL_AIRFOIL,
         fuselage_inputs=config.FUSELAGE,
     )
-    cg = mass_estimates.compute_cg(
+    cg = weights_mass.compute_cg(
         sizing=sizing,
         propulsion=propulsion,
         structure=struct,

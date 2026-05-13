@@ -1,10 +1,8 @@
 """Propulsion sizing using a propeller-table operating-point solver.
 
-Ports the climb / cruise / VTOL propulsion sizing from the
-`propulsion-design` branch's monolithic `initial_sizing.py` into a
-dataclass-based module that fits the pipeline iteration in `main.py`:
+Fits the pipeline iteration in `main.py`:
 
-    sizing → propulsion_sizing → battery_volume → fuselage → drag → sizing
+    wing-sizing → prop-sizing → battery_volume → fuselage → drag → wing-sizing
 """
 from __future__ import annotations
 
@@ -14,8 +12,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from sizing import initial_sizing, propeller_operating_point as prop_solver
-from sizing.initial_sizing import SizingResult, g0
+from sizing import wing
+from propulsion import propeller_solver as prop_solver
+from sizing.wing import SizingResult, g0
 
 
 def _diameter_from_csv_name(csv_path: str) -> float:
@@ -142,7 +141,7 @@ class PropulsionResult:
 
 
 def _solve_quiet(verbose: bool, fn, *args, **kwargs):
-    """Call a propeller_operating_point solver, suppressing its prints when verbose=False."""
+    """Call a propeller_solver function, suppressing its prints when verbose=False."""
     if verbose:
         return fn(*args, **kwargs)
     with contextlib.redirect_stdout(io.StringIO()):
@@ -342,5 +341,5 @@ def summary(r: PropulsionResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing.initial_sizing import SizingInputs
-    summary(run(initial_sizing.run(SizingInputs())))
+    from sizing.wing import SizingInputs
+    summary(run(wing.run(SizingInputs())))

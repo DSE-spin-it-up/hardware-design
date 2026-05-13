@@ -14,12 +14,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from sizing.initial_sizing import SizingResult
-from sizing.materials import CFRP
+from sizing.wing import SizingResult
+from structures.materials import CFRP
 
 
 @dataclass
-class StructureInputs:
+class RodInputs:
     material: CFRP = field(default_factory=CFRP)
     safety_factor: float = 1.2
     defl_max: float = 0.05            # [m] max tip deflection
@@ -29,8 +29,8 @@ class StructureInputs:
 
 
 @dataclass
-class StructureResult:
-    inputs: StructureInputs
+class RodResult:
+    inputs: RodInputs
     # Wing rod (one rod; total wing mass uses 2× this)
     d_w: float
     t_w: float
@@ -95,9 +95,9 @@ def _check_wall(t: float, d: float, label: str) -> None:
         )
 
 
-def run(sizing: SizingResult, inputs: StructureInputs | None = None) -> StructureResult:
+def run(sizing: SizingResult, inputs: RodInputs | None = None) -> RodResult:
     if inputs is None:
-        inputs = StructureInputs()
+        inputs = RodInputs()
     i = inputs
     s = sizing
     si = s.inputs
@@ -140,14 +140,14 @@ def run(sizing: SizingResult, inputs: StructureInputs | None = None) -> Structur
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho)
 
-    return StructureResult(
+    return RodResult(
         inputs=inputs,
         d_w=d_w, t_w=t_w, mass_w=mass_w, defl_w=defl_w, fail_mode_w=fail_w,
         d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
     )
 
 
-def summary(r: StructureResult) -> None:
+def summary(r: RodResult) -> None:
     print("\n--- Wing rod (one of two) ---")
     print(f"  Outer diameter       : {r.d_w * 1000:.2f}  mm")
     print(f"  Wall thickness       : {r.t_w * 1000:.2f}  mm")
@@ -164,6 +164,6 @@ def summary(r: StructureResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing import initial_sizing
-    from sizing.initial_sizing import SizingInputs
-    summary(run(initial_sizing.run(SizingInputs())))
+    from sizing import wing
+    from sizing.wing import SizingInputs
+    summary(run(wing.run(SizingInputs())))

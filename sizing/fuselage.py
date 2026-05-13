@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
-from sizing.initial_sizing import SizingResult
-from aerodynamics.airfoil_shape import AirfoilGeometry
+from sizing.wing import SizingResult
+from aerodynamics.airfoil_geometry import AirfoilGeometry
 
 
 @dataclass
@@ -113,6 +113,6 @@ def summary(r: FuselageResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing import initial_sizing
-    from sizing.initial_sizing import SizingInputs
-    summary(run(initial_sizing.run(SizingInputs())))
+    from sizing import wing
+    from sizing.wing import SizingInputs
+    summary(run(wing.run(SizingInputs())))

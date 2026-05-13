@@ -1,5 +1,5 @@
 """
-llt_solver.py — Prandtl Lifting-Line Theory (classical Fourier-series form).
+llt.py — Prandtl Lifting-Line Theory (classical Fourier-series form).
 
 Given a wing geometry, a 2-D airfoil polar, and a flight condition, solve the
 monoplane equation for the Fourier coefficients A_n and derive:

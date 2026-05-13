@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from aerodynamics.airfoil_shape import AirfoilGeometry, airfoil_thickness_to_chord
-from sizing.initial_sizing import R_air, SizingResult, gamma_air
+from aerodynamics.airfoil_geometry import AirfoilGeometry, airfoil_thickness_to_chord
+from sizing.wing import R_air, SizingResult, gamma_air
 from sizing.fuselage import FuselageResult
 
 
@@ -161,8 +161,8 @@ def summary(r: DragResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing import initial_sizing, fuselage as fus_mod
-    from sizing.initial_sizing import SizingInputs
-    s = initial_sizing.run(SizingInputs())
+    from sizing import wing, fuselage as fus_mod
+    from sizing.wing import SizingInputs
+    s = wing.run(SizingInputs())
     f = fus_mod.run(s)
     summary(run(s, f))

@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from sizing.control_surface_sizing import ControlSurfaceInputs
+from propulsion.sizing import PropulsionInputs
+from sizing.aileron import AileronInputs
 from sizing.fuselage import FuselageInputs
-from sizing.initial_sizing import SizingInputs
-from sizing.propulsion_sizing import PropulsionInputs
-from sizing.structure import StructureInputs
+from sizing.wing import SizingInputs
+from structures.rods import RodInputs
 
 
 SIZING = SizingInputs(
@@ -82,7 +82,7 @@ FUSELAGE = FuselageInputs(
     casing_factor=1.1,
 )
 
-CONTROL_SURFACE = ControlSurfaceInputs(
+CONTROL_SURFACE = AileronInputs(
     cl_alpha=2 * np.pi,
     cd0_section=0.04,
     roll_req_deg=60.0,
@@ -95,7 +95,7 @@ CONTROL_SURFACE = ControlSurfaceInputs(
 # passes both a tip-deflection (defl_max) and a compressive-stress
 # (s_c / safety_factor) limit. d is fixed by geometry (rod must fit inside
 # the local section thickness). tail_tc must match TAIL_AIRFOIL.
-STRUCTURE = StructureInputs(
+STRUCTURE = RodInputs(
     safety_factor=1.2,
     defl_max=0.05,             # [m] 50 mm tip deflection budget
     d_to_section_ratio=0.8,    # rod OD as fraction of section thickness

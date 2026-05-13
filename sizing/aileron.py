@@ -5,11 +5,11 @@ import numpy as np
 from scipy.integrate import quad
 
 from aerodynamics.airfoil_polar import AirfoilPolar
-from sizing.initial_sizing import SizingResult
+from sizing.wing import SizingResult
 
 
 @dataclass
-class ControlSurfaceInputs:
+class AileronInputs:
     cl_alpha: float = 2 * np.pi      # section lift slope [1/rad]
     cd0_section: float = 0.04        # fallback section profile drag if no polar supplied [-]
     roll_req_deg: float = 60.0       # required steady roll rate [deg/s]
@@ -20,8 +20,8 @@ class ControlSurfaceInputs:
 
 
 @dataclass
-class ControlSurfaceResult:
-    inputs: ControlSurfaceInputs
+class AileronResult:
+    inputs: AileronInputs
     start_y_frac: float    # inboard aileron edge, y/(b/2)
     aileron_span: float    # per-side span [m]
     tau: float             # control-surface effectiveness [-]
@@ -81,11 +81,11 @@ def compute_cl_p(
 
 def run(
     sizing: SizingResult,
-    inputs: ControlSurfaceInputs | None = None,
+    inputs: AileronInputs | None = None,
     polar: AirfoilPolar | None = None,
-) -> ControlSurfaceResult:
+) -> AileronResult:
     if inputs is None:
-        inputs = ControlSurfaceInputs()
+        inputs = AileronInputs()
     i = inputs
     s = sizing
 
@@ -119,7 +119,7 @@ def run(
             break
 
     aileron_span = (i.max_y_frac - start_y_frac) * (s.inputs.b / 2)
-    return ControlSurfaceResult(
+    return AileronResult(
         inputs=inputs,
         start_y_frac=start_y_frac,
         aileron_span=aileron_span,
@@ -132,7 +132,7 @@ def run(
     )
 
 
-def summary(r: ControlSurfaceResult) -> None:
+def summary(r: AileronResult) -> None:
     if r.converged:
         print(f"  Roll-rate requirement met "
               f"({np.degrees(r.roll_rate):.2f} ≥ {r.inputs.roll_req_deg:.1f} °/s)")
@@ -150,5 +150,5 @@ def summary(r: ControlSurfaceResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing import initial_sizing
-    summary(run(initial_sizing.run()))
+    from sizing import wing
+    summary(run(wing.run()))

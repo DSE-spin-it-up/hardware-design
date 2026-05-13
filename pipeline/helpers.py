@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from aerodynamics import drag_estimates
+from aerodynamics import drag_buildup
 from aerodynamics.airfoil_polar import AirfoilPolar
-from aerodynamics.drag_estimates import DragInputs, DragResult
-from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
+from aerodynamics.drag_buildup import DragInputs, DragResult
+from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from sizing.fuselage import FuselageResult
-from sizing.initial_sizing import SizingResult
+from sizing.wing import SizingResult
 
 
 def resolve_airfoil(airfoil: str | None) -> str:
@@ -24,7 +24,7 @@ def estimate_cd0(
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
     """Component drag buildup for wing + tail + fuselage."""
-    return drag_estimates.run(
+    return drag_buildup.run(
         sizing,
         fus,
         DragInputs(wing_airfoil=wing_airfoil, tail_airfoil=tail_airfoil),

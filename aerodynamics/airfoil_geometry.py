@@ -5,11 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))  # adds hardware-design/ to path
-
-import sizing.structure as struct
 
 
 def airfoil_thickness_to_chord(airfoil: str | Path) -> float:
