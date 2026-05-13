@@ -12,7 +12,7 @@ tw = cw * tc  # [m]
 
 dens_cfrp = 1.55  # [g/cm^3]
 rho_cfrp = dens_cfrp * 10**3  # [kg/m^3]
-Y_cfrp = 3000 * 10**6  # [Pa]
+Y_cfrp = 1000 * 10**6  # [Pa]
 t_inch = 1 / 16  # [inch]
 t = t_inch * 2.54 / 100  # [m]
 d_inch = 1 / 2  # [inch]
