@@ -4,7 +4,7 @@ Edit the design knobs below and run `python main.py`. The pipeline:
   1. Initial sizing with a guessed wing Cd0
   2. Battery + propulsion sizing
   3. Re-estimate Cd0 from fuselage (PLACEHOLDER — teammate)
-  4. Re-run sizing + electrical with the refined Cd0
+  4. Re-run sizing + propulsion with the refined Cd0
   5. Pick airfoil → LLT solve at the required wing CL
   6. Wing CL/CD vs CL sweep; check whether operating CL sits near max L/D
   7. Full-buildup CD / final L/D (PLACEHOLDER — teammate)
@@ -21,11 +21,11 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
 from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import control_surface_sizing, electrical_system, fuselage, initial_sizing, mass_estimates
+from sizing import control_surface_sizing, fuselage, initial_sizing, mass_estimates, propulsion_sizing
 from sizing.control_surface_sizing import ControlSurfaceInputs
-from sizing.electrical_system import ElectricalInputs, ElectricalResult
 from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
+from sizing.propulsion_sizing import PropulsionInputs, PropulsionResult
 
 # ============================================================
 # DESIGN KNOBS
@@ -51,14 +51,14 @@ SIZING = SizingInputs(
     lam_t=1.0,
 )
 
-ELECTRICAL = ElectricalInputs(
+PROPULSION = PropulsionInputs(
+    csv_prop="20x10E_performance.csv",
     n_props=2,
     eff_motor=0.8,
-    eff_prop=0.7,
     T_W_to=2.0,
-    J=0.4,
-    C_t=0.04,
-    D_prop=20 * 0.0254,
+    throttle_max=0.9,
+    climb_rate=10 / 3,
+    t_climb=30,
     n_cells=6,
     voltage_cell=3.7,
     battery_density=250,
@@ -95,7 +95,7 @@ TAIL_AIRFOIL: str = "airfoils/NACA0010.dat"
 # Alpha sweep used to build the wing drag polar for the CL/CD plot [deg].
 ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
 
-# Number of sizing↔electrical↔fuselage↔drag iterations before running the LLT.
+# Number of sizing↔propulsion↔fuselage↔drag iterations before running the LLT.
 N_ITER = 3
 
 
@@ -224,7 +224,7 @@ def plot_drone_ld(
 # ============================================================
 
 def main() -> None:
-    electrical_inputs = ELECTRICAL
+    propulsion_inputs = PROPULSION
 
     # ----- Step 0: resolve airfoil → read t/c from its geometry -----
     airfoil = resolve_airfoil(AIRFOIL)
@@ -247,34 +247,34 @@ def main() -> None:
     print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
           f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
 
-    # ----- Steps 2-4: iterate electrical → fuselage → drag → (sizing) -----
+    # ----- Steps 2-4: iterate propulsion → fuselage → drag → (sizing) -----
     # Sizing is re-run each pass so the refined Cd0 propagates into the wing
-    # area and drag force that the electrical model depends on.
-    print(f">>> Iterating ({N_ITER} passes): electrical → fuselage → drag → sizing")
+    # area and drag force that the propulsion model depends on.
+    print(f">>> Iterating ({N_ITER} passes): propulsion → fuselage → drag → sizing")
     Cd0_guess = sizing_inputs.Cd0
     print(f"    iter  0: Cd0_guess = {Cd0_guess:.6f}")
     CD0_history: list[float] = []
     for it in range(N_ITER):
-        electrical = electrical_system.run(sizing, electrical_inputs)
-        fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
+        propulsion = propulsion_sizing.run(sizing, propulsion_inputs)
+        fus = fuselage.run(sizing, FUSELAGE, battery_volume=propulsion.battery_volume)
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
         sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
         sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
         control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
         CD0_history.append(drag.CD0)
         print(f"    iter {it + 1:2d}: CD0 = {drag.CD0:.6f}  Sw = {sizing.Sw:.4f}  "
-              f"m_batt = {electrical.battery_mass:.3f}")
-    # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
-    electrical = electrical_system.run(sizing, electrical_inputs)
-    fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
+              f"m_batt = {propulsion.battery_mass:.3f}")
+    # Final pass with the converged Cd0 so propulsion/fus/drag match the latest sizing.
+    propulsion = propulsion_sizing.run(sizing, propulsion_inputs)
+    fus = fuselage.run(sizing, FUSELAGE, battery_volume=propulsion.battery_volume)
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
     control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_cd0_history(CD0_history, Cd0_guess)
 
     print("========== INITIAL SIZING ==========")
     initial_sizing.summary(sizing)
-    print("\n========== ELECTRICAL SYSTEM ==========")
-    electrical_system.summary(electrical)
+    print("\n========== PROPULSION ==========")
+    propulsion_sizing.summary(propulsion)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(fus)
     print("\n========== CONTROL SURFACES ==========")
@@ -282,7 +282,7 @@ def main() -> None:
     print("\n========== MASS ESTIMATES ==========")
     masses = mass_estimates.total_mass(
         sizing=sizing,
-        electrical=electrical,
+        propulsion=propulsion,
         airfoil_path=airfoil,
         tail_airfoil_path=TAIL_AIRFOIL,
     )

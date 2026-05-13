@@ -5,44 +5,22 @@ from pathlib import Path
 
 import numpy as np
 
-from .electrical_system import battery_mass_from_energy, motor_mass_from_kv, ElectricalResult
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
 from .materials import CFRP, EPP
+from .propulsion_sizing import PropulsionResult
 from .structure import d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 
 
-def battery_mass(electrical: ElectricalResult) -> float:
-    """Get battery mass from electrical system result.
-    
-    Parameters
-    ----------
-    electrical : ElectricalResult
-        Result from electrical_system.run()
-    
-    Returns
-    -------
-    float
-        Battery mass [kg]
-    """
-    return electrical.battery_mass
+def battery_mass(propulsion: PropulsionResult) -> float:
+    """Battery mass [kg] from the propulsion sizing result."""
+    return propulsion.battery_mass
 
 
-def motor_mass(electrical: ElectricalResult) -> float:
-    """Get total motor mass from electrical system result.
-    
-    Parameters
-    ----------
-    electrical : ElectricalResult
-        Result from electrical_system.run()
-    
-    Returns
-    -------
-    float
-        Total mass of all motors [kg]
-    """
-    return electrical.total_motor_mass
+def motor_mass(propulsion: PropulsionResult) -> float:
+    """Total motor mass [kg] from the propulsion sizing result."""
+    return propulsion.total_motor_mass
 
 
 def wing_mass(
@@ -224,7 +202,7 @@ def fuselage_mass(
 
 def total_mass(
     sizing: SizingResult,
-    electrical: ElectricalResult,
+    propulsion: PropulsionResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -232,40 +210,9 @@ def total_mass(
     tail_thickness: float = 0.08,
     foam_density: float = 48.0,
 ) -> dict[str, float]:
-    """Compute total aircraft mass as sum of components.
-    
-    Parameters
-    ----------
-    sizing : SizingResult
-        Initial sizing result
-    electrical : ElectricalResult
-        Electrical system result
-    airfoil_path : str | Path
-        Path to wing airfoil .dat file or NACA designation
-    tail_airfoil_path : str | Path
-        Path to tail airfoil .dat file or NACA designation
-    fuselage_inputs : FuselageInputs, optional
-        Fuselage design inputs
-    wing_thickness : float
-        Wing structural thickness [m]
-    tail_thickness : float
-        Tail structural thickness [m]
-    foam_density : float
-        Structural foam density [kg/m³]
-    
-    Returns
-    -------
-    dict[str, float]
-        Dictionary with component masses and total [kg]:
-        - 'battery': battery mass
-        - 'motors': total motor mass
-        - 'wing': wing structural mass
-        - 'tail': tail structural mass
-        - 'fuselage': fuselage structural mass
-        - 'total': sum of all components
-    """
-    m_battery = battery_mass(electrical)
-    m_motors = motor_mass(electrical)
+    """Compute total aircraft mass as sum of components."""
+    m_battery = battery_mass(propulsion)
+    m_motors = motor_mass(propulsion)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = rod_mass(sizing)
