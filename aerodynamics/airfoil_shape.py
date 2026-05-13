@@ -5,6 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))  # adds hardware-design/ to path
+
+import sizing.structure as struct
 
 
 def airfoil_thickness_to_chord(airfoil: str | Path) -> float:
@@ -114,12 +119,14 @@ class AirfoilGeometry:
         _, x = self.compute_maximum_thickness()
         t, y_upper, y_lower = self.compute_thickness(x)
         y = (y_upper + y_lower) / 2.0
-        circle = plt.Circle((x, y), radius=t / 2, color="black", fill=False)
+        circle_outer = plt.Circle((x, y), radius=struct.d_w / 2 / struct.cw, color="black", fill=False)
+        circle_inner = plt.Circle((x, y), radius=(struct.d_w / 2 - struct.t_w) / struct.cw, color="black", fill=False)
         centroid = self.compute_airfoil_centroid()
         closed_up = np.vstack([self.polygon, self.polygon[0]])
         ax.plot(closed_up[:, 0], closed_up[:, 1], color="black")
         ax.scatter(centroid[0], centroid[1], color="black")
-        ax.add_patch(circle)
+        ax.add_patch(circle_outer)
+        ax.add_patch(circle_inner)
         ax.set_aspect("equal")
         fig.tight_layout()
         plt.savefig(out_path, dpi=150)
