@@ -96,7 +96,7 @@ TAIL_AIRFOIL: str = "airfoils/NACA0010.dat"
 ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
 
 # Number of sizing↔electrical↔fuselage↔drag iterations before running the LLT.
-N_ITER = 30
+N_ITER = 3
 
 
 # ============================================================

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, fields
+from pathlib import Path
 import numpy as np
 from sizing.initial_sizing import SizingResult
+from aerodynamics.airfoil_shape import AirfoilGeometry
 
 
 @dataclass
@@ -50,6 +52,7 @@ def run(
     sizing: SizingResult,
     inputs: FuselageInputs | None = None,
     battery_volume: float = 0.0,
+    airfoil_path: str | Path | None = None,
 ) -> FuselageResult:
     if inputs is None:
         inputs = FuselageInputs()
@@ -65,12 +68,18 @@ def run(
         b_width = i.battery_width
         b_height = i.battery_height
 
+    if airfoil_path is not None:
+        airfoil = AirfoilGeometry(airfoil_path)
+        airfoil_height = airfoil.global_thickness * sizing.c_root
+        height = (airfoil_height + b_height) * i.casing_factor
+    else:
+        height = b_height * i.casing_factor
+
     length = max(
         i.casing_factor * sizing.c_root,
         b_length * i.housing_factor * i.casing_factor,
     )
     width = b_width * i.casing_factor
-    height = b_height * i.casing_factor
 
     d_eq     = np.sqrt(width * height)
     fineness = length / d_eq

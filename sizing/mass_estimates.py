@@ -1,5 +1,6 @@
 """Mass estimation functions for aircraft components."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -7,7 +8,8 @@ import numpy as np
 from .electrical_system import battery_mass_from_energy, motor_mass_from_kv, ElectricalResult
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
-from .structure import rho_cfrp, d as rod_d, t as rod_t
+from .materials import CFRP, EPP
+from .structure import d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 
 
@@ -47,6 +49,7 @@ def wing_mass(
     sizing: SizingResult,
     airfoil_path: str | Path,
     thickness: float = 0.1,
+    material: CFRP | EPP | None = None,
     foam_density: float = 48.0,
 ) -> float:
     """Estimate wing structural mass from airfoil area, span, thickness, and density.
@@ -74,13 +77,16 @@ def wing_mass(
     # Volume = airfoil_area * span * thickness
     # Mass = volume * density
     wing_volume = airfoil_area * sizing.inputs.b * thickness
-    return wing_volume * foam_density
+    if material is None:
+        material = EPP()
+    return material.mass(wing_volume)
 
 
 def tail_mass(
     sizing: SizingResult,
     tail_airfoil_path: str | Path,
     thickness: float = 0.08,
+    material: CFRP | EPP | None = None,
     foam_density: float = 48.0,
 ) -> float:
     """Estimate tail (horizontal + vertical stabilizer) structural mass from airfoil area, span, thickness, and density.
@@ -109,23 +115,25 @@ def tail_mass(
     # Volume = airfoil_area * tail_span * thickness
     # Mass = volume * density
     tail_volume = airfoil_area * tail_span * thickness
-    return tail_volume * foam_density
+    if material is None:
+        material = EPP()
+    return material.mass(tail_volume)
 
 
 def rod_mass(
     sizing: SizingResult,
-    density: float = rho_cfrp,
+    material: CFRP | None = None,
     outer_diameter: float = rod_d,
     thickness: float = rod_t,
 ) -> float:
-    """Estimate carbon-fiber rod mass using span, diameter, thickness, and density.
+    """Estimate carbon-fiber rod mass using span, diameter, thickness, and material.
 
     Parameters
     ----------
     sizing : SizingResult
         Sizing result containing wing span `b`
-    density : float
-        Carbon fiber density [kg/m^3]
+    material : CFRP, optional
+        Material used for the rod.
     outer_diameter : float
         Rod outer diameter [m]
     thickness : float
@@ -136,28 +144,30 @@ def rod_mass(
     float
         Rod mass [kg]
     """
+    if material is None:
+        material = CFRP()
     length = sizing.inputs.b
     inner_diameter = outer_diameter - 2.0 * thickness
     if inner_diameter < 0.0:
         raise ValueError("Rod thickness exceeds outer diameter")
     volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return volume * density
+    return material.mass(volume)
 
 
 def tail_rod_mass(
     sizing: SizingResult,
-    density: float = rho_cfrp,
+    material: CFRP | None = None,
     outer_diameter: float = rod_d,
     thickness: float = rod_t,
 ) -> float:
-    """Estimate carbon-fiber rod mass using tail length, diameter, thickness, and density.
+    """Estimate carbon-fiber rod mass using tail length, diameter, thickness, and material.
 
     Parameters
     ----------
     sizing : SizingResult
         Sizing result containing tail length `L_tail`
-    density : float
-        Carbon fiber density [kg/m^3]
+    material : CFRP, optional
+        Material used for the tail rod.
     outer_diameter : float
         Rod outer diameter [m]
     thickness : float
@@ -168,15 +178,22 @@ def tail_rod_mass(
     float
         Tail rod mass [kg]
     """
+    if material is None:
+        material = CFRP()
     length = sizing.L_tail
     inner_diameter = outer_diameter - 2.0 * thickness
     if inner_diameter < 0.0:
         raise ValueError("Rod thickness exceeds outer diameter")
     volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return volume * density
+    return material.mass(volume)
 
 
-def fuselage_mass(sizing: SizingResult, fuselage_inputs: FuselageInputs | None = None) -> float:
+def fuselage_mass(
+    sizing: SizingResult,
+    fuselage_inputs: FuselageInputs | None = None,
+    airfoil_path: str | Path | None = None,
+    material: EPP | None = None,
+) -> float:
     """Get fuselage structural mass from fuselage sizing.
     
     Parameters
@@ -185,13 +202,23 @@ def fuselage_mass(sizing: SizingResult, fuselage_inputs: FuselageInputs | None =
         Sizing result
     fuselage_inputs : FuselageInputs, optional
         Fuselage design inputs. If None, uses defaults.
+    airfoil_path : str | Path, optional
+        Wing airfoil path for fuselage height sizing.
+    material : EPP, optional
+        Material used for fuselage casing.
     
     Returns
     -------
     float
         Fuselage mass [kg]
     """
-    fuselage_result = run_fuselage(sizing, fuselage_inputs)
+    if material is None:
+        material = EPP()
+    if fuselage_inputs is None:
+        fuselage_inputs = FuselageInputs(foam_density=material.rho)
+    else:
+        fuselage_inputs = replace(fuselage_inputs, foam_density=material.rho)
+    fuselage_result = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
     return fuselage_result.mass
 
 
@@ -239,11 +266,16 @@ def total_mass(
     """
     m_battery = battery_mass(electrical)
     m_motors = motor_mass(electrical)
-    m_wing = wing_mass(sizing, airfoil_path, wing_thickness, foam_density)
-    m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness, foam_density)
+    m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
+    m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = rod_mass(sizing)
     m_tail_rod = tail_rod_mass(sizing)
-    m_fuselage = fuselage_mass(sizing, fuselage_inputs)
+    m_fuselage = fuselage_mass(
+        sizing,
+        fuselage_inputs,
+        airfoil_path=airfoil_path,
+        material=EPP(),
+    )
     
     m_total = m_battery + m_motors + m_wing + m_tail + m_rod + m_tail_rod + m_fuselage
     

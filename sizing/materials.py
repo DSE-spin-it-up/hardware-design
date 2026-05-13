@@ -5,13 +5,20 @@ class Material:
         self.Y = Y
         self.s_t = s_t
 
+    def mass(self, volume: float) -> float:
+        """Compute mass from a volume using this material density."""
+        return self.rho * volume
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(rho={self.rho:.1f} kg/m^3)"
+
 class CFRP(Material):  # https://www.researchgate.net/publication/342938721_Experimental_Investigation_of_Reinforced_Concrete_Beam_with_Openings_Strengthened_Using_FRP_Sheets_under_Cyclic_Load
     def __init__(self):
         super().__init__(
             E=230e9,
             rho=1.72e3,
             Y=3400e6,
-            s_t=3400e6
+            s_t=3400e6,
         )
 
 class EPP(Material):  # https://www.foambymail.com/polypropylene-foam-sheet.html?srsltid=AfmBOorBTKilq9ebl6LLzYihjew-KWV77s8RLA2MVI6mPx15FnjyM8NA
