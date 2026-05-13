@@ -1,6 +1,5 @@
 """Mass estimation functions for aircraft components."""
 
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -8,10 +7,11 @@ import numpy as np
 from .electrical_system import battery_mass_from_energy, motor_mass_from_kv, ElectricalResult
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
-from .materials import CFRP, EPP
 from .structure import d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
+from .config import MaterialsConfig
 
+CONFIG = MaterialsConfig()
 
 def battery_mass(electrical: ElectricalResult) -> float:
     """Get battery mass from electrical system result.
@@ -49,8 +49,6 @@ def wing_mass(
     sizing: SizingResult,
     airfoil_path: str | Path,
     thickness: float = 0.1,
-    material: CFRP | EPP | None = None,
-    foam_density: float = 48.0,
 ) -> float:
     """Estimate wing structural mass from airfoil area, span, thickness, and density.
     
@@ -62,32 +60,22 @@ def wing_mass(
         Path to airfoil .dat file or NACA designation
     thickness : float
         Structural thickness parameter of the wing [m]
-    foam_density : float
-        Foam material density [kg/m³]
     
     Returns
     -------
     float
         Wing mass [kg]
     """
-    # Load airfoil geometry and compute cross-sectional area at unit chord
     airfoil = AirfoilGeometry(airfoil_path)
     airfoil_area = airfoil.compute_airfoil_area(chord=1.0)
-    
-    # Volume = airfoil_area * span * thickness
-    # Mass = volume * density
     wing_volume = airfoil_area * sizing.inputs.b * thickness
-    if material is None:
-        material = EPP()
-    return material.mass(wing_volume)
+    return CONFIG.wing.mass(wing_volume)
 
 
 def tail_mass(
     sizing: SizingResult,
     tail_airfoil_path: str | Path,
     thickness: float = 0.08,
-    material: CFRP | EPP | None = None,
-    foam_density: float = 48.0,
 ) -> float:
     """Estimate tail (horizontal + vertical stabilizer) structural mass from airfoil area, span, thickness, and density.
     
@@ -99,30 +87,21 @@ def tail_mass(
         Path to tail airfoil .dat file or NACA designation
     thickness : float
         Structural thickness parameter of the tail [m]
-    foam_density : float
-        Foam material density [kg/m³]
     
     Returns
     -------
     float
         Tail mass [kg]
     """
-    # Load tail airfoil geometry and compute cross-sectional area at unit chord
     airfoil = AirfoilGeometry(tail_airfoil_path)
     airfoil_area = airfoil.compute_airfoil_area(chord=1.0)
     tail_span = sizing.bt
-    
-    # Volume = airfoil_area * tail_span * thickness
-    # Mass = volume * density
     tail_volume = airfoil_area * tail_span * thickness
-    if material is None:
-        material = EPP()
-    return material.mass(tail_volume)
+    return CONFIG.tail.mass(tail_volume)
 
 
 def rod_mass(
     sizing: SizingResult,
-    material: CFRP | None = None,
     outer_diameter: float = rod_d,
     thickness: float = rod_t,
 ) -> float:
@@ -132,8 +111,6 @@ def rod_mass(
     ----------
     sizing : SizingResult
         Sizing result containing wing span `b`
-    material : CFRP, optional
-        Material used for the rod.
     outer_diameter : float
         Rod outer diameter [m]
     thickness : float
@@ -144,19 +121,16 @@ def rod_mass(
     float
         Rod mass [kg]
     """
-    if material is None:
-        material = CFRP()
     length = sizing.inputs.b
     inner_diameter = outer_diameter - 2.0 * thickness
     if inner_diameter < 0.0:
         raise ValueError("Rod thickness exceeds outer diameter")
     volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return material.mass(volume)
+    return CONFIG.rod.mass(volume)
 
 
 def tail_rod_mass(
     sizing: SizingResult,
-    material: CFRP | None = None,
     outer_diameter: float = rod_d,
     thickness: float = rod_t,
 ) -> float:
@@ -166,8 +140,6 @@ def tail_rod_mass(
     ----------
     sizing : SizingResult
         Sizing result containing tail length `L_tail`
-    material : CFRP, optional
-        Material used for the tail rod.
     outer_diameter : float
         Rod outer diameter [m]
     thickness : float
@@ -178,48 +150,340 @@ def tail_rod_mass(
     float
         Tail rod mass [kg]
     """
-    if material is None:
-        material = CFRP()
     length = sizing.L_tail
     inner_diameter = outer_diameter - 2.0 * thickness
     if inner_diameter < 0.0:
         raise ValueError("Rod thickness exceeds outer diameter")
     volume = np.pi * (outer_diameter**2 - inner_diameter**2) / 4.0 * length
-    return material.mass(volume)
+    return CONFIG.rod.mass(volume)
 
 
 def fuselage_mass(
     sizing: SizingResult,
     fuselage_inputs: FuselageInputs | None = None,
     airfoil_path: str | Path | None = None,
-    material: EPP | None = None,
 ) -> float:
-    """Get fuselage structural mass from fuselage sizing.
+    """Estimate fuselage structural mass.
+
+    Parameters
+    ----------
+    sizing : SizingResult
+        Sizing result
+    fuselage_inputs : FuselageInputs, optional
+        Fuselage design inputs
+    airfoil_path : str | Path, optional
+        Wing airfoil path for fuselage height sizing
+
+    Returns
+    -------
+    float
+        Fuselage mass [kg]
+    """
+    fus = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    return CONFIG.fuselage.mass(fus.volume_shell)
+
+
+def cg_fuselage(
+    sizing: SizingResult,
+    fuselage_inputs: FuselageInputs | None = None,
+    airfoil_path: str | Path | None = None,
+) -> float:
+    """Compute fuselage CG x-position relative to LEMAC.
+    
+    Assumes fuselage starts at LEMAC (x = 0) and extends rearward.
+    CG is at the centroid of the fuselage box.
     
     Parameters
     ----------
     sizing : SizingResult
         Sizing result
     fuselage_inputs : FuselageInputs, optional
-        Fuselage design inputs. If None, uses defaults.
+        Fuselage design inputs
     airfoil_path : str | Path, optional
-        Wing airfoil path for fuselage height sizing.
-    material : EPP, optional
-        Material used for fuselage casing.
+        Wing airfoil path for fuselage height sizing
     
     Returns
     -------
     float
-        Fuselage mass [kg]
+        Fuselage CG x-position relative to LEMAC [m]
     """
-    if material is None:
-        material = EPP()
     if fuselage_inputs is None:
-        fuselage_inputs = FuselageInputs(foam_density=material.rho)
+        fuselage_inputs = FuselageInputs()
+    fus = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    return fus.length / 2.0
+
+
+def cg_motors(sizing: SizingResult) -> float:
+    """Compute motors CG x-position relative to LEMAC.
+    
+    Motors are mounted at the leading edge of the wing (LEMAC).
+    
+    Returns
+    -------
+    float
+        Motors CG x-position relative to LEMAC [m]
+    """
+    return 0.0
+
+
+def cg_rod_wing(airfoil_path: str | Path, sizing: SizingResult) -> float:
+    """Compute first wing rod (main strut) CG x-position relative to LEMAC.
+    
+    Rod is positioned at the max thickness location of the wing airfoil.
+    
+    Parameters
+    ----------
+    airfoil_path : str | Path
+        Wing airfoil path
+    sizing : SizingResult
+        Sizing result
+    
+    Returns
+    -------
+    float
+        Rod CG x-position relative to LEMAC [m]
+    """
+    airfoil = AirfoilGeometry(airfoil_path)
+    _, x_max_tc = airfoil.compute_maximum_thickness()  # fraction of chord
+    return x_max_tc * sizing.c_root
+
+
+def cg_rod_aileron(
+    tail_airfoil_path: str | Path,
+    sizing: SizingResult,
+    aileron_chord_frac: float = 0.3,
+) -> float:
+    """Compute second rod (aileron attachment) CG x-position relative to LEMAC.
+    
+    Rod is positioned at the max thickness location of the aileron section.
+    Aileron is typically at 70% span with 30% of wing chord.
+    
+    Parameters
+    ----------
+    tail_airfoil_path : str | Path
+        Airfoil path (assuming aileron uses a section of wing airfoil or tail airfoil)
+    sizing : SizingResult
+        Sizing result
+    aileron_chord_frac : float
+        Aileron chord as fraction of local wing chord (default 0.3)
+    
+    Returns
+    -------
+    float
+        Rod CG x-position relative to LEMAC [m]
+    """
+    airfoil = AirfoilGeometry(tail_airfoil_path)
+    _, x_max_tc = airfoil.compute_maximum_thickness()
+    aileron_chord = aileron_chord_frac * sizing.c_root
+    return x_max_tc * aileron_chord
+
+
+def cg_tail(sizing: SizingResult) -> float:
+    """Compute tail CG x-position relative to LEMAC.
+    
+    Tail is positioned at distance L_tail behind the wing LEMAC.
+    
+    Parameters
+    ----------
+    sizing : SizingResult
+        Sizing result containing L_tail
+    
+    Returns
+    -------
+    float
+        Tail CG x-position relative to LEMAC [m]
+    """
+    return sizing.c_root + sizing.L_tail
+
+
+def cg_tail_rod(sizing: SizingResult) -> float:
+    """Compute tail rod CG x-position relative to LEMAC.
+
+    Tail rod spans from the trailing edge of the wing root to the tail,
+    so its CG is at the midpoint of that length.
+
+    Parameters
+    ----------
+    sizing : SizingResult
+        Sizing result containing c_root and L_tail
+
+    Returns
+    -------
+    float
+        Tail rod CG x-position relative to LEMAC [m]
+    """
+    return sizing.c_root + sizing.L_tail / 2.0
+
+
+def cg_wing(airfoil_path: str | Path, sizing: SizingResult) -> float:
+    """Compute wing structural mass CG x-position relative to LEMAC.
+
+    Approximated as the quarter-chord position of the root chord.
+
+    Parameters
+    ----------
+    airfoil_path : str | Path
+        Wing airfoil path (unused; quarter-chord is a geometry-independent approximation)
+    sizing : SizingResult
+        Sizing result
+
+    Returns
+    -------
+    float
+        Wing CG x-position relative to LEMAC [m]
+    """
+    return 0.25 * sizing.c_root
+
+
+def cg_battery(
+    rod_wing_x: float,
+    rod_aileron_x: float,
+) -> float:
+    """Compute battery + avionics CG x-position relative to LEMAC.
+
+    Battery is positioned midway between the two wing rods.
+
+    Parameters
+    ----------
+    rod_wing_x : float
+        Main wing rod CG x-position [m]
+    rod_aileron_x : float
+        Rear/aileron rod CG x-position [m]
+
+    Returns
+    -------
+    float
+        Battery CG x-position relative to LEMAC [m]
+    """
+    return 0.5 * (rod_wing_x + rod_aileron_x)
+
+
+def cg_pvc_tubes(rod_wing_x: float, rod_aileron_x: float) -> float:
+    """Compute PVC tubes CG x-position relative to LEMAC.
+    
+    Positioned at midpoint between the two span rods (can be refined later).
+    
+    Parameters
+    ----------
+    rod_wing_x : float
+        First rod (wing) x-position [m]
+    rod_aileron_x : float
+        Second rod (aileron) x-position [m]
+    
+    Returns
+    -------
+    float
+        PVC tubes CG x-position relative to LEMAC [m]
+    """
+    return (rod_wing_x + rod_aileron_x) / 2.0
+
+
+def pvc_tubes_mass() -> float:
+    """Get PVC tubes mass (structural connecting elements).
+    
+    Returns
+    -------
+    float
+        PVC tubes mass [kg] (fixed at 225 g)
+    """
+    return 0.225
+
+
+def compute_cg(
+    sizing: SizingResult,
+    electrical: ElectricalResult,
+    airfoil_path: str | Path,
+    tail_airfoil_path: str | Path,
+    fuselage_inputs: FuselageInputs | None = None,
+    battery_x: float | None = None,
+    pvc_tubes_mass_override: float | None = None,
+) -> dict[str, float]:
+    """Compute CG x-position of all components and overall aircraft CG.
+    
+    All positions are relative to the leading edge of the mean aerodynamic chord (LEMAC).
+    
+    Parameters
+    ----------
+    sizing : SizingResult
+        Sizing result
+    electrical : ElectricalResult
+        Electrical system result
+    airfoil_path : str | Path
+        Wing airfoil path
+    tail_airfoil_path : str | Path
+        Tail airfoil path
+    fuselage_inputs : FuselageInputs, optional
+        Fuselage design inputs
+    battery_x : float, optional
+        Battery CG x-position; if None, defaults to midpoint between wing rods
+    pvc_tubes_mass_override : float, optional
+        PVC tubes mass override; if None, uses default 225 g
+    
+    Returns
+    -------
+    dict[str, float]
+        Dictionary with CG x-positions [m] relative to LEMAC:
+        - 'fuselage': fuselage CG
+        - 'battery': battery + avionics CG
+        - 'motors': motors CG
+        - 'wing': wing structural CG
+        - 'rod_wing': first rod (wing strut) CG
+        - 'rod_aileron': second rod (aileron) CG
+        - 'tail': tail CG
+        - 'tail_rod': tail rod CG
+        - 'pvc_tubes': PVC tubes CG
+        - 'overall': weighted overall aircraft CG
+    """
+    # Compute individual component CGs
+    x_fus = cg_fuselage(sizing, fuselage_inputs, airfoil_path)
+    x_motor = cg_motors(sizing)
+    x_wing = cg_wing(airfoil_path, sizing)
+    x_rod_wing = cg_rod_wing(airfoil_path, sizing)
+    x_rod_aileron = cg_rod_aileron(tail_airfoil_path, sizing)
+    x_batt = cg_battery(x_rod_wing, x_rod_aileron) if battery_x is None else battery_x
+    x_tail = cg_tail(sizing)
+    x_tail_rod = cg_tail_rod(sizing)
+    x_pvc = cg_pvc_tubes(x_rod_wing, x_rod_aileron)
+
+    # Get component masses
+    m_fus = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    m_batt = battery_mass(electrical)
+    m_motor = motor_mass(electrical)
+    m_wing = wing_mass(sizing, airfoil_path)
+    m_rod_single = rod_mass(sizing)
+    m_tail = tail_mass(sizing, tail_airfoil_path)
+    m_tail_rod = tail_rod_mass(sizing)
+    m_pvc = pvc_tubes_mass_override if pvc_tubes_mass_override is not None else pvc_tubes_mass()
+
+    # Compute weighted CG
+    total_cg_mass = m_fus + m_batt + m_motor + m_wing + 2 * m_rod_single + m_tail + m_tail_rod + m_pvc
+    if total_cg_mass > 0:
+        x_cg = (
+            x_fus * m_fus
+            + x_batt * m_batt
+            + x_motor * m_motor
+            + x_wing * m_wing
+            + x_rod_wing * m_rod_single
+            + x_rod_aileron * m_rod_single
+            + x_tail * m_tail
+            + x_tail_rod * m_tail_rod
+            + x_pvc * m_pvc
+        ) / total_cg_mass
     else:
-        fuselage_inputs = replace(fuselage_inputs, foam_density=material.rho)
-    fuselage_result = run_fuselage(sizing, fuselage_inputs, airfoil_path=airfoil_path)
-    return fuselage_result.mass
+        x_cg = 0.0
+
+    return {
+        'fuselage': x_fus,
+        'battery': x_batt,
+        'motors': x_motor,
+        'wing': x_wing,
+        'rod_wing': x_rod_wing,
+        'rod_aileron': x_rod_aileron,
+        'tail': x_tail,
+        'tail_rod': x_tail_rod,
+        'pvc_tubes': x_pvc,
+        'overall': x_cg,
+    }
 
 
 def total_mass(
@@ -230,7 +494,6 @@ def total_mass(
     fuselage_inputs: FuselageInputs | None = None,
     wing_thickness: float = 0.1,
     tail_thickness: float = 0.08,
-    foam_density: float = 48.0,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components.
     
@@ -250,8 +513,6 @@ def total_mass(
         Wing structural thickness [m]
     tail_thickness : float
         Tail structural thickness [m]
-    foam_density : float
-        Structural foam density [kg/m³]
     
     Returns
     -------
@@ -261,24 +522,23 @@ def total_mass(
         - 'motors': total motor mass
         - 'wing': wing structural mass
         - 'tail': tail structural mass
+        - 'rod': combined wing rod mass (×2)
+        - 'tail_rod': tail rod mass
         - 'fuselage': fuselage structural mass
+        - 'pvc_tubes': PVC tubes mass
         - 'total': sum of all components
     """
     m_battery = battery_mass(electrical)
     m_motors = motor_mass(electrical)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
-    m_rod = rod_mass(sizing)
+    m_rod = 2 * rod_mass(sizing)
     m_tail_rod = tail_rod_mass(sizing)
-    m_fuselage = fuselage_mass(
-        sizing,
-        fuselage_inputs,
-        airfoil_path=airfoil_path,
-        material=EPP(),
-    )
-    
-    m_total = m_battery + m_motors + m_wing + m_tail + m_rod + m_tail_rod + m_fuselage
-    
+    m_fuselage = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
+    m_pvc = pvc_tubes_mass()
+
+    m_total = m_battery + m_motors + m_wing + m_tail + m_rod + m_tail_rod + m_fuselage + m_pvc
+
     return {
         'battery': m_battery,
         'motors': m_motors,
@@ -287,5 +547,6 @@ def total_mass(
         'rod': m_rod,
         'tail_rod': m_tail_rod,
         'fuselage': m_fuselage,
+        'pvc_tubes': m_pvc,
         'total': m_total,
     }

@@ -256,7 +256,17 @@ def main() -> None:
     CD0_history: list[float] = []
     for it in range(N_ITER):
         electrical = electrical_system.run(sizing, electrical_inputs)
-        fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
+        fus = fuselage.run(
+            sizing,
+            FUSELAGE,
+            battery_volume=electrical.battery_volume,
+            airfoil_path=airfoil,
+        )
+        if np.isclose(fus.height, FUSELAGE.casing_factor * fus.battery_height):
+            print(
+                "    WARNING: fuselage height is just casing_factor × battery_height; "
+                "airfoil height is not being used for fuselage sizing."
+            )
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
         sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
         sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
@@ -266,7 +276,17 @@ def main() -> None:
               f"m_batt = {electrical.battery_mass:.3f}")
     # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
     electrical = electrical_system.run(sizing, electrical_inputs)
-    fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
+    fus = fuselage.run(
+        sizing,
+        FUSELAGE,
+        battery_volume=electrical.battery_volume,
+        airfoil_path=airfoil,
+    )
+    if np.isclose(fus.height, FUSELAGE.casing_factor * fus.battery_height):
+        print(
+            "    WARNING: fuselage height is just casing_factor × battery_height; "
+            "airfoil height is not being used for fuselage sizing."
+        )
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
     control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_cd0_history(CD0_history, Cd0_guess)
@@ -294,6 +314,24 @@ def main() -> None:
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
     print(f"  Total mass   : {masses['total']:.3f} kg")
+
+    print("\n========== CENTER OF GRAVITY ==========")
+    cgs = mass_estimates.compute_cg(
+        sizing=sizing,
+        electrical=electrical,
+        airfoil_path=airfoil,
+        tail_airfoil_path=TAIL_AIRFOIL,
+    )
+
+    print(f"  Fuselage CG    : {cgs['fuselage']:.3f} m")
+    print(f"  Battery CG     : {cgs['battery']:.3f} m")
+    print(f"  Motors CG      : {cgs['motors']:.3f} m")
+    print(f"  Wing rod CG    : {cgs['rod_wing']:.3f} m")
+    print(f"  Aileron rod CG : {cgs['rod_aileron']:.3f} m")
+    print(f"  Tail CG        : {cgs['tail']:.3f} m")
+    print(f"  PVC tubes CG   : {cgs['pvc_tubes']:.3f} m")
+    print(f"  Overall CG     : {cgs['overall']:.3f} m")
+
     print("\n========== DRAG BUILDUP ==========")
     drag_estimates.summary(drag)
 
