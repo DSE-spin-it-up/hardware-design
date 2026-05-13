@@ -5,10 +5,15 @@ from sizing.initial_sizing import SizingResult
 
 @dataclass
 class FuselageInputs:
-    # Battery cell envelope [m]
+    # Off-the-shelf battery cell envelope [m] — used when AR_lw == 0 or AR_lh == 0.
     battery_length: float = 0.212
     battery_width: float = 0.090
     battery_height: float = 0.060
+    # Battery aspect ratios. If both > 0, dimensions are recomputed from the
+    # required battery volume (from electrical sizing) and these ratios,
+    # overriding battery_length/width/height above.
+    AR_lw: float = 0.0  # length / width
+    AR_lh: float = 0.0  # length / height
     # Geometric margins
     housing_factor: float = 1.5  # axial battery housing factor
     casing_factor: float = 1.1   # all-around casing margin
@@ -26,54 +31,46 @@ class FuselageResult:
     fineness: float     # length / d_eq [-]
     Swet: float         # wetted area [m^2]
     mass: float         # structural mass [kg]
+    battery_length: float  # [m] battery dimension actually used
+    battery_width: float   # [m]
+    battery_height: float  # [m]
 
 
 def _casing_mass(length: float, width: float, height: float, inputs: FuselageInputs) -> float:
-    """
-    Estimate fuselage casing mass as a hollow rectangular shell.
-
-    The shell volume is approximated as the difference between the outer box
-    and the inner box (outer dimensions minus one wall thickness on each side).
-
-    Parameters
-    ----------
-    length, width, height : float
-        Outer fuselage dimensions [m].
-    inputs : FuselageInputs
-        Contains ``casing_thickness`` [m] and ``foam_density`` [kg/m³].
-
-    Returns
-    -------
-    float
-        Casing mass [kg].
-    """
+    """Fuselage casing mass as a hollow rectangular shell."""
     t = inputs.casing_thickness
-    # Inner dimensions (clamp to zero to avoid negative volumes on tiny fuselages)
     l_in = max(length - 2 * t, 0.0)
     w_in = max(width  - 2 * t, 0.0)
     h_in = max(height - 2 * t, 0.0)
-
-    V_outer = length * width * height
-    V_inner = l_in   * w_in   * h_in
-    V_shell  = V_outer - V_inner
-
+    V_shell = length * width * height - l_in * w_in * h_in
     return V_shell * inputs.foam_density
 
 
 def run(
     sizing: SizingResult,
     inputs: FuselageInputs | None = None,
+    battery_volume: float = 0.0,
 ) -> FuselageResult:
     if inputs is None:
         inputs = FuselageInputs()
     i = inputs
 
+    if i.AR_lw > 0 and i.AR_lh > 0:
+        # L * (L/AR_lw) * (L/AR_lh) = V  =>  L = (V * AR_lw * AR_lh)^(1/3)
+        b_length = (battery_volume * i.AR_lw * i.AR_lh) ** (1 / 3)
+        b_width = b_length / i.AR_lw
+        b_height = b_length / i.AR_lh
+    else:
+        b_length = i.battery_length
+        b_width = i.battery_width
+        b_height = i.battery_height
+
     length = max(
         i.casing_factor * sizing.c_root,
-        i.battery_length * i.housing_factor * i.casing_factor,
+        b_length * i.housing_factor * i.casing_factor,
     )
-    width  = i.battery_width  * i.casing_factor
-    height = i.battery_height * i.casing_factor
+    width = b_width * i.casing_factor
+    height = b_height * i.casing_factor
 
     d_eq     = np.sqrt(width * height)
     fineness = length / d_eq
@@ -89,11 +86,16 @@ def run(
         fineness=fineness,
         Swet=Swet,
         mass=mass,
+        battery_length=b_length,
+        battery_width=b_width,
+        battery_height=b_height,
     )
 
 
 def summary(r: FuselageResult) -> None:
     print("\n--- Fuselage ---")
+    print(f"  Battery L × W × H    : "
+          f"{r.battery_length:.4f} × {r.battery_width:.4f} × {r.battery_height:.4f}  m")
     print(f"  Length               : {r.length:.4f}  m")
     print(f"  Width                : {r.width:.4f}  m")
     print(f"  Height               : {r.height:.4f}  m")

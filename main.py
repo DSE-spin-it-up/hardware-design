@@ -63,6 +63,18 @@ ELECTRICAL = ElectricalInputs(
     battery_density=250,
 )
 
+# Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
+# in which case dimensions are recomputed from the required battery volume.
+FUSELAGE = FuselageInputs(
+    battery_length=0.212,
+    battery_width=0.090,
+    battery_height=0.060,
+    AR_lw=0.0,  # length / width  (0 → use off-the-shelf dimensions)
+    AR_lh=0.0,  # length / height (0 → use off-the-shelf dimensions)
+    housing_factor=1.5,
+    casing_factor=1.1,
+)
+
 # Wing airfoil: .dat path or NACA digits (e.g. "2412"). If None, the pipeline prompts at runtime.
 AIRFOIL: str | None = "airfoils/MH112.dat"
 # AIRFOIL: str | None = "4412"
@@ -72,6 +84,9 @@ TAIL_AIRFOIL: str = "airfoils/NACA0010.dat"
 
 # Alpha sweep used to build the wing drag polar for the CL/CD plot [deg].
 ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
+
+# Number of sizing↔electrical↔fuselage↔drag iterations before running the LLT.
+N_ITER = 30
 
 
 # ============================================================
@@ -97,8 +112,10 @@ def full_drag_estimate(
     drag: DragResult,
     llt: LLTResult,
 ) -> float:
-    """Total wing-level CD at the operating point: CD0 buildup + induced drag."""
-    return drag.CD0 + llt.CD_i
+    """Total CD at the operating point: CD0 buildup + induced + payload bluff-body."""
+    s = sizing.inputs
+    CD_payload = s.Cd_payload * s.S_payload / (s.n_drones * sizing.Sw)
+    return drag.CD0 + llt.CD_i + CD_payload
 
 
 # ============================================================
@@ -146,30 +163,49 @@ def wing_drag_polar(
     return CL_arr, CD_arr
 
 
-def plot_wing_ld(
+def plot_cd0_history(CD0_history: list[float], Cd0_guess: float) -> None:
+    iters = np.arange(len(CD0_history) + 1)
+    values = np.array([Cd0_guess, *CD0_history])
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(iters, values, "o-")
+    ax.axhline(values[-1], color="g", ls="--",
+               label=f"converged CD0 = {values[-1]:.5f}")
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("CD0")
+    ax.set_title("CD0 progression")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    plt.show()
+
+
+def plot_drone_ld(
     CL: np.ndarray,
-    CD: np.ndarray,
+    CD_drone: np.ndarray,
+    CD_full: np.ndarray,
     CL_op: float,
     airfoil_name: str,
-    out_path: str = "wing_LD.png",
 ) -> None:
-    LD = CL / CD
-    idx_max = int(np.argmax(LD))
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(CL, LD, "o-", label="wing L/D")
-    ax.axvline(CL_op, color="r", ls="--", label=f"operating CL = {CL_op:.3f}")
-    ax.plot(
-        CL[idx_max], LD[idx_max], "g*", ms=14,
-        label=f"max L/D = {LD[idx_max]:.1f} @ CL = {CL[idx_max]:.2f}",
-    )
-    ax.set_xlabel("Wing CL")
-    ax.set_ylabel("Wing L/D")
-    ax.set_title(f"Wing drag polar — airfoil {airfoil_name}")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    for ax, CD, title in [
+        (axes[0], CD_drone, "Drone only"),
+        (axes[1], CD_full, "Drone + payload"),
+    ]:
+        LD = CL / CD
+        idx_max = int(np.argmax(LD))
+        ax.plot(CL, LD, "o-", label="L/D")
+        ax.axvline(CL_op, color="r", ls="--", label=f"operating CL = {CL_op:.3f}")
+        ax.plot(
+            CL[idx_max], LD[idx_max], "g*", ms=14,
+            label=f"max L/D = {LD[idx_max]:.1f} @ CL = {CL[idx_max]:.2f}",
+        )
+        ax.set_xlabel("CL")
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    axes[0].set_ylabel("L/D")
+    fig.suptitle(f"Drag polar — airfoil {airfoil_name}")
     fig.tight_layout()
-    # fig.savefig(out_path, dpi=150)
-    # print(f"  L/D plot saved to {out_path}")
     plt.show()
 
 
@@ -189,23 +225,27 @@ def main() -> None:
     # ----- Step 1: initial sizing with guessed Cd0 -----
     sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
 
-    # ----- Step 2: battery + propulsion -----
+    # ----- Steps 2-4: iterate electrical → fuselage → drag → (sizing) -----
+    # Sizing is re-run each pass so the refined Cd0 propagates into the wing
+    # area and drag force that the electrical model depends on.
+    print(f">>> Iterating ({N_ITER} passes): electrical → fuselage → drag → sizing")
+    Cd0_guess = sizing_inputs.Cd0
+    print(f"    iter  0: Cd0_guess = {Cd0_guess:.6f}")
+    CD0_history: list[float] = []
+    for it in range(N_ITER):
+        electrical = electrical_system.run(sizing, electrical_inputs)
+        fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
+        drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+        sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
+        sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
+        CD0_history.append(drag.CD0)
+        print(f"    iter {it + 1:2d}: CD0 = {drag.CD0:.6f}  Sw = {sizing.Sw:.4f}  "
+              f"m_batt = {electrical.battery_mass:.3f}")
+    # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
     electrical = electrical_system.run(sizing, electrical_inputs)
-
-    # ----- Step 3: size fuselage and refine CD0 from a component buildup -----
-    fus = fuselage.run(sizing)
+    fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
-    print(f">>> CD0 estimate (pass 1, Cd0_guess={sizing_inputs.Cd0:.5f}) : {drag.CD0:.5f}")
-    sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
-
-    # ----- Step 4: re-run sizing + electrical with refined Cd0 -----
-    # (One re-pass for now; turn into a `while not converged` loop once the
-    # CD0 estimator and sizing converge non-trivially.)
-    sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
-    electrical = electrical_system.run(sizing, electrical_inputs)
-    fus = fuselage.run(sizing)
-    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
-    print(f">>> CD0 estimate (pass 2, refined)                          : {drag.CD0:.5f}")
+    plot_cd0_history(CD0_history, Cd0_guess)
 
     print("========== INITIAL SIZING ==========")
     initial_sizing.summary(sizing)
@@ -254,20 +294,36 @@ def main() -> None:
         print(f"  ✗ Lift NOT achievable — section Cl exceeds polar by "
               f"{max_Cl_local - Cl_max:.3f}")
 
-    # ----- Step 6: wing CL/CD sweep → plot operating point vs max L/D -----
-    print("\nSweeping α to build wing drag polar…")
-    CL_sweep, CD_sweep = wing_drag_polar(sizing, polar, ALPHA_SWEEP_DEG)
-    LD_sweep = CL_sweep / CD_sweep
-    idx_max = int(np.argmax(LD_sweep))
-    print(f"  Max L/D = {LD_sweep[idx_max]:.2f} at CL = {CL_sweep[idx_max]:.3f}  "
-          f"(operating CL = {CL_req:.3f})")
-    plot_wing_ld(CL_sweep, CD_sweep, CL_op=CL_req, airfoil_name=polar.name)
+    # ----- Step 6: CL/CD sweep → plot drone-only and drone+payload L/D -----
+    print("\nSweeping α to build drag polar…")
+    CL_sweep, CD_wing_sweep = wing_drag_polar(sizing, polar, ALPHA_SWEEP_DEG)
+    CD_nonwing = drag.CD0_tail + drag.CD0_fus
+    CD_payload = sizing.inputs.Cd_payload * sizing.inputs.S_payload / (
+        sizing.inputs.n_drones * sizing.Sw
+    )
+    CD_drone_sweep = CD_wing_sweep + CD_nonwing
+    CD_full_sweep = CD_drone_sweep + CD_payload
+    LD_drone = CL_sweep / CD_drone_sweep
+    LD_full = CL_sweep / CD_full_sweep
+    i_drone = int(np.argmax(LD_drone))
+    i_full = int(np.argmax(LD_full))
+    print(f"  Drone only      : max L/D = {LD_drone[i_drone]:.2f} at CL = {CL_sweep[i_drone]:.3f}")
+    print(f"  Drone + payload : max L/D = {LD_full[i_full]:.2f} at CL = {CL_sweep[i_full]:.3f}")
+    print(f"  Operating CL    : {CL_req:.3f}")
+    plot_drone_ld(
+        CL_sweep, CD_drone_sweep, CD_full_sweep,
+        CL_op=CL_req, airfoil_name=polar.name,
+    )
 
-    # ----- Step 7: full drag estimate = CD0 buildup + induced drag -----
+    # ----- Step 7: full drag estimate = CD0 buildup + induced + payload -----
     CD_full = full_drag_estimate(sizing, drag, llt)
+    CD_payload = sizing.inputs.Cd_payload * sizing.inputs.S_payload / (
+        sizing.inputs.n_drones * sizing.Sw
+    )
     print(f"\nFull-buildup CD                       : {CD_full:.5f}")
     print(f"  CD0 (buildup)                       : {drag.CD0:.5f}")
     print(f"  CD_i  (LLT)                         : {llt.CD_i:.5f}")
+    print(f"  CD_payload                          : {CD_payload:.5f}")
     print(f"Final L/D at operating CL             : {CL_req / CD_full:.2f}")
 
 
