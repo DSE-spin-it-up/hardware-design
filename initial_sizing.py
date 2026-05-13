@@ -1,10 +1,9 @@
 from matplotlib.pylab import radians, sin, cos
 import numpy as np
 import control_surface_sizing as css
+from propeller_operating_point import prop_solver
 
 # INPUTS
-n=6000/60  # [RPM] Propeller rotational speed
-C_p_climb=0.03  # Power coefficient during climb [-]
 t_climb=30  # Climb time [s]
 # --- Payload & Fleet ---
 m_payload = 60  # [kg]
@@ -25,10 +24,7 @@ Cd_payload = 1.0  # Payload drag coefficient [-]
 # --- Propulsion ---
 n_props     = 2   # Number of propellers [-]
 eff_motor   = 0.8   # Motor efficiency [-]
-eff_prop    = 0.7 # Non-ideal propeller efficiency [-]
 T_W_to      = 2.0   # Thrust-to-weight ratio at take-off [-]
-J           = 0.47
-C_t         = 0.04
 D_prop      = 20 * 0.0254
 
 # --- Flight Conditions ---
@@ -63,7 +59,7 @@ ARt = 6  # Tail aspect ratio [-]
 lam_t = 1  # Tail taper ratio [-]
 c_cont_to_c_wing = 0.3  # Ratio of control surface chord to wing chord at the same spanwise station [-]
 Cl_a_tail=5.72  # Lift curve slope of tail airfoil [-]
-Flying_wing = True  # Whether the design is a flying wing (no tail) or not
+Flying_wing = False  # Whether the design is a flying wing (no tail) or not
 sweep=15  # Sweep angle of the wing [degrees]
 St_Sw=0.25  # Tail area to wing area ratio [-]
 Cl_a_wing=5.72  # Lift curve slope of wing airfoil [-]
@@ -97,12 +93,14 @@ Cd = Cd0 + k * CL**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
 L = CL * q_cruise * Sw  # [N]
 D = Cd * q_cruise * Sw  # [N]
 LD_ratio = L / D  # [-]
+
 # --- Climby ---
 C_L_climb = (3*Cd0/k)**(1/2)
 V_climb = (2 * m_drone_loaded * g0 / (rho * Sw * C_L_climb))**0.5
 Cd_climb = Cd0 + k * C_L_climb**2 + (Cd_payload * S_payload / (n_drones * Sw))  # [-]
 D_climb = Cd_climb * 0.5 * rho * V_climb**2 * Sw
 T_climb=(D_climb+climb_rate*m_drone_loaded*g0/V_climb)/n_props
+
 P_climb=C_p_climb*rho*(V_climb/J)**3*D_prop**2*n_props
 
 c_t_required=T_climb/(rho*n**2*D_prop**4)
@@ -119,7 +117,7 @@ P_required = D * V_cruise
 thrust_prop = C_t * rho * (V_cruise * D_prop / J) ** 2
 thrust_total_prop = thrust_prop * n_props
 C_p = (C_t / eff_prop) * J
-P_shaft = C_p * rho * ((V_cruise / J) ** 3) * (D_prop ** 2)
+P_shaft = C_p * rho * ((V_cruise / J) ** 3) * (D_prop ** 2)*n_props
 rpm_cruise=V_cruise/(J*D_prop)*60
 throttle_cruise=rpm_cruise/(KV*voltage_battery)
 
@@ -231,6 +229,7 @@ if __name__ == "__main__":
     print("\n--- Propulsion ---")
     print(f"  Cruise thrust        : {thrust_cruise:.2f}  N")
     print(f"  Total prop. thrust   : {thrust_total_prop:.2f}  N")
+    print(f"  RPM during cruise      : {rpm_cruise:.2f}  RPM")
     print(f"  Take-off thrust      : {thrust_to:.2f}  N")
     print(f"  Cruise power required : {P_required:.2f}  W")
     print(f"  Propeller Diameter   : {D_prop:.2f}  m")
@@ -253,8 +252,8 @@ if __name__ == "__main__":
     print(f"  c_t_required         : {c_t_required:.4f}  [-]")
     print(f"  J_climb              : {J_climb:.4f}  [-]")
     print(f"  J for cruise            : {J:.2f}  m/s")
-    print(f"  Power required       : {P_climb:.2f}  W")
+    print(f"  Climb power       : {P_climb:.2f}  W")
     print(f"  Throttle for Climb   : {throttle_climb:.2f}  [-]")
     print(f"  Throttle for Cruise  : {throttle_cruise:.2f}  [-]")
     print(f"  Climb speed          : {V_climb:.2f}  m/s")
-    print(f"  Climb thrust         : {T_climb:.2f}  N")
+    print(f"  Climb thrust         : {T_climb*n_props:.2f}  N")
