@@ -66,12 +66,14 @@ ELECTRICAL = ElectricalInputs(
 
 # Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
 # in which case dimensions are recomputed from the required battery volume.
+# AR_lw / AR_lh below match the off-the-shelf 0.212 × 0.090 × 0.060 cell so the
+# starting shape is preserved but the cell scales with the propulsion-sized volume.
 FUSELAGE = FuselageInputs(
     battery_length=0.212,
     battery_width=0.090,
     battery_height=0.060,
-    AR_lw=0.0,  # length / width  (0 → use off-the-shelf dimensions)
-    AR_lh=0.0,  # length / height (0 → use off-the-shelf dimensions)
+    AR_lw=0.212 / 0.090,  # length / width  (≈ 2.356)
+    AR_lh=0.212 / 0.060,  # length / height (≈ 3.533)
     housing_factor=1.5,
     casing_factor=1.1,
 )
@@ -95,8 +97,9 @@ TAIL_AIRFOIL: str = "airfoils/NACA0010.dat"
 # Alpha sweep used to build the wing drag polar for the CL/CD plot [deg].
 ALPHA_SWEEP_DEG = (-2.0, 12.0, 30)
 
-# Number of sizing↔electrical↔fuselage↔drag iterations before running the LLT.
-N_ITER = 3
+# Sizing↔electrical↔fuselage↔drag iteration: stop when |ΔCD0| < CD0_TOL, capped at N_ITER_MAX.
+N_ITER_MAX = 20
+CD0_TOL = 1e-4
 
 
 # ============================================================
@@ -249,12 +252,16 @@ def main() -> None:
 
     # ----- Steps 2-4: iterate electrical → fuselage → drag → (sizing) -----
     # Sizing is re-run each pass so the refined Cd0 propagates into the wing
-    # area and drag force that the electrical model depends on.
-    print(f">>> Iterating ({N_ITER} passes): electrical → fuselage → drag → sizing")
+    # area and drag force that the electrical model depends on. Loop exits
+    # when |ΔCD0| < CD0_TOL or after N_ITER_MAX passes.
+    print(f">>> Iterating electrical → fuselage → drag → sizing "
+          f"(tol = {CD0_TOL:.0e}, max {N_ITER_MAX} passes)")
     Cd0_guess = sizing_inputs.Cd0
     print(f"    iter  0: Cd0_guess = {Cd0_guess:.6f}")
     CD0_history: list[float] = []
-    for it in range(N_ITER):
+    CD0_prev = Cd0_guess
+    converged = False
+    for it in range(N_ITER_MAX):
         electrical = electrical_system.run(sizing, electrical_inputs)
         fus = fuselage.run(
             sizing,
@@ -272,8 +279,18 @@ def main() -> None:
         sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
         control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
         CD0_history.append(drag.CD0)
-        print(f"    iter {it + 1:2d}: CD0 = {drag.CD0:.6f}  Sw = {sizing.Sw:.4f}  "
-              f"m_batt = {electrical.battery_mass:.3f}")
+        dCD0 = abs(drag.CD0 - CD0_prev)
+        print(f"    iter {it + 1:2d}: CD0 = {drag.CD0:.6f}  ΔCD0 = {dCD0:.2e}  "
+              f"Sw = {sizing.Sw:.4f}  m_batt = {electrical.battery_mass:.3f}")
+        if dCD0 < CD0_TOL:
+            converged = True
+            break
+        CD0_prev = drag.CD0
+    if converged:
+        print(f"    ✓ CD0 converged in {it + 1} iterations (|ΔCD0| < {CD0_TOL:.0e}).")
+    else:
+        print(f"    ✗ CD0 did NOT converge after {N_ITER_MAX} iterations "
+              f"(last |ΔCD0| = {dCD0:.2e}).")
     # Final pass with the converged Cd0 so electrical/fus/drag match the latest sizing.
     electrical = electrical_system.run(sizing, electrical_inputs)
     fus = fuselage.run(
@@ -282,11 +299,6 @@ def main() -> None:
         battery_volume=electrical.battery_volume,
         airfoil_path=airfoil,
     )
-    if np.isclose(fus.height, FUSELAGE.casing_factor * fus.battery_height):
-        print(
-            "    WARNING: fuselage height is just casing_factor × battery_height; "
-            "airfoil height is not being used for fuselage sizing."
-        )
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
     control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_cd0_history(CD0_history, Cd0_guess)

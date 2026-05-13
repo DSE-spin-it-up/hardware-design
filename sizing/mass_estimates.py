@@ -7,21 +7,21 @@ import numpy as np
 from .fuselage import run as run_fuselage, FuselageInputs
 from .initial_sizing import SizingResult
 from .materials import CFRP, EPP
-from .propulsion_sizing import PropulsionResult
+from .electrical_system import ElectricalResult
 from .structure import d as rod_d, t as rod_t
 from aerodynamics.airfoil_shape import AirfoilGeometry
 from .config import MaterialsConfig
 
 CONFIG = MaterialsConfig()
 
-def battery_mass(propulsion: PropulsionResult) -> float:
-    """Battery mass [kg] from the propulsion sizing result."""
-    return propulsion.battery_mass
+def battery_mass(electrical: ElectricalResult) -> float:
+    """Battery mass [kg] from the electrical sizing result."""
+    return electrical.battery_mass
 
 
-def motor_mass(propulsion: PropulsionResult) -> float:
-    """Total motor mass [kg] from the propulsion sizing result."""
-    return propulsion.total_motor_mass
+def motor_mass(electrical: ElectricalResult) -> float:
+    """Total motor mass [kg] from the electrical sizing result."""
+    return electrical.total_motor_mass
 
 
 def wing_mass(
@@ -467,7 +467,7 @@ def compute_cg(
 
 def total_mass(
     sizing: SizingResult,
-    propulsion: PropulsionResult,
+    electrical: ElectricalResult,
     airfoil_path: str | Path,
     tail_airfoil_path: str | Path,
     fuselage_inputs: FuselageInputs | None = None,
@@ -475,8 +475,8 @@ def total_mass(
     tail_thickness: float = 0.08,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components."""
-    m_battery = battery_mass(propulsion)
-    m_motors = motor_mass(propulsion)
+    m_battery = battery_mass(electrical)
+    m_motors = motor_mass(electrical)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = 2 * rod_mass(sizing)

@@ -14,8 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-import propeller_operating_point as prop_solver
-from sizing import initial_sizing
+from sizing import initial_sizing, propeller_operating_point as prop_solver
 from sizing.electrical_system import (
     battery_mass_from_energy,
     battery_volume_from_energy,
@@ -34,7 +33,7 @@ def _diameter_from_csv_name(csv_path: str) -> float:
 @dataclass
 class PropulsionInputs:
     # Propeller
-    csv_prop: str = "20x10E_performance.csv"
+    csv_prop: str = "data/20x10E_performance.csv"
     n_props: int = 2
     D_prop: float | None = None  # [m] — derived from csv_prop name if None
     # Motor / drivetrain
