@@ -21,7 +21,8 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.airfoil_shape import airfoil_thickness_to_chord
 from aerodynamics.drag_estimates import DragInputs, DragResult
 from aerodynamics.llt_solver import FlightCondition, LLTResult, WingGeometry, solve_llt
-from sizing import electrical_system, fuselage, initial_sizing, mass_estimates
+from sizing import control_surface_sizing, electrical_system, fuselage, initial_sizing, mass_estimates
+from sizing.control_surface_sizing import ControlSurfaceInputs
 from sizing.electrical_system import ElectricalInputs, ElectricalResult
 from sizing.fuselage import FuselageInputs, FuselageResult
 from sizing.initial_sizing import SizingInputs, SizingResult
@@ -73,6 +74,15 @@ FUSELAGE = FuselageInputs(
     AR_lh=0.0,  # length / height (0 → use off-the-shelf dimensions)
     housing_factor=1.5,
     casing_factor=1.1,
+)
+
+CONTROL_SURFACE = ControlSurfaceInputs(
+    cl_alpha=2 * np.pi,
+    cd0_section=0.04,
+    roll_req_deg=60.0,
+    max_da_deg=10.0,
+    max_y_frac=0.8,
+    c_aileron_to_c_wing=0.3,
 )
 
 # Wing airfoil: .dat path or NACA digits (e.g. "2412"). If None, the pipeline prompts at runtime.
@@ -225,6 +235,18 @@ def main() -> None:
     # ----- Step 1: initial sizing with guessed Cd0 -----
     sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
 
+    # ----- Step 1b: load airfoil polar once (Re from initial sizing) -----
+    # Reused inside the loop for control-surface section Cd, and after the loop for LLT.
+    # Section Cd is weakly Re-sensitive over the iteration-induced Re drift, so we
+    # don't re-run XFOIL each pass.
+    Re_ref = sizing.rho * sizing.inputs.V_cruise * sizing.c / 1.7894e-5
+    polar = get_airfoil_polar(
+        airfoil, Re=Re_ref, M=0.0, alpha_range=(-5.0, 15.0, 0.5), use_cache=True
+    )
+    Cl_max = float(np.max(polar.Cl))
+    print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
+          f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
+
     # ----- Steps 2-4: iterate electrical → fuselage → drag → (sizing) -----
     # Sizing is re-run each pass so the refined Cd0 propagates into the wing
     # area and drag force that the electrical model depends on.
@@ -238,6 +260,7 @@ def main() -> None:
         drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
         sizing_inputs = dataclasses.replace(sizing_inputs, Cd0=drag.CD0)
         sizing = initial_sizing.run(sizing_inputs, t_over_c_root=tc)
+        control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
         CD0_history.append(drag.CD0)
         print(f"    iter {it + 1:2d}: CD0 = {drag.CD0:.6f}  Sw = {sizing.Sw:.4f}  "
               f"m_batt = {electrical.battery_mass:.3f}")
@@ -245,6 +268,7 @@ def main() -> None:
     electrical = electrical_system.run(sizing, electrical_inputs)
     fus = fuselage.run(sizing, FUSELAGE, battery_volume=electrical.battery_volume)
     drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=TAIL_AIRFOIL)
+    control_surface = control_surface_sizing.run(sizing, CONTROL_SURFACE, polar=polar)
     plot_cd0_history(CD0_history, Cd0_guess)
 
     print("========== INITIAL SIZING ==========")
@@ -253,6 +277,8 @@ def main() -> None:
     electrical_system.summary(electrical)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(fus)
+    print("\n========== CONTROL SURFACES ==========")
+    control_surface_sizing.summary(control_surface)
     print("\n========== MASS ESTIMATES ==========")
     masses = mass_estimates.total_mass(
         sizing=sizing,
@@ -274,15 +300,6 @@ def main() -> None:
     # ----- Step 5: LLT at the required CL -----
     CL_req = sizing.CL
     print(f"\nRequired wing CL for L = W : {CL_req:.4f}")
-
-    Re_ref = sizing.rho * sizing.inputs.V_cruise * sizing.c / 1.7894e-5
-    polar = get_airfoil_polar(
-        airfoil, Re=Re_ref, M=0.0, alpha_range=(-5.0, 15.0, 0.5), use_cache=True
-    )
-    Cl_max = float(np.max(polar.Cl))
-    print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
-          f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
-
     llt = llt_at_cl(sizing, polar, CL_target=CL_req)
     max_Cl_local = float(np.max(np.abs(llt.Cl_local)))
     print(f"\nLLT @ CL_target = {CL_req:.4f}:")
