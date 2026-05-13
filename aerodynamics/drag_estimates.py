@@ -151,9 +151,12 @@ def summary(r: DragResult) -> None:
     print(f"  Cf wing/tail/fus     : {r.Cf_wing:.5f} / {r.Cf_tail:.5f} / {r.Cf_fus:.5f}")
     print(f"  FF wing/tail/fus     : {r.FF_wing:.3f} / {r.FF_tail:.3f} / {r.FF_fus:.3f}")
     print(f"  Swet wing/tail/fus   : {r.Swet_wing:.3f} / {r.Swet_tail:.3f} / {r.Swet_fus:.3f}  m²")
-    print(f"  CD0 wing             : {r.CD0_wing:.5f}")
-    print(f"  CD0 tail             : {r.CD0_tail:.5f}")
-    print(f"  CD0 fuselage         : {r.CD0_fus:.5f}")
+    pct_wing = 100 * r.CD0_wing / r.CD0 if r.CD0 > 0 else 0.0
+    pct_tail = 100 * r.CD0_tail / r.CD0 if r.CD0 > 0 else 0.0
+    pct_fus  = 100 * r.CD0_fus  / r.CD0 if r.CD0 > 0 else 0.0
+    print(f"  CD0 wing             : {r.CD0_wing:.5f}  ({pct_wing:5.1f}%)")
+    print(f"  CD0 tail             : {r.CD0_tail:.5f}  ({pct_tail:5.1f}%)")
+    print(f"  CD0 fuselage         : {r.CD0_fus:.5f}  ({pct_fus:5.1f}%)")
     print(f"  CD0 total            : {r.CD0:.5f}")
 
 

@@ -14,10 +14,12 @@ class ElectricalInputs:
     J: float = 0.4               # Advance ratio [-]
     C_t: float = 0.04            # Thrust coefficient [-]
     D_prop: float = 20 * 0.0254  # Propeller diameter [m]
+    prop_mass: float = 0.05      # Mass of a single propeller [kg]
     # Battery
     n_cells: int = 6
     voltage_cell: float = 3.7    # [V]
     battery_density: float = 250 # [Wh/L]
+    eff_battery: float = 0.95    # Battery discharge efficiency [-]
 
 
 @dataclass
@@ -35,10 +37,12 @@ class ElectricalResult:
     KV: float
     motor_mass: float        # [kg] per motor
     total_motor_mass: float  # [kg]
+    total_prop_mass: float   # [kg] all propellers combined
     # Energy & Battery
     I_battery: float
     P_battery: float
-    E_cruise: float          # [J]
+    E_cruise: float          # [J] electrical energy delivered during cruise
+    E_battery: float         # [J] energy the battery must store (E_cruise / eff_battery)
     battery_mass: float      # [kg]
     battery_volume: float    # [m^3]
 
@@ -100,13 +104,16 @@ def run(
 
     motor_mass = motor_mass_from_kv(KV)
     total_motor_mass = motor_mass * i.n_props
+    total_prop_mass = i.prop_mass * i.n_props
 
     # Energy & Battery
     I_battery = (P_shaft * i.n_props) / voltage_battery
     P_battery = voltage_battery * I_battery
     E_cruise = P_battery * s.t_cruise
-    battery_mass = battery_mass_from_energy(E_cruise, i.n_cells, i.voltage_cell)
-    battery_volume = battery_volume_from_energy(E_cruise, i.battery_density)
+    # Battery must store more than it delivers: account for discharge efficiency.
+    E_battery = E_cruise / i.eff_battery
+    battery_mass = battery_mass_from_energy(E_battery, i.n_cells, i.voltage_cell)
+    battery_volume = battery_volume_from_energy(E_battery, i.battery_density)
 
     return ElectricalResult(
         inputs=inputs,
@@ -121,9 +128,11 @@ def run(
         KV=KV,
         motor_mass=motor_mass,
         total_motor_mass=total_motor_mass,
+        total_prop_mass=total_prop_mass,
         I_battery=I_battery,
         P_battery=P_battery,
         E_cruise=E_cruise,
+        E_battery=E_battery,
         battery_mass=battery_mass,
         battery_volume=battery_volume,
     )
@@ -140,7 +149,10 @@ def summary(r: ElectricalResult) -> None:
     print(f"  Total prop. thrust   : {r.thrust_total_prop:.2f}  N")
     print(f"  Take-off thrust      : {r.thrust_to:.2f}  N")
     print(f"  Cruise power required: {r.P_required:.2f}  W")
+    print(f"  Number of propellers : {r.inputs.n_props}")
     print(f"  Propeller Diameter   : {r.inputs.D_prop:.2f}  m")
+    print(f"  Propeller Mass (each): {r.inputs.prop_mass:.3f}  kg")
+    print(f"  Total Propeller Mass : {r.total_prop_mass:.3f}  kg")
     print(f"  Shaft Power          : {r.P_shaft:.2f}  W")
     print(f"  KV Motor             : {r.KV:.2f}  RPM/V")
     print(f"  Battery Current      : {r.I_battery:.2f}  A")
@@ -149,6 +161,8 @@ def summary(r: ElectricalResult) -> None:
 
     print("\n--- Energy ---")
     print(f"  Cruise energy        : {r.E_cruise / 3600:.2f}  Wh")
+    print(f"  Battery efficiency   : {r.inputs.eff_battery:.3f}")
+    print(f"  Battery stored energy: {r.E_battery / 3600:.2f}  Wh")
     print(f"  Battery volume       : {r.battery_volume * 1000:.2f}  L")
 
 

@@ -24,6 +24,11 @@ def motor_mass(electrical: ElectricalResult) -> float:
     return electrical.total_motor_mass
 
 
+def prop_mass(electrical: ElectricalResult) -> float:
+    """Total propeller mass [kg] from the electrical sizing result."""
+    return electrical.total_prop_mass
+
+
 def wing_mass(
     sizing: SizingResult,
     airfoil_path: str | Path,
@@ -477,6 +482,7 @@ def total_mass(
     """Compute total aircraft mass as sum of components."""
     m_battery = battery_mass(electrical)
     m_motors = motor_mass(electrical)
+    m_props = prop_mass(electrical)
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness)
     m_rod = 2 * rod_mass(sizing)
@@ -484,11 +490,15 @@ def total_mass(
     m_fuselage = fuselage_mass(sizing, fuselage_inputs, airfoil_path=airfoil_path)
     m_pvc = pvc_tubes_mass()
 
-    m_total = m_battery + m_motors + m_wing + m_tail + m_rod + m_tail_rod + m_fuselage + m_pvc
+    m_total = (
+        m_battery + m_motors + m_props + m_wing + m_tail
+        + m_rod + m_tail_rod + m_fuselage + m_pvc
+    )
 
     return {
         'battery': m_battery,
         'motors': m_motors,
+        'props': m_props,
         'wing': m_wing,
         'tail': m_tail,
         'rod': m_rod,
