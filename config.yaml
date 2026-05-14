@@ -13,7 +13,7 @@ tail_airfoil: airfoils/NACA0010.dat
 alpha_sweep_deg: [-2.0, 12.0, 30]
 
 # Coarser sweep used inside the iteration loop to find max-L/D CL each pass.
-alpha_sweep_loop_deg: [-2.0, 12.0, 15]
+alpha_sweep_loop_deg: [-2.0, 12.0, 140]
 
 # ----- Convergence loop -----
 # Sizing ↔ propulsion ↔ fuselage ↔ drag ↔ mass ↔ wing-area iteration.
