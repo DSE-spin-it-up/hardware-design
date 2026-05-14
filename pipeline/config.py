@@ -15,6 +15,7 @@ from sizing.aileron import AileronInputs
 from sizing.fuselage import FuselageInputs
 from sizing.wing import SizingInputs
 from structures.rods import RodInputs
+from weights.part_materials import PartMaterials
 
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
@@ -27,11 +28,13 @@ def _load() -> dict:
 
 _data = _load()
 
+MATERIALS = PartMaterials.from_names(_data["materials"])
+
 SIZING = SizingInputs(**_data["sizing"])
 PROPULSION = PropulsionInputs(**_data["propulsion"])
 FUSELAGE = FuselageInputs(**_data["fuselage"])
 CONTROL_SURFACE = AileronInputs(**_data["control_surface"])
-STRUCTURE = RodInputs(**_data["structure"])
+STRUCTURE = RodInputs(**_data["structure"], material=MATERIALS.rod)
 
 AIRFOIL: str | None = _data["airfoil"]
 TAIL_AIRFOIL: str = _data["tail_airfoil"]

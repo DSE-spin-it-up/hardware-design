@@ -127,3 +127,16 @@ structure:
   d_to_section_ratio: 0.8    # rod OD as fraction of section thickness
   CLt_max: 1.0
   tail_tc: 0.10              # matches NACA0010 tail
+
+# ----- Material selection -----
+# Each part is mapped to a Material subclass defined in
+# structures/materials.py. Available options:
+#   CFRP, EPP, CF_PLA, PLA, Wood
+# Properties (E, rho, Y, s_t, s_c) live in the material class; edit them
+# there if you need to change a value. The rod material must define s_c
+# (compressive yield) — currently only CFRP and Wood do.
+materials:
+  fuselage: CF_PLA
+  wing: EPP
+  rod: CFRP
+  tail: EPP
