@@ -17,8 +17,11 @@ from sizing.fuselage import FuselageResult
 def _max_tc_with_location(airfoil: str) -> tuple[float, float]:
     """Return (max t/c, x/c at max thickness) for either a .dat path or NACA digits.
 
-    NACA 4-/5-digit airfoils have their max thickness at x/c ≈ 0.30, which is
-    the Raymer-recommended default when an explicit polygon isn't available.
+    The 0.30 below is exact for NACA 4-/5-digit airfoils: both series share
+    the same thickness polynomial, which peaks at x/c = 0.30. It is NOT a
+    generic fallback — NACA 6-series (and other modern laminar-flow sections)
+    have max thickness at 0.40-0.50 and would be silently mis-sized here.
+    Pass a .dat file for anything outside the 4-/5-digit family.
     """
     if str(airfoil).endswith(".dat"):
         return AirfoilGeometry(airfoil).compute_maximum_thickness()

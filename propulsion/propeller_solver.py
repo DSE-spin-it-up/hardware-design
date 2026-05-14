@@ -22,22 +22,6 @@ import pandas as pd
 import numpy as np
 
 
-# ---------------------------------------------
-# USER INPUTS - edit these
-# ---------------------------------------------
-CSV_FILE      = "15x135-3_performance.csv"
-TARGET_THRUST = 20.0           # [N]
-CRUISE_SPEED  = 20.0           # [m/s]
-DIAMETER      = 15 * 0.0254    # 15-inch prop -> metres  (1 in = 0.0254 m)
-
-RPM_INIT      = 6000           # initial RPM guess
-RPM_TOL       = 1              # [RPM]  convergence tolerance
-THRUST_TOL    = 0.5            # [N]    convergence tolerance (matched to RPM_STEP)
-MAX_ITER      = 200            # max iterations
-RPM_STEP      = 50             # [RPM]  walk step size
-# ---------------------------------------------
-
-
 def load_data(path):
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
@@ -289,6 +273,21 @@ def vtolsolve(csv_file, max_thrust, diameter,
     return None
 
 if __name__ == "__main__":
+    # ---------------------------------------------
+    # Standalone-script inputs - edit these to run
+    # this file directly (not used by the pipeline).
+    # ---------------------------------------------
+    CSV_FILE      = "15x135-3_performance.csv"
+    TARGET_THRUST = 20.0           # [N]
+    CRUISE_SPEED  = 20.0           # [m/s]
+    DIAMETER      = 15 * 0.0254    # 15-inch prop -> metres  (1 in = 0.0254 m)
+
+    RPM_INIT      = 6000           # initial RPM guess
+    RPM_TOL       = 1              # [RPM]  convergence tolerance
+    THRUST_TOL    = 0.5            # [N]    convergence tolerance (matched to RPM_STEP)
+    MAX_ITER      = 200            # max iterations
+    RPM_STEP      = 50             # [RPM]  walk step size
+
     result = solve(
         csv_file      = CSV_FILE,
         target_thrust = TARGET_THRUST,

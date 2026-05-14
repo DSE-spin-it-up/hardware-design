@@ -1,6 +1,6 @@
 """Design pipeline entry point.
 
-Edit the design knobs in `pipeline/config.py` and run `python main.py`. Pipeline:
+Edit the design knobs in `config.yaml` and run `python main.py`. Pipeline:
   1. Initial sizing with a guessed wing Cd0
   2. Battery + propulsion sizing
   3. Re-estimate Cd0 from fuselage (PLACEHOLDER — teammate)
