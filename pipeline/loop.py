@@ -15,6 +15,7 @@ from aerodynamics.airfoil_geometry import airfoil_thickness_to_chord
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.drag_buildup import DragResult
 from aerodynamics.llt import LLTResult
+from aerodynamics.stability import calculate_lh
 from pipeline.helpers import (
     ScissorData,
     compute_scissor_data,
@@ -313,6 +314,13 @@ def run_pipeline(config) -> PipelineResult:
             Vh_V=p.drag.inputs.Vh_V,
         )
 
+        Sh_S = sizing.Sh / sizing.Sw
+
+        lt_new = calculate_lh(x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, Sh_S=Sh_S, CL_h=scissor.CL_h,
+                          CL_A_h=scissor.CL_A_h, Cm_ac=scissor.Cm_ac, Vh_V=scissor.Vh_V,
+                          CL_alpha_h=scissor.CL_alpha_h, CL_alpha_A_h=scissor.CL_alpha_A_h,
+                          dep_da=scissor.dep_da, SM=scissor.SM)
+
         # --- Wing-area closure: resize Sw to put op-point at max-L/D for drone+payload,
         #     clamped by the stall-speed bound ---
         if config.SW_CLOSURE:
@@ -332,7 +340,8 @@ def run_pipeline(config) -> PipelineResult:
 
         # --- Feed CD0, b, L_tail, (m_drone) back into sizing inputs and re-run wing sizing ---
         # TODO: replace `sizing.L_tail` echo with the scissor-driven update once that closure is in place.
-        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "L_tail": sizing.L_tail}
+        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "L_tail": lt_new, }
+
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
         sizing_inputs = dataclasses.replace(sizing_inputs, **replace_kwargs)

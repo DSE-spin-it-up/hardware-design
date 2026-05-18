@@ -155,3 +155,27 @@ def calculate_tail_loading(
         "AR_tail": tail_geometry.AR,
         "llt_tail": tail_result,
     }
+
+def calculate_lh(
+    x_cg: np.ndarray,
+    *,
+    x_ac: float,
+    c: float,
+    Sh_S: float,
+    CL_h: float,
+    CL_A_h: float,
+    Cm_ac: float,
+    Vh_V: float,
+    CL_alpha_h: float,
+    CL_alpha_A_h: float,
+    dep_da: float,
+    SM: float,
+) -> np.ndarray:
+
+    factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * Sh_S * Vh_V**2
+    factor_cont = (CL_h / CL_A_h) * Sh_S * Vh_V**2
+
+    lh_c_stab = factor_stab / ((x_cg - x_ac / c) + (Cm_ac / CL_A_h))
+    lh_c_cont = factor_cont / ((x_cg - x_ac / c) + SM)
+
+    return max(lh_c_stab, lh_c_cont)

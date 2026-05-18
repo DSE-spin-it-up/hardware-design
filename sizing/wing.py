@@ -133,7 +133,7 @@ def run(
 
     # Tail geometry
     bh = i.b * 0.365445026178  # [m] Desmos
-    Sh = bh ** 2 / i.ARt
+    Sh =  (bh ** 2 / i.ARt) if i.L_tail is None else (i.Vh * Sw * c / i.L_tail)
     L_tail = i.L_tail if i.L_tail is not None else (i.Vh * Sw * c / Sh)
     Sv = i.Vv * Sw * i.b / L_tail
     bv = np.sqrt(2 * i.ARt * Sv) / 2
