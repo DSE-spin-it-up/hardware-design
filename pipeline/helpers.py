@@ -9,7 +9,7 @@ from aerodynamics.drag_buildup import DragInputs, DragResult
 from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
-
+from structures import rods as rods_mod
 
 def resolve_airfoil(airfoil: str | None) -> str:
     if airfoil is not None:
@@ -23,10 +23,12 @@ def estimate_cd0(
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
-    """Component drag buildup for wing + tail + fuselage."""
+    """Component drag buildup for wing + tail + fuselage + tail boom."""
+    rods = rods_mod.run(sizing)          # ← was missing
     return drag_buildup.run(
         sizing,
         fus,
+        rods,
         DragInputs(wing_airfoil=wing_airfoil, tail_airfoil=tail_airfoil),
     )
 
