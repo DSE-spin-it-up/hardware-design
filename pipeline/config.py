@@ -39,6 +39,8 @@ STRUCTURE = RodInputs(**_data["structure"], material=MATERIALS.rod)
 AIRFOIL: str | None = _data["airfoil"]
 TAIL_AIRFOIL: str = _data["tail_airfoil"]
 
+BATTERY_X: float | None = _data.get("battery_x")
+
 ALPHA_SWEEP_DEG = tuple(_data["alpha_sweep_deg"])
 ALPHA_SWEEP_LOOP_DEG = tuple(_data["alpha_sweep_loop_deg"])
 

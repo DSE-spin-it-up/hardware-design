@@ -130,6 +130,7 @@ def _run_design_pass(
         aileron=control_surface,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
+        battery_x=config.BATTERY_X,
         materials=config.MATERIALS,
     )
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)

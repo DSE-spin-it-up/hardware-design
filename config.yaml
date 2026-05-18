@@ -32,6 +32,13 @@ cd0_tol: 1.0e-4
 mass_tol: 1.0e-3   # kg
 sw_tol: 1.0e-3     # m²
 
+# ----- CG tuning -----
+# Battery x-position [m] measured from the LEMAC, same convention as the rest
+# of the CG buildup. Set to null to default to the midpoint between the spar
+# and aileron rods (current behaviour). Override to slide the battery fore/aft
+# and trade x_cg.
+battery_x: null
+
 # ----- Initial / wing sizing -----
 sizing:
   # Payload & fleet
