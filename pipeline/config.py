@@ -41,6 +41,8 @@ TAIL_AIRFOIL: str = _data["tail_airfoil"]
 
 BATTERY_X: float | None = _data.get("battery_x")
 
+V_STALL: float = _data["V_stall"]
+
 ALPHA_SWEEP_DEG = tuple(_data["alpha_sweep_deg"])
 ALPHA_SWEEP_LOOP_DEG = tuple(_data["alpha_sweep_loop_deg"])
 

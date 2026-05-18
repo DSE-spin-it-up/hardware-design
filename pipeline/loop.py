@@ -143,22 +143,35 @@ def _sw_closure_b(
     *,
     m_drone_eff: float,
     alpha_range: tuple[float, float, int],
-) -> tuple[float, float]:
-    """Pick the span that places the operating CL at max drone+payload L/D.
+    cl_max_wing: float,
+    V_stall: float,
+) -> tuple[float, float, float, bool]:
+    """Pick the span that places the operating CL at max drone+payload L/D,
+    clamped by the stall-speed bound.
 
-    Returns (b_new, CL_target).
+    CL_stall_bound = (V_stall / V_cruise)^2 · CL_max_wing is the largest cruise
+    CL that keeps the stall speed at-or-below V_stall. If the unconstrained
+    max-L/D CL exceeds the bound, we operate at the bound and accept a
+    sub-optimal L/D. `cl_max_wing` is the 3D wing CL_max
+    (section Cl_max · AR/(AR+2)).
+
+    Returns (b_new, CL_target, CL_stall_bound, stall_binding).
     """
     s = sizing.inputs
     CL_sw, CD_wing_sw = wing_drag_polar(sizing, polar, alpha_range)
     CD_nonwing = drag.CD0_tail + drag.CD0_fus
     CD_payload = s.Cd_payload * s.S_payload / (s.n_drones * sizing.Sw)
     LD = CL_sw / (CD_wing_sw + CD_nonwing + CD_payload)
-    CL_target = float(CL_sw[int(np.argmax(LD))])
+    CL_optLD = float(CL_sw[int(np.argmax(LD))])
+
+    CL_stall_bound = (V_stall / s.V_cruise) ** 2 * cl_max_wing
+    stall_binding = CL_optLD > CL_stall_bound
+    CL_target = CL_stall_bound if stall_binding else CL_optLD
 
     W = (m_drone_eff + s.m_payload / s.n_drones) * 9.80665
     Sw_new = W / (sizing.q_cruise * CL_target)
     b_new = float(np.sqrt(s.AR * Sw_new))
-    return b_new, CL_target
+    return b_new, CL_target, CL_stall_bound, stall_binding
 
 
 def _exit_criteria(config) -> str:
@@ -187,11 +200,16 @@ def _print_iter(
     m_drone: float,
     x_cg: float,
     CL_target: float | None,
+    stall_binding: bool,
     dCD0: float,
     dM: float,
     dSw: float,
 ) -> None:
-    cl_str = f"CL*={CL_target:.3f}  " if CL_target is not None else ""
+    if CL_target is None:
+        cl_str = ""
+    else:
+        tag = "stall" if stall_binding else "L/D"
+        cl_str = f"CL*={CL_target:.3f}[{tag}]  "
     print(f"    iter {it:2d}: "
           f"CD0={p.drag.CD0:.6f}(Δ={dCD0:.1e})  "
           f"m_drone={m_drone:.3f}(Δ={dM:.1e})  "
@@ -232,6 +250,15 @@ def run_pipeline(config) -> PipelineResult:
     print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
           f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
 
+    # 3D wing CL_max: derate the 2D section value with the AR/(AR+2) Prandtl
+    # correction (same Cl↔CL relation used in sizing/wing.py).
+    AR = sizing_inputs.AR
+    CL_max_wing = Cl_max * AR / (AR + 2.0)
+    CL_stall_bound_init = (config.V_STALL / sizing_inputs.V_cruise) ** 2 * CL_max_wing
+    print(f"Stall: V_stall = {config.V_STALL:.2f} m/s, "
+          f"CL_max_wing = Cl_max · AR/(AR+2) = {CL_max_wing:.3f}  →  "
+          f"CL_cruise_bound = (V_stall/V_cruise)² · CL_max_wing = {CL_stall_bound_init:.3f}")
+
     # ----- Steps 2-4: iterate propulsion → fuselage → drag → mass → wing-area → sizing -----
     mode = ", ".join([
         "mass-closure" if config.MASS_CLOSURE else "fixed m_drone",
@@ -263,16 +290,21 @@ def run_pipeline(config) -> PipelineResult:
         m_drone = p.masses["total"]
         x_cg = p.cg["overall"]
 
-        # --- Wing-area closure: resize Sw to put op-point at max-L/D for drone+payload ---
+        # --- Wing-area closure: resize Sw to put op-point at max-L/D for drone+payload,
+        #     clamped by the stall-speed bound ---
         if config.SW_CLOSURE:
             m_eff = m_drone if config.MASS_CLOSURE else sizing_inputs.m_drone_empty
-            b_new, CL_target = _sw_closure_b(
+            b_new, CL_target, CL_stall_bound, stall_binding = _sw_closure_b(
                 sizing, p.drag, polar,
                 m_drone_eff=m_eff,
                 alpha_range=config.ALPHA_SWEEP_LOOP_DEG,
+                cl_max_wing=CL_max_wing,
+                V_stall=config.V_STALL,
             )
         else:
             CL_target = None
+            CL_stall_bound = (config.V_STALL / sizing_inputs.V_cruise) ** 2 * CL_max_wing
+            stall_binding = False
             b_new = sizing_inputs.b
 
         # --- Feed CD0, b, (m_drone) back into sizing inputs and re-run wing sizing ---
@@ -291,7 +323,8 @@ def run_pipeline(config) -> PipelineResult:
         dSw = abs(sizing.Sw - sw_prev)
 
         _print_iter(it, p=p, sizing=sizing, m_drone=m_drone, x_cg=x_cg,
-                    CL_target=CL_target, dCD0=dCD0, dM=dM, dSw=dSw)
+                    CL_target=CL_target, stall_binding=stall_binding,
+                    dCD0=dCD0, dM=dM, dSw=dSw)
 
         mass_ok = (dM < config.MASS_TOL) if config.MASS_CLOSURE else True
         sw_ok = (dSw < config.SW_TOL) if config.SW_CLOSURE else True
@@ -316,6 +349,16 @@ def run_pipeline(config) -> PipelineResult:
     if np.isclose(p.fus.height, config.FUSELAGE.casing_factor * p.fus.battery_height):
         print("    WARNING: fuselage height is just casing_factor × battery_height; "
               "airfoil height is not being used for fuselage sizing.")
+
+    # Stall check on the converged design. When the Sw closure is active and the
+    # stall bound is binding, V_stall_actual equals V_stall by construction;
+    # a 1e-3 m/s tolerance absorbs floating-point noise.
+    W_loaded = sizing.m_drone_loaded * 9.80665
+    V_stall_actual = float(np.sqrt(2 * W_loaded / (sizing.rho * sizing.Sw * CL_max_wing)))
+    margin = config.V_STALL - V_stall_actual
+    flag = "OK" if margin >= -1.0e-3 else "FAIL"
+    print(f"    Stall check: V_stall_actual = {V_stall_actual:.3f} m/s  "
+          f"(requirement ≤ {config.V_STALL:.3f} m/s, margin = {margin:+.3f} m/s)  [{flag}]")
 
     # ----- Step 5: LLT at the required CL -----
     CL_req = sizing.CL
