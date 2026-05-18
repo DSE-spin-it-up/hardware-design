@@ -345,7 +345,15 @@ def main() -> None:
     print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
     print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
     print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")
-    
+
+    print("\n========== CG SIDE VIEW ==========")
+    mass_estimates.plot_cg_side_view(
+        sizing=sizing,
+        electrical=electrical,
+        airfoil_path=airfoil,
+        tail_airfoil_path=TAIL_AIRFOIL,
+    )
+
     print("\n========== DRAG BUILDUP ==========")
     drag_estimates.summary(drag)
 

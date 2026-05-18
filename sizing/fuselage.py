@@ -60,7 +60,10 @@ def run(
     if airfoil_path is not None:
         airfoil = AirfoilGeometry(airfoil_path)
         airfoil_height = airfoil.global_thickness * sizing.c_root
-        height = (airfoil_height + b_height) * i.casing_factor
+        # Battery sits above the PVC tube inside the fuselage, so the total
+        # fuselage height must include both the wing root thickness and the
+        # battery height plus a small clearance.
+        height = (airfoil_height + b_height + 0.02) * i.casing_factor
     else:
         height = b_height * i.casing_factor
 
