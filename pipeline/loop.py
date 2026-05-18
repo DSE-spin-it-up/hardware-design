@@ -99,10 +99,15 @@ def _run_design_pass(
         battery_volume=propulsion.battery_volume,
         airfoil_path=airfoil,
     )
-    drag = estimate_cd0(sizing, fus, wing_airfoil=airfoil, tail_airfoil=config.TAIL_AIRFOIL)
-    struct = rods.run(sizing, config.STRUCTURE)
+    # Aileron must be computed before rods and drag — both need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
-    weights_kw = dict(
+    drag = estimate_cd0(
+        sizing, fus, control_surface,
+        wing_airfoil=airfoil,
+        tail_airfoil=config.TAIL_AIRFOIL,
+    )
+    struct = rods.run(sizing, control_surface, airfoil, config.STRUCTURE)
+    masses = weights_mass.total_mass(
         sizing=sizing,
         propulsion=propulsion,
         structure=struct,
@@ -111,8 +116,16 @@ def _run_design_pass(
         tail_airfoil_path=config.TAIL_AIRFOIL,
         materials=config.MATERIALS,
     )
-    masses = weights_mass.total_mass(**weights_kw)
-    cg = weights_mass.compute_cg(**weights_kw)
+    cg = weights_mass.compute_cg(
+        sizing=sizing,
+        propulsion=propulsion,
+        structure=struct,
+        fus=fus,
+        aileron=control_surface,
+        airfoil_path=airfoil,
+        tail_airfoil_path=config.TAIL_AIRFOIL,
+        materials=config.MATERIALS,
+    )
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)
 
 

@@ -130,7 +130,7 @@ def plot_cg_side_view(
     airfoil_height = float(np.max(airfoil_coords[:, 1]))
 
     x_motor = cg["motors"]
-    x_rod_wing = cg["rod_wing"]
+    x_rod_wing = cg["rod_spar"]
     x_rod_aileron = cg["rod_aileron"]
     x_pvc = cg["pvc_tubes"]
     x_batt = cg["battery"]
@@ -193,7 +193,7 @@ def plot_cg_side_view(
     # `masses["rod"]` already counts both wing rods (2 * struct.mass_w).
     m_components = (
         masses["fuselage"] + masses["battery"] + masses["motors"]
-        + masses["wing"] + masses["rod"] + masses["tail"]
+        + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"] + masses["tail"]
         + masses["tail_rod"] + masses["pvc_tubes"]
     )
     overall_y = (
@@ -201,7 +201,8 @@ def plot_cg_side_view(
         + battery_y * masses["battery"]
         + motor_y * masses["motors"]
         + wing_y * masses["wing"]
-        + rod_y * masses["rod"]
+        + rod_y * masses["rod_spar"]
+        + rod_y * masses["rod_aileron"]
         + tail_y * masses["tail"]
         + rod_y * masses["tail_rod"]
         + pvc_y * masses["pvc_tubes"]

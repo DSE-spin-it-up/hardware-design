@@ -4,12 +4,14 @@ from __future__ import annotations
 import numpy as np
 
 from aerodynamics import drag_buildup
+from sizing.aileron import AileronResult
 from aerodynamics.airfoil_polar import AirfoilPolar
 from aerodynamics.drag_buildup import DragInputs, DragResult
 from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
 from structures import rods as rods_mod
+
 
 def resolve_airfoil(airfoil: str | None) -> str:
     if airfoil is not None:
@@ -20,11 +22,11 @@ def resolve_airfoil(airfoil: str | None) -> str:
 def estimate_cd0(
     sizing: SizingResult,
     fus: FuselageResult,
+    aileron: AileronResult,
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
-    """Component drag buildup for wing + tail + fuselage + tail boom."""
-    rods = rods_mod.run(sizing)          # ← was missing
+    rods = rods_mod.run(sizing, aileron, wing_airfoil)   # ← pass airfoil_path
     return drag_buildup.run(
         sizing,
         fus,
