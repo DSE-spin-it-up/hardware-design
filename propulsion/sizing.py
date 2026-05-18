@@ -138,6 +138,14 @@ class PropulsionResult:
     E_total: float                   # [J]
     battery_mass: float              # [kg]
     battery_volume: float            # [m^3]
+        # --- Governing constraints ---
+    governing_thrust_segment: str
+    governing_power_segment: str
+    governing_energy_segment: str
+
+    max_thrust_per_prop: float       # [N]
+    max_power_elec: float            # [W]
+    max_energy: float                # [J]
 
 
 def _solve_quiet(verbose: bool, fn, *args, **kwargs):
@@ -254,6 +262,34 @@ def run(
     battery_mass = battery_mass_from_energy(E_total, i.n_cells, i.voltage_cell)
     battery_volume = battery_volume_from_energy(E_total, i.battery_density)
 
+        # ----- Governing constraints -----
+
+    thrust_cases = {
+        "cruise": thrust_cruise_per_prop,
+        "climb": thrust_climb_per_prop,
+        "vtol": thrust_vtol_per_prop,
+    }
+
+    power_cases = {
+        "cruise": P_elec_cruise,
+        "climb": P_elec_climb,
+        "vtol": P_elec_vtol,
+    }
+
+    energy_cases = {
+        "cruise": E_cruise,
+        "climb": E_climb,
+        # VTOL intentionally omitted unless hover mission energy is added
+    }
+
+    governing_thrust_segment = max(thrust_cases, key=thrust_cases.get)
+    governing_power_segment = max(power_cases, key=power_cases.get)
+    governing_energy_segment = max(energy_cases, key=energy_cases.get)
+
+    max_thrust_per_prop = thrust_cases[governing_thrust_segment]
+    max_power_elec = power_cases[governing_power_segment]
+    max_energy = energy_cases[governing_energy_segment]
+    
     return PropulsionResult(
         inputs=inputs,
         voltage_battery=voltage_battery,
@@ -293,6 +329,14 @@ def run(
         E_total=E_total,
         battery_mass=battery_mass,
         battery_volume=battery_volume,
+
+        governing_thrust_segment=governing_thrust_segment,
+        governing_power_segment=governing_power_segment,
+        governing_energy_segment=governing_energy_segment,
+
+        max_thrust_per_prop=max_thrust_per_prop,
+        max_power_elec=max_power_elec,
+        max_energy=max_energy,
     )
 
 
@@ -338,6 +382,20 @@ def summary(r: PropulsionResult) -> None:
     print(f"  Total energy         : {r.E_total / 3600:.2f}  Wh")
     print(f"  Battery mass         : {r.battery_mass:.3f}  kg")
     print(f"  Battery volume       : {r.battery_volume * 1000:.2f}  L")
+
+    print("\n--- Governing Constraints ---")
+    print(
+        f"  Thrust constrained by : {r.governing_thrust_segment}"
+        f" ({r.max_thrust_per_prop:.2f} N per prop)"
+    )
+    print(
+        f"  Power constrained by  : {r.governing_power_segment}"
+        f" ({r.max_power_elec:.1f} W electrical)"
+    )
+    print(
+        f"  Energy constrained by : {r.governing_energy_segment}"
+        f" ({r.max_energy / 3600:.2f} Wh)"
+    )
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ sizing:
   # Aerodynamics
   Cd0: 0.03              # initial guess; refined after fuselage sizing [-]
   S_payload: 0.25        # payload frontal area [m^2]
-  Cd_payload: 1.0        # payload drag coefficient [-]
+  Cd_payload: 1.05        # payload drag coefficient [-]
   # Flight conditions
   h_cruise: 100          # cruise altitude [m]
   V_cruise: 20           # cruise speed [m/s]

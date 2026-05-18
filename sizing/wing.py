@@ -22,7 +22,7 @@ class SizingInputs:
     # Aerodynamics
     Cd0: float = 0.045           # Zero-lift drag coefficient [-]
     S_payload: float = 0.25      # Payload frontal area [m^2]
-    Cd_payload: float = 1.0      # Payload drag coefficient [-]
+    Cd_payload: float = 1.05      # Payload drag coefficient [-]
     # Flight Conditions
     h_cruise: float = 100        # Cruise altitude [m]
     V_cruise: float = 20         # Cruise speed [m/s]
