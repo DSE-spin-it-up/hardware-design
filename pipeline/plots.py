@@ -1,8 +1,16 @@
-"""Pipeline plots: convergence history and drone L/D polars."""
+"""Pipeline plots: convergence history, drone L/D polars, and CG side view."""
 from __future__ import annotations
+
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle
+
+from aerodynamics.airfoil_geometry import AirfoilGeometry
+from sizing.fuselage import FuselageResult
+from sizing.wing import SizingResult
+from structures.rods import RodResult
 
 
 def plot_convergence(
@@ -94,3 +102,126 @@ def plot_drone_ld(
     fig.suptitle(f"Drag polar — airfoil {airfoil_name}")
     fig.tight_layout()
     plt.show()
+
+
+def plot_cg_side_view(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    struct: RodResult,
+    cg: dict[str, float],
+    masses: dict[str, float],
+    airfoil_path: str | Path,
+    show: bool = True,
+) -> plt.Figure:
+    """Side-view sketch of the aircraft with component CGs and overall CG.
+
+    Draws the fuselage box, wing airfoil polygon, battery, PVC tube + rods,
+    tail rod, and scatter markers for motors / tail / overall CG. The
+    overall vertical CG is computed from each component's vertical position
+    weighted by its mass.
+    """
+    airfoil = AirfoilGeometry(airfoil_path)
+    root_chord = sizing.c_root
+    airfoil_coords = np.column_stack((
+        airfoil.polygon[:, 0] * root_chord,
+        airfoil.polygon[:, 1] * root_chord,
+    ))
+    airfoil_coords[:, 1] -= float(np.min(airfoil_coords[:, 1]))
+    airfoil_height = float(np.max(airfoil_coords[:, 1]))
+
+    x_motor = cg["motors"]
+    x_rod_wing = cg["rod_wing"]
+    x_rod_aileron = cg["rod_aileron"]
+    x_pvc = cg["pvc_tubes"]
+    x_batt = cg["battery"]
+    x_tail = cg["tail"]
+    x_overall = cg["overall"]
+    x_tail_root = sizing.c_root + sizing.L_tail
+
+    rod_d = struct.d_w
+    battery_length = fus.battery_length
+    battery_height = fus.battery_height
+    rod_span_length = abs(x_rod_aileron - x_rod_wing)
+    tube_height = max(rod_d * 1.1, 0.03)
+    tube_length = max(rod_span_length + 0.1, battery_length * 0.8)
+    tube_x0 = max(x_pvc - tube_length / 2.0, 0.0)
+    tube_y0 = max(airfoil_height - tube_height - 0.005, 0.0)
+    batt_x0 = x_batt - battery_length / 2.0
+    batt_y0 = tube_y0 + tube_height + 0.005
+    plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.add_patch(Rectangle((0.0, 0.0), fus.length, fus.height,
+                           fill=False, linewidth=2, label="Fuselage"))
+    ax.add_patch(Polygon(airfoil_coords, closed=True,
+                         facecolor="lightblue", edgecolor="navy", alpha=0.6,
+                         label="Wing profile"))
+    ax.add_patch(Rectangle((batt_x0, batt_y0), battery_length, battery_height,
+                           color="orange", alpha=0.5, label="Battery"))
+    ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
+                           facecolor="lightgreen", alpha=0.4, edgecolor="darkgreen",
+                           label="PVC tube"))
+    ax.add_patch(Ellipse((tube_x0, tube_y0 + tube_height / 2.0),
+                         tube_height, tube_height,
+                         facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
+    ax.add_patch(Ellipse((tube_x0 + tube_length, tube_y0 + tube_height / 2.0),
+                         tube_height, tube_height,
+                         facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
+
+    rod_radius = rod_d / 2.0
+    rod_y = tube_y0 + tube_height / 2.0
+    ax.add_patch(Circle((x_rod_wing, rod_y), rod_radius,
+                        color="brown", alpha=0.8, label="Wing rods"))
+    ax.add_patch(Circle((x_rod_aileron, rod_y), rod_radius,
+                        color="brown", alpha=0.8))
+
+    tail_start = x_rod_aileron + rod_radius + 0.001
+    ax.plot([tail_start, x_tail_root], [rod_y, rod_y],
+            color="gray", linewidth=3, solid_capstyle="butt", label="Tail rod")
+
+    le_x = float(np.min(airfoil_coords[:, 0]))
+    le_mask = np.isclose(airfoil_coords[:, 0], le_x, atol=1e-6)
+    motor_y = (float(np.mean(airfoil_coords[le_mask, 1]))
+               if np.any(le_mask) else 0.5 * airfoil_height)
+    wing_y = 0.5 * airfoil_height
+    battery_y = batt_y0 + battery_height / 2.0
+    fuselage_y = fus.height / 2.0
+    pvc_y = rod_y
+    tail_y = rod_y
+    plot_height = max(plot_height, tail_y + 0.05)
+
+    # `masses["rod"]` already counts both wing rods (2 * struct.mass_w).
+    m_components = (
+        masses["fuselage"] + masses["battery"] + masses["motors"]
+        + masses["wing"] + masses["rod"] + masses["tail"]
+        + masses["tail_rod"] + masses["pvc_tubes"]
+    )
+    overall_y = (
+        fuselage_y * masses["fuselage"]
+        + battery_y * masses["battery"]
+        + motor_y * masses["motors"]
+        + wing_y * masses["wing"]
+        + rod_y * masses["rod"]
+        + tail_y * masses["tail"]
+        + rod_y * masses["tail_rod"]
+        + pvc_y * masses["pvc_tubes"]
+    ) / m_components if m_components > 0 else 0.0
+
+    ax.scatter([x_motor, x_tail, x_overall], [motor_y, tail_y, overall_y],
+               color=["red", "purple", "black"], zorder=5)
+    ax.text(x_motor, motor_y + 0.03, "Motors", color="red", ha="center")
+    ax.text(x_tail, tail_y + 0.02, "Tail", color="purple", ha="center")
+    ax.text(x_overall, overall_y + 0.02, "Overall CG", color="black", ha="center")
+
+    ax.set_title("Aircraft CG side view")
+    ax.set_xlabel("x [m] from LEMAC")
+    ax.set_ylabel("vertical position [m]")
+    ax.set_xlim(-0.05, max(fus.length, x_tail, x_overall) + 0.2)
+    ax.set_ylim(-0.05, plot_height + 0.05)
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(loc="upper right")
+
+    if show:
+        plt.show()
+    return fig

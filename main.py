@@ -21,6 +21,14 @@ def main() -> None:
         result.cd0_guess, result.m_drone_guess, result.sw_guess,
     )
     reporting.print_main_summary(result)
+    plots.plot_cg_side_view(
+        sizing=result.sizing,
+        fus=result.fus,
+        struct=result.struct,
+        cg=result.cg,
+        masses=result.masses,
+        airfoil_path=result.airfoil,
+    )
     plots.plot_drone_ld(
         result.cl_sweep, result.cd_drone_sweep, result.cd_full_sweep,
         CL_op=result.cl_req, airfoil_name=result.polar.name,

@@ -63,7 +63,7 @@ def compute_cg(
     x_motor = 0.0
     x_wing = 0.25 * sizing.c_root
     x_rod_wing = _max_tc_x(airfoil_path) * sizing.c_root
-    x_rod_aileron = _max_tc_x(tail_airfoil_path) * AILERON_CHORD_FRAC * sizing.c_root
+    x_rod_aileron = (1.0 - AILERON_CHORD_FRAC) * sizing.c_root
     x_mid_rods = 0.5 * (x_rod_wing + x_rod_aileron)
     x_batt = x_mid_rods if battery_x is None else battery_x
     x_tail = sizing.c_root + sizing.L_tail
