@@ -3,7 +3,7 @@
 # reads this file and exposes each section as a dataclass on the same module.
 
 # Wing airfoil: .dat path or NACA digits (e.g. "2412"). Set to null to prompt at runtime.
-airfoil: airfoils/NACA4412.dat
+airfoil: airfoils/MH112.dat
 
 # Tail airfoil: .dat path or NACA digits. Symmetric sections are typical.
 tail_airfoil: airfoils/NACA0010.dat
@@ -25,7 +25,7 @@ alpha_sweep_loop_deg: [-2.0, 12.0, 140]
 #                         so b = sqrt(AR · Sw) floats.
 # Convergence requires every active criterion (CD0 always; m_drone if mass_closure;
 # Sw if sw_closure) to be inside its tolerance.
-mass_closure: false
+mass_closure: true
 sw_closure: true
 n_iter_max: 20
 cd0_tol: 1.0e-4
@@ -37,7 +37,7 @@ sizing:
   # Payload & fleet
   m_payload: 60          # [kg]
   m_drone_empty: 10      # [kg]
-  n_drones: 4            # [-]
+  n_drones: 2            # [-]
   # Geometry
   b: 3.0                 # wingspan [m]
   AR: 7.5                # aspect ratio [-]
