@@ -170,12 +170,12 @@ def calculate_lh(
     CL_alpha_A_h: float,
     dep_da: float,
     SM: float,
-) -> np.ndarray:
+) -> float:
 
     factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * Sh_S * Vh_V**2
     factor_cont = (CL_h / CL_A_h) * Sh_S * Vh_V**2
 
-    lh_c_stab = factor_stab / ((x_cg - x_ac / c) + (Cm_ac / CL_A_h))
-    lh_c_cont = factor_cont / ((x_cg - x_ac / c) + SM)
+    lh_c_stab = ((x_cg - x_ac) / c + SM) / factor_stab
+    lh_c_cont = ((x_cg - x_ac) / c + (Cm_ac / CL_A_h)) / factor_cont
 
-    return max(lh_c_stab, lh_c_cont)
+    return max(lh_c_stab, lh_c_cont) * c

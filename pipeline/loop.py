@@ -340,7 +340,7 @@ def run_pipeline(config) -> PipelineResult:
 
         # --- Feed CD0, b, L_tail, (m_drone) back into sizing inputs and re-run wing sizing ---
         # TODO: replace `sizing.L_tail` echo with the scissor-driven update once that closure is in place.
-        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "L_tail": lt_new, }
+        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "L_tail": lt_new}
 
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
