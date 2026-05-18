@@ -59,3 +59,12 @@ class Wood(Material):  # https://www.matweb.com/search/datasheet.aspx?matguid=1e
             s_t=1.59e6,
             s_c=2.28e6
         )
+
+class Glass_Fiber(Material):  # https://www.matweb.com/search/datasheet.aspx?MatGUID=8f9003366c9044bdb91bcd86e1fa6e42
+    def __init__(self):
+        super().__init__(
+            E=68.9e9,
+            rho=2.44e3,
+            Y=3310e6,
+            s_t=3310e6
+        )
