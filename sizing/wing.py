@@ -34,6 +34,9 @@ class SizingInputs:
     # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
     Vv: float = 0.04
     Vh: float = 0.50
+    # If None, run() uses Vh·Sw·c/Sh as the initial estimate; the pipeline loop
+    # then iterates this field (placeholder echo for now, scissor-driven later).
+    L_tail: float | None = None
     # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
     ARt: float = 4.5
     lam_t: float = 1.0
@@ -131,7 +134,7 @@ def run(
     # Tail geometry
     bh = i.b * 0.365445026178  # [m] Desmos
     Sh = bh ** 2 / i.ARt
-    L_tail = i.Vh * Sw * c / Sh
+    L_tail = i.L_tail if i.L_tail is not None else (i.Vh * Sw * c / Sh)
     Sv = i.Vv * Sw * i.b / L_tail
     bv = np.sqrt(2 * i.ARt * Sv) / 2
     St = Sh + Sv

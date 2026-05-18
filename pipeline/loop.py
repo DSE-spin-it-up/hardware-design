@@ -238,6 +238,9 @@ def run_pipeline(config) -> PipelineResult:
 
     # ----- Step 1: initial sizing with guessed Cd0 -----
     sizing = wing.run(sizing_inputs, t_over_c_root=tc)
+    # Lock the initial Vh·Sw·c/Sh estimate into the inputs so subsequent passes
+    # treat L_tail as a closure variable (iterated in the loop below).
+    sizing_inputs = dataclasses.replace(sizing_inputs, L_tail=sizing.L_tail)
 
     # ----- Step 1b: load airfoil polar once (Re from initial sizing) -----
     # Section Cd is weakly Re-sensitive over the iteration-induced Re drift, so
@@ -290,6 +293,26 @@ def run_pipeline(config) -> PipelineResult:
         m_drone = p.masses["total"]
         x_cg = p.cg["overall"]
 
+        # --- LLT at cruise CL + tail trim + stability scissor for this iteration's state ---
+        llt = llt_at_cl(sizing, polar, CL_target=sizing.CL)
+        tail_loading = tail_drag_at_cruise(
+            sizing, polar, llt,
+            x_cg=x_cg,
+            tail_airfoil=config.TAIL_AIRFOIL,
+        )
+        y_cg = weights_mass.compute_y_cg(
+            sizing=sizing, fus=p.fus, structure=p.struct,
+            masses=p.masses, airfoil_path=airfoil,
+        )
+        scissor = compute_scissor_data(
+            sizing, p.fus,
+            wing_llt=llt,
+            tail_llt=tail_loading["llt_tail"],
+            x_cg_current=x_cg,
+            y_cg=y_cg["overall"],
+            Vh_V=p.drag.inputs.Vh_V,
+        )
+
         # --- Wing-area closure: resize Sw to put op-point at max-L/D for drone+payload,
         #     clamped by the stall-speed bound ---
         if config.SW_CLOSURE:
@@ -307,8 +330,9 @@ def run_pipeline(config) -> PipelineResult:
             stall_binding = False
             b_new = sizing_inputs.b
 
-        # --- Feed CD0, b, (m_drone) back into sizing inputs and re-run wing sizing ---
-        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new}
+        # --- Feed CD0, b, L_tail, (m_drone) back into sizing inputs and re-run wing sizing ---
+        # TODO: replace `sizing.L_tail` echo with the scissor-driven update once that closure is in place.
+        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "L_tail": sizing.L_tail}
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
         sizing_inputs = dataclasses.replace(sizing_inputs, **replace_kwargs)
@@ -384,7 +408,7 @@ def run_pipeline(config) -> PipelineResult:
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
-    # ----- Step 8: stability scissor line (once, post-convergence) -----
+    # ----- Step 8: stability scissor line on the final consistent state -----
     y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil,
@@ -397,6 +421,8 @@ def run_pipeline(config) -> PipelineResult:
         y_cg=y_cg["overall"],
         Vh_V=p.drag.inputs.Vh_V,
     )
+
+
 
     return PipelineResult(
         airfoil=airfoil,
