@@ -157,7 +157,7 @@ def calculate_tail_loading(
     }
 
 def calculate_lh(
-    x_cg: np.ndarray,
+    x_cg: float,
     *,
     x_ac: float,
     c: float,
