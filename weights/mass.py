@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import numpy as np
+
 from sizing.aileron import AileronResult
 from aerodynamics.airfoil_geometry import AirfoilGeometry
 from propulsion.sizing import PropulsionResult
@@ -112,6 +114,78 @@ def compute_cg(
         'tail_rod':     x_tail_rod,
         'pvc_tubes':    x_pvc,
         'overall':      x_cg,
+    }
+
+
+def compute_y_cg(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    structure: RodResult,
+    masses: dict[str, float],
+    airfoil_path: str | Path,
+) -> dict[str, float]:
+    """Compute vertical (y) CG position of each component and overall aircraft.
+
+    Vertical positions are measured from the bottom of the airfoil/fuselage,
+    using the same drawing-layout conventions as the side-view sketch (tube
+    sits just under the upper skin; battery sits on top of the tube; rods
+    pass through the tube centre).
+    """
+    airfoil = AirfoilGeometry(airfoil_path)
+    root_chord = sizing.c_root
+    x_coords = airfoil.polygon[:, 0] * root_chord
+    y_coords = airfoil.polygon[:, 1] * root_chord
+    y_coords = y_coords - float(np.min(y_coords))
+    airfoil_height = float(np.max(y_coords))
+
+    tube_height = max(max(structure.d_spar, structure.d_aileron) * 1.1, 0.03)
+    tube_y0 = max(airfoil_height - tube_height - 0.005, 0.0)
+    batt_y0 = tube_y0 + tube_height + 0.005
+    rod_y = tube_y0 + tube_height / 2.0
+
+    le_x = float(np.min(x_coords))
+    le_mask = np.isclose(x_coords, le_x, atol=1e-6)
+    y_motor = (float(np.mean(y_coords[le_mask]))
+               if np.any(le_mask) else 0.5 * airfoil_height)
+
+    y_fus = fus.height / 2.0
+    y_wing = 0.5 * airfoil_height
+    y_batt = batt_y0 + fus.battery_height / 2.0
+    y_pvc = rod_y
+    y_tail = rod_y
+    y_tail_rod = rod_y
+
+    m_total = (
+        masses["fuselage"] + masses["battery"] + masses["motors"]
+        + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"]
+        + masses["tail"] + masses["tail_rod"] + masses["pvc_tubes"]
+    )
+    if m_total > 0:
+        y_overall = (
+            y_fus       * masses["fuselage"]
+            + y_batt    * masses["battery"]
+            + y_motor   * masses["motors"]
+            + y_wing    * masses["wing"]
+            + rod_y     * masses["rod_spar"]
+            + rod_y     * masses["rod_aileron"]
+            + y_tail    * masses["tail"]
+            + y_tail_rod * masses["tail_rod"]
+            + y_pvc     * masses["pvc_tubes"]
+        ) / m_total
+    else:
+        y_overall = 0.0
+
+    return {
+        'fuselage':    y_fus,
+        'battery':     y_batt,
+        'motors':      y_motor,
+        'wing':        y_wing,
+        'rod_spar':    rod_y,
+        'rod_aileron': rod_y,
+        'tail':        y_tail,
+        'tail_rod':    y_tail_rod,
+        'pvc_tubes':   y_pvc,
+        'overall':     y_overall,
     }
 
 

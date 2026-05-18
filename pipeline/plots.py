@@ -11,6 +11,7 @@ from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
 from structures.rods import RodResult
+from weights.mass import compute_y_cg
 
 
 def plot_convergence(
@@ -179,34 +180,11 @@ def plot_cg_side_view(
     ax.plot([tail_start, x_tail_root], [rod_y, rod_y],
             color="gray", linewidth=3, solid_capstyle="butt", label="Tail rod")
 
-    le_x = float(np.min(airfoil_coords[:, 0]))
-    le_mask = np.isclose(airfoil_coords[:, 0], le_x, atol=1e-6)
-    motor_y = (float(np.mean(airfoil_coords[le_mask, 1]))
-               if np.any(le_mask) else 0.5 * airfoil_height)
-    wing_y = 0.5 * airfoil_height
-    battery_y = batt_y0 + battery_height / 2.0
-    fuselage_y = fus.height / 2.0
-    pvc_y = rod_y
-    tail_y = rod_y
+    y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path)
+    motor_y = y_cg["motors"]
+    tail_y = y_cg["tail"]
+    overall_y = y_cg["overall"]
     plot_height = max(plot_height, tail_y + 0.05)
-
-    # `masses["rod"]` already counts both wing rods (2 * struct.mass_w).
-    m_components = (
-        masses["fuselage"] + masses["battery"] + masses["motors"]
-        + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"] + masses["tail"]
-        + masses["tail_rod"] + masses["pvc_tubes"]
-    )
-    overall_y = (
-        fuselage_y * masses["fuselage"]
-        + battery_y * masses["battery"]
-        + motor_y * masses["motors"]
-        + wing_y * masses["wing"]
-        + rod_y * masses["rod_spar"]
-        + rod_y * masses["rod_aileron"]
-        + tail_y * masses["tail"]
-        + rod_y * masses["tail_rod"]
-        + pvc_y * masses["pvc_tubes"]
-    ) / m_components if m_components > 0 else 0.0
 
     ax.scatter([x_motor, x_tail, x_overall], [motor_y, tail_y, overall_y],
                color=["red", "purple", "black"], zorder=5)

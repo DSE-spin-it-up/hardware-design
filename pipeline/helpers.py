@@ -142,6 +142,7 @@ def compute_scissor_data(
     tail_llt: LLTResult,
     *,
     x_cg_current: float,
+    y_cg: float = 0.0,
     SM: float = 0.05,
     Vh_V: float = 0.85,
     x_cg_range: tuple[float, float] | None = None,
@@ -194,11 +195,14 @@ def compute_scissor_data(
     # Defaults: cruise condition reuses existing LLT outputs. Override for
     # the conservative landing case.
     if CL_h is None:
-        CL_h = tail_llt.CL
+        AR_tail = s.bh ** 2 / s.Sh
+        CL_h = -0.35 * AR_tail ** (1.0 / 3.0)
     if CL_A_h is None:
         CL_A_h = wing_llt.CL  # wing-only proxy, ignoring fuselage lift contribution
     if Cm_ac is None:
         Cm_ac = calculate_CM_wing(wing_llt.polar, wing_llt.wing, wing_llt.alpha_root)
+        payload_per_drone = sizing.inputs.m_payload / sizing.inputs.n_drones
+        Cm_ac -= payload_per_drone * 9.81 * y_cg / (sizing.q_cruise * sizing.Sw * sizing.c)
 
     ShS_ctrl = controllability_line_ShS(
         x_cg, x_ac=x_ac, c=s.c, l_h=s.L_tail,

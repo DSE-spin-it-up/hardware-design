@@ -25,7 +25,7 @@ alpha_sweep_loop_deg: [-2.0, 12.0, 140]
 #                         so b = sqrt(AR · Sw) floats.
 # Convergence requires every active criterion (CD0 always; m_drone if mass_closure;
 # Sw if sw_closure) to be inside its tolerance.
-mass_closure: true
+mass_closure: false
 sw_closure: true
 n_iter_max: 20
 cd0_tol: 1.0e-4

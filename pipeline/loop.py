@@ -341,11 +341,16 @@ def run_pipeline(config) -> PipelineResult:
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
     # ----- Step 8: stability scissor line (once, post-convergence) -----
+    y_cg = weights_mass.compute_y_cg(
+        sizing=sizing, fus=p.fus, structure=p.struct,
+        masses=p.masses, airfoil_path=airfoil,
+    )
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
         tail_llt=tail_loading["llt_tail"],
         x_cg_current=p.cg["overall"],
+        y_cg=y_cg["overall"],
         Vh_V=p.drag.inputs.Vh_V,
     )
 
