@@ -188,11 +188,13 @@ def summary(r: DragResult) -> None:
 
 
 if __name__ == "__main__":
-    from sizing import wing, fuselage as fus_mod
+    from sizing import aileron, fuselage as fus_mod, wing
     from sizing.wing import SizingInputs
     from structures import rods as rods_mod
 
+    wing_airfoil = "airfoils/MH112.dat"
     s = wing.run(SizingInputs())
     f = fus_mod.run(s)
-    r = rods_mod.run(s)
-    summary(run(s, f, r))
+    a = aileron.run(s)
+    r = rods_mod.run(s, a, wing_airfoil)
+    summary(run(s, f, r, DragInputs(wing_airfoil=wing_airfoil)))

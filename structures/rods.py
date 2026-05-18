@@ -259,9 +259,8 @@ def summary(r: RodResult) -> None:
 
 
 if __name__ == "__main__":
-    from aerodynamics import ailerons
-    from sizing import wing
+    from sizing import aileron, wing
     from sizing.wing import SizingInputs
     s = wing.run(SizingInputs())
-    a = ailerons.run(s)
-    summary(run(s, a))
+    a = aileron.run(s)
+    summary(run(s, a, "airfoils/MH112.dat"))
