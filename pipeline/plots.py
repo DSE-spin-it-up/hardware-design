@@ -138,11 +138,12 @@ def plot_cg_side_view(
     x_overall = cg["overall"]
     x_tail_root = sizing.c_root + sizing.L_tail
 
-    rod_d = struct.d_w
+    rod_radius_w = struct.d_w / 2.0
+    rod_radius_a = struct.d_aileron / 2.0
     battery_length = fus.battery_length
     battery_height = fus.battery_height
     rod_span_length = abs(x_rod_aileron - x_rod_wing)
-    tube_height = max(rod_d * 1.1, 0.03)
+    tube_height = max(max(struct.d_spar, struct.d_aileron) * 1.1, 0.03)
     tube_length = max(rod_span_length + 0.1, battery_length * 0.8)
     tube_x0 = max(x_pvc - tube_length / 2.0, 0.0)
     tube_y0 = max(airfoil_height - tube_height - 0.005, 0.0)
@@ -168,14 +169,13 @@ def plot_cg_side_view(
                          tube_height, tube_height,
                          facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
 
-    rod_radius = rod_d / 2.0
     rod_y = tube_y0 + tube_height / 2.0
-    ax.add_patch(Circle((x_rod_wing, rod_y), rod_radius,
-                        color="brown", alpha=0.8, label="Wing rods"))
-    ax.add_patch(Circle((x_rod_aileron, rod_y), rod_radius,
-                        color="brown", alpha=0.8))
+    ax.add_patch(Circle((x_rod_wing, rod_y), rod_radius_w,
+                        color="brown", alpha=0.8, label="Wing rod"))
+    ax.add_patch(Circle((x_rod_aileron, rod_y), rod_radius_a,
+                        color="sienna", alpha=0.8, label="Aileron rod"))
 
-    tail_start = x_rod_aileron + rod_radius + 0.001
+    tail_start = x_rod_aileron + rod_radius_a + 0.001
     ax.plot([tail_start, x_tail_root], [rod_y, rod_y],
             color="gray", linewidth=3, solid_capstyle="butt", label="Tail rod")
 

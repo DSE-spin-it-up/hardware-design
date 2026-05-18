@@ -53,7 +53,6 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Motors CG       : {cg['motors']:8.4f}  m from LEMAC")
     print(f"  Spar rod CG     : {cg['rod_spar']:8.4f}  m from LEMAC")
     print(f"  Aileron rod CG  : {cg['rod_aileron']:8.4f}  m from LEMAC")
-    print(f"  Rod aileron CG  : {cg['rod_aileron']:8.4f}  m from LEMAC")
     print(f"  Tail CG         : {cg['tail']:8.4f}  m from LEMAC")
     print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
     print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
