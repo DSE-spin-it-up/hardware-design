@@ -33,6 +33,7 @@ def main() -> None:
         result.cl_sweep, result.cd_drone_sweep, result.cd_full_sweep,
         CL_op=result.cl_req, airfoil_name=result.polar.name,
     )
+    plots.plot_scissor(result.scissor)
     reporting.print_final_drag(result)
 
 

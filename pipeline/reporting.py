@@ -89,9 +89,41 @@ def print_main_summary(result: PipelineResult) -> None:
 
 
 def print_final_drag(result: PipelineResult) -> None:
-    print(f"\nFull-buildup CD                       : {result.cd_full_buildup:.5f}")
-    print(f"  CD0 (buildup)                       : {result.drag.CD0:.5f}")
-    print(f"  CD_i  (LLT)                         : {result.llt.CD_i:.5f}")
-    print(f"  CD_payload                          : {result.cd_payload:.5f}")
+    tl = result.tail_loading
+    total = result.cd_full_buildup
+    print(f"\nFull-buildup CD                       : {total:.5f}")
+    print(f"  CD0 (buildup)                       : {result.drag.CD0:.5f}  ({result.drag.CD0 / total:6.2%})")
+    print(f"  CD_i  (LLT, wing)                   : {result.llt.CD_i:.5f}  ({result.llt.CD_i / total:6.2%})")
+    print(f"  CD_i  (LLT, tail, S_w ref)          : {result.cd_i_tail:.5f}  ({result.cd_i_tail / total:6.2%})")
+    print(f"  CD_payload                          : {result.cd_payload:.5f}  ({result.cd_payload / total:6.2%})")
+    print(f"Tail trim (no downwash):")
+    print(f"  CL_tail required (trim)             : {tl['CL_tail']:+.4f}")
+    print(f"  e_tail                              : {tl['e_tail']:.4f}")
+    print(f"  AR_tail                             : {tl['AR_tail']:.3f}")
+    print(f"  CD_i_tail (S_t ref)                 : {tl['CD_i_tail']:.5f}")
     print(f"Final L/D at operating CL             : "
-          f"{result.cl_req / result.cd_full_buildup:.2f}")
+          f"{result.cl_req / total:.2f}")
+
+    sc = result.scissor
+    ShS_stab_now = float(np.interp(sc.x_cg_current, sc.x_cg, sc.ShS_stab))
+    ShS_ctrl_now = float(np.interp(sc.x_cg_current, sc.x_cg, sc.ShS_ctrl))
+    ShS_req_now = max(ShS_stab_now, ShS_ctrl_now)
+    print(f"\nScissor (stability + controllability):")
+    print(f"  b_f (fuselage width)                : {sc.b_f:.4f}  m")
+    print(f"  S_net (exposed wing area)           : {sc.S_net:.4f}  m²")
+    print(f"  r = 2·l_h/b                         : {sc.r:.4f}")
+    print(f"  CL_α,w  (wing, LLT)                 : {sc.CL_alpha_w:.4f}  /rad")
+    print(f"  CL_α,h  (tail, LLT)                 : {sc.CL_alpha_h:.4f}  /rad")
+    print(f"  CL_α,A-h (wing + fuselage)          : {sc.CL_alpha_A_h:.4f}  /rad")
+    print(f"  dε/dα   (Slingerland, Λ=0, m_tv=0)  : {sc.dep_da:.4f}")
+    print(f"  CL_h    (controllability)           : {sc.CL_h:+.4f}")
+    print(f"  CL_A-h  (controllability)           : {sc.CL_A_h:.4f}")
+    print(f"  Cm_ac   (3D wing, at cruise α)      : {sc.Cm_ac:+.4f}")
+    print(f"  SM target                           : {sc.SM:.3f}  ({sc.SM:.1%} MAC)")
+    print(f"  V_h/V                               : {sc.Vh_V:.3f}")
+    print(f"  Required S_h/S — stability          : {ShS_stab_now:.4f}")
+    print(f"  Required S_h/S — controllability    : {ShS_ctrl_now:.4f}")
+    print(f"  Required S_h/S — binding            : {ShS_req_now:.4f}")
+    print(f"  Current  S_h/S                      : {sc.ShS_current:.4f}  "
+          f"({'FEASIBLE' if sc.ShS_current >= ShS_req_now else 'INFEASIBLE'}, "
+          f"margin = {sc.ShS_current - ShS_req_now:+.4f})")

@@ -226,3 +226,62 @@ def plot_cg_side_view(
     if show:
         plt.show()
     return fig
+
+
+def plot_scissor(scissor, *, show: bool = True):
+    """Scissor plot: required S_h/S vs x_cg from LEMAC (stability + controllability).
+
+    Green region above BOTH lines is the feasible design space — for any x_cg,
+    the actual S_h/S must satisfy both constraints. The orange ⭕ marks the
+    current operating point (converged x_cg, current S_h/S).
+    """
+    s = scissor
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    stab_pos = np.clip(s.ShS_stab, 0.0, None)
+    ctrl_pos = np.clip(s.ShS_ctrl, 0.0, None)
+    envelope = np.maximum(stab_pos, ctrl_pos)
+    y_top = max(
+        s.ShS_current * 1.6,
+        float(np.nanmax(envelope)) * 1.15,
+        0.05,
+    )
+
+    ax.plot(s.x_cg, s.ShS_stab, color="C0", lw=2.0, label="Stability boundary")
+    ax.plot(s.x_cg, s.ShS_ctrl, color="C3", lw=2.0, label="Controllability boundary")
+    ax.fill_between(s.x_cg, envelope, y_top,
+                    color="green", alpha=0.12, label="Feasible")
+    ax.fill_between(s.x_cg, 0.0, envelope,
+                    color="red", alpha=0.08, label="Infeasible")
+
+    ax.axhline(s.ShS_current, color="k", ls="--", lw=1.2,
+               label=f"current $S_h/S$ = {s.ShS_current:.3f}")
+    ax.axvline(s.x_cg_current, color="orange", ls="--", lw=1.2,
+               label=f"current $x_{{cg}}$ = {s.x_cg_current:.4f} m "
+                     f"({s.x_cg_current / s.c:.2%} $\\bar c$)")
+    ax.plot([s.x_cg_current], [s.ShS_current], "o", color="orange",
+            mec="k", ms=10, zorder=5)
+
+    # Twin top axis showing x_cg as a fraction of MAC.
+    ax2 = ax.twiny()
+    ax2.set_xlim(s.x_cg[0] / s.c, s.x_cg[-1] / s.c)
+    ax2.set_xlabel(r"$x_{cg} / \bar{c}$  [-]")
+
+    ax.set_xlim(s.x_cg[0], s.x_cg[-1])
+    ax.set_ylim(0.0, y_top)
+    ax.set_xlabel("$x_{cg}$ from LEMAC  [m]")
+    ax.set_ylabel("$S_h / S$  [-]")
+    ax.set_title(
+        f"Scissor — SM={s.SM:.2f}, "
+        f"$d\\varepsilon/d\\alpha$={s.dep_da:.3f}, "
+        f"$V_h/V$={s.Vh_V:.2f},  "
+        f"$C_{{L_h}}$={s.CL_h:+.3f},  $C_{{L_{{A-h}}}}$={s.CL_A_h:.3f},  "
+        f"$C_{{m_{{ac}}}}$={s.Cm_ac:+.4f}"
+    )
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=8)
+
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig

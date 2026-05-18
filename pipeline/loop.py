@@ -16,10 +16,13 @@ from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.drag_buildup import DragResult
 from aerodynamics.llt import LLTResult
 from pipeline.helpers import (
+    ScissorData,
+    compute_scissor_data,
     estimate_cd0,
     full_drag_estimate,
     llt_at_cl,
     resolve_airfoil,
+    tail_drag_at_cruise,
     wing_drag_polar,
 )
 from propulsion import sizing as prop_sizing
@@ -71,6 +74,9 @@ class PipelineResult:
     cd_full_sweep: np.ndarray
     cd_full_buildup: float
     cd_payload: float
+    cd_i_tail: float       # tail induced drag, wing-area reference
+    tail_loading: dict     # CL_tail, CD_i_tail (tail ref), e_tail, AR_tail
+    scissor: ScissorData   # stability-line scissor plot data
 
 
 @dataclass
@@ -325,8 +331,23 @@ def run_pipeline(config) -> PipelineResult:
     CD_drone_sweep = CD_wing_sweep + CD_nonwing
     CD_full_sweep = CD_drone_sweep + CD_payload
 
-    # ----- Step 7: full drag estimate = CD0 buildup + induced + payload -----
-    CD_full_buildup = full_drag_estimate(sizing, p.drag, llt)
+    # ----- Step 7: tail trim loading + induced drag, then full drag estimate -----
+    tail_loading = tail_drag_at_cruise(
+        sizing, polar, llt,
+        x_cg=p.cg["overall"],
+        tail_airfoil=config.TAIL_AIRFOIL,
+    )
+    cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
+    CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
+
+    # ----- Step 8: stability scissor line (once, post-convergence) -----
+    scissor = compute_scissor_data(
+        sizing, p.fus,
+        wing_llt=llt,
+        tail_llt=tail_loading["llt_tail"],
+        x_cg_current=p.cg["overall"],
+        Vh_V=p.drag.inputs.Vh_V,
+    )
 
     return PipelineResult(
         airfoil=airfoil,
@@ -358,4 +379,7 @@ def run_pipeline(config) -> PipelineResult:
         cd_full_sweep=CD_full_sweep,
         cd_full_buildup=CD_full_buildup,
         cd_payload=CD_payload,
+        cd_i_tail=cd_i_tail,
+        tail_loading=tail_loading,
+        scissor=scissor,
     )
