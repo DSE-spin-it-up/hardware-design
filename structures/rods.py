@@ -35,6 +35,7 @@ from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
+from propulsion.sizing import PropulsionResult
 
 
 @dataclass
@@ -46,8 +47,8 @@ class RodInputs:
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
     Vh_V: float = 0.85                # V_tail/V_cruise — used for tail download
-    t_spar: float = 0.00079375         # [m] minimum wall thickness of the spar rod
-    t_aileron: float = 0.0016256     # [m] minimum wall thickness of the aileron rod
+    t_spar: float = 0.00079375        # [m] minimum wall thickness of the spar rod
+    t_control: float = 0.0016256      # [m] minimum wall thickness of the aileron rod
     t_t: float = 0.00079375           # [m] minimum wall thickness of the tail rod
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
@@ -65,7 +66,7 @@ class RodResult:
     fail_mode_spar: str     # "deflection" | "compressive"
     # Aileron rod — at hinge x/c (one rod per half; total wing uses 2×)
     d_aileron: float
-    t_aileron: float
+    t_control: float
     mass_aileron: float
     defl_aileron: float
     fail_mode_aileron: str
@@ -76,18 +77,26 @@ class RodResult:
     defl_t: float
     fail_mode_t: str
     Vh_V: float
-    # V-tail forward (spar) rod — one per V-tail plane; 2× total (length = bt/2)
-    d_vt_spar: float
-    t_vt_spar: float
-    mass_vt_spar: float
-    defl_vt_spar: float
-    fail_mode_vt_spar: str
-    # V-tail aft (ruddervator) rod — one per V-tail plane; 2× total (length = bt/2)
-    d_vt_rud: float
-    t_vt_rud: float
-    mass_vt_rud: float
-    defl_vt_rud: float
-    fail_mode_vt_rud: str
+    d_spar_ht: float
+    t_spar_ht: float
+    mass_spar_ht: float
+    defl_spar_ht: float
+    fail_mode_spar_ht: str
+    d_control_ht: float
+    t_control_ht: float
+    mass_control_ht: float
+    defl_control_ht: float
+    fail_mode_control_ht: str
+    d_spar_vt: float
+    t_spar_vt: float
+    mass_spar_vt: float
+    defl_spar_vt: float
+    fail_mode_spar_vt: str
+    d_control_vt: float
+    t_control_vt: float
+    mass_control_vt: float
+    defl_control_vt: float
+    fail_mode_control_vt: str
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -170,43 +179,13 @@ def _check_wall(t: float, d: float, label: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Internal helper: size one cantilever rod (point-load model)
-# ---------------------------------------------------------------------------
-
-def _size_cantilever_rod(
-    F: float,
-    L: float,
-    t_min: float,
-    E: float,
-    sigma_lim: float,
-    rho_mat: float,
-    defl_max: float,
-    label: str,
-) -> tuple[float, float, float, float, str]:
-    """Size a single cantilever rod under a point load at its tip.
-
-    Returns (d, t, mass, defl, fail_mode).
-    """
-    M = F * L
-    d_defl = _d_for_defl_cantilever_point(F, L, E, t_min, defl_max)
-    d_comp = _d_for_stress(M, sigma_lim, t_min)
-    if d_defl >= d_comp:
-        d, fail = d_defl, "deflection"
-    else:
-        d, fail = d_comp, "compressive"
-    _check_wall(t_min, d, label)
-    defl = _defl_cantilever_point(F, L, E, _I_tube(t_min, d))
-    mass = _tube_mass(L, d, t_min, rho_mat)
-    return d, t_min, mass, defl, fail
-
-
-# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
 def run(
     sizing: SizingResult,
     aileron: AileronResult,
+    propulsion: PropulsionResult,
     airfoil_path: str,          # wing airfoil .dat file
     tail_airfoil_path: str,     # tail airfoil .dat file
     inputs: RodInputs | None = None,
@@ -256,17 +235,17 @@ def run(
     tc_aileron, _, _ = airfoil.compute_thickness(x_hinge)   # local t/c at hinge
     section_h_aileron = s.c_root * tc_aileron
     d_aileron = i.d_to_section_ratio * section_h_aileron
-    t_aileron = i.t_aileron
+    t_control = i.t_control
 
-    d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_aileron, i.defl_max)
-    d_ail_comp = _d_for_stress(M_spar, sigma_lim, t_aileron)
+    d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_control, i.defl_max)
+    d_ail_comp = _d_for_stress(M_spar, sigma_lim, t_control)
     if d_ail_defl >= d_ail_comp:
         d_aileron, fail_aileron = d_ail_defl, "deflection"
     else:
         d_aileron, fail_aileron = d_ail_comp, "compressive"
-    _check_wall(t_aileron, d_aileron, "Aileron rod")
-    defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_aileron, d_aileron))
-    mass_aileron = _tube_mass(b_w, d_aileron, t_aileron, rho_mat)
+    _check_wall(t_control, d_aileron, "Aileron rod")
+    defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_control, d_aileron))
+    mass_aileron = _tube_mass(b_w, d_aileron, t_control, rho_mat)
 
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
@@ -290,74 +269,88 @@ def run(
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
 
-    # ------------------------------------------------------------------ #
-    # V-tail structural rods — 2 per plane, 4 total                       #
-    #                                                                      #
-    # Each rod spans bt/2 (one V-tail half-plane).                        #
-    # Each plane carries half the total tail load; each rod within a      #
-    # plane carries half of that → F_tail / 4 per rod.                   #
-    # Modelled as a cantilever with a point load at the tip               #
-    # (conservative; actual load distribution is closer to UDL but the   #
-    # tail half-span is short, so the distinction is small).              #
-    # ------------------------------------------------------------------ #
-    L_vt = s.bt / 2                          # half-span of one V-tail plane [m]
-    F_vt_rod = F_tail / 4                     # load per rod [N]
+    # --- horizontal tail spar rod sizing
+    L_ht = s.bh                          
+    F_ht_rod = F_tail / 2                     
+    t_spar_ht = i.t_spar
 
-    # --- V-tail forward (spar) rod: at max-thickness of tail airfoil ---
-    tc_vt_spar, _ = tail_airfoil.compute_maximum_thickness()
-    # chord at V-tail tip assumed equal to tail tip chord ct; root chord
-    # could differ, but we conservatively use ct (smaller → thinner section).
-    section_h_vt_spar = s.ct * tc_vt_spar
-    # The wall thickness budget mirrors the wing spar rod.
-    t_vt_spar = i.t_spar
+    M_spar_ht = F_ht_rod * L_ht / 16  # half-cantilever UDL max bending moment
 
-    d_vt_spar, t_vt_spar, mass_vt_spar, defl_vt_spar, fail_vt_spar = (
-        _size_cantilever_rod(
-            F=F_vt_rod,
-            L=L_vt,
-            t_min=t_vt_spar,
-            E=E,
-            sigma_lim=sigma_lim,
-            rho_mat=rho_mat,
-            defl_max=i.defl_max,
-            label="V-tail spar rod",
-        )
-    )
+    d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, i.defl_max)
+    d_spar_comp_ht = _d_for_stress(M_spar_ht, sigma_lim, t_spar_ht)
+    if d_spar_defl_ht >= d_spar_comp_ht:
+        d_spar_ht, fail_spar_ht = d_spar_defl_ht, "deflection"
+    else:
+        d_spar_ht, fail_spar_ht = d_spar_comp_ht, "compressive"
+    _check_wall(t_spar_ht, d_spar_ht, "Spar rod horizontal tail")
+    defl_spar_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_spar_ht, d_spar_ht))
+    mass_spar_ht = _tube_mass(L_ht, d_spar_ht, t_spar_ht, rho_mat)
 
-    # --- V-tail aft (ruddervator) rod: at ruddervator hinge x/c ---
-    x_rud_hinge = 1.0 - i.c_ruddervator_to_c_tail
-    tc_vt_rud, _, _ = tail_airfoil.compute_thickness(x_rud_hinge)
-    section_h_vt_rud = s.ct * tc_vt_rud
-    # Wall thickness budget mirrors the wing aileron rod.
-    t_vt_rud = i.t_aileron
+    # --- horizontal tail elevator rod sizing
+    t_control_ht = i.t_control
 
-    d_vt_rud, t_vt_rud, mass_vt_rud, defl_vt_rud, fail_vt_rud = (
-        _size_cantilever_rod(
-            F=F_vt_rod,
-            L=L_vt,
-            t_min=t_vt_rud,
-            E=E,
-            sigma_lim=sigma_lim,
-            rho_mat=rho_mat,
-            defl_max=i.defl_max,
-            label="V-tail ruddervator rod",
-        )
-    )
+    M_control_ht = F_ht_rod * L_ht / 16  # half-cantilever UDL max bending moment
+
+    d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, i.defl_max)
+    d_control_comp_ht = _d_for_stress(M_control_ht, sigma_lim, t_control_ht)
+    if d_control_defl_ht >= d_control_comp_ht:
+        d_control_ht, fail_control_ht = d_control_defl_ht, "deflection"
+    else:
+        d_control_ht, fail_control_ht = d_control_comp_ht, "compressive"
+    _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
+    defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
+    mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
+
+    # --- vertical tail spar rod sizing
+    L_vt = s.bv * 2
+    F_vt_rod = propulsion.thrust_cruise_per_prop
+    t_spar_vt = i.t_spar
+
+    M_spar_vt = F_vt_rod * L_vt / 16  # half-cantilever UDL max bending moment
+
+    d_spar_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_spar_vt, i.defl_max)
+    d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
+    if d_spar_defl_vt >= d_spar_comp_vt:
+        d_spar_vt, fail_spar_vt = d_spar_defl_vt, "deflection"
+    else:
+        d_spar_vt, fail_spar_vt = d_spar_comp_vt, "compressive"
+    _check_wall(t_spar_vt, d_spar_vt, "Spar rod vertical tail")
+    defl_spar_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
+    mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
+
+    # --- vertical tail rudder rod sizing
+    t_control_vt = i.t_control
+
+    M_control_vt = F_vt_rod * L_vt / 16  # half-cantilever UDL max bending moment
+
+    d_control_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_control_vt, i.defl_max)
+    d_control_comp_vt = _d_for_stress(M_control_vt, sigma_lim, t_control_vt)
+    if d_control_defl_vt >= d_control_comp_vt:
+        d_control_vt, fail_control_vt = d_control_defl_vt, "deflection"
+    else:
+        d_control_vt, fail_control_vt = d_control_comp_vt, "compressive"
+    _check_wall(t_control_vt, d_control_vt, "Rudder rod horizontal tail")
+    defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
+    mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
+    
+    
 
     return RodResult(
         inputs=inputs,
         d_spar=d_spar, t_spar=t_spar, mass_spar=mass_spar,
         defl_spar=defl_spar, fail_mode_spar=fail_spar,
-        d_aileron=d_aileron, t_aileron=t_aileron, mass_aileron=mass_aileron,
+        d_aileron=d_aileron, t_control=t_control, mass_aileron=mass_aileron,
         defl_aileron=defl_aileron, fail_mode_aileron=fail_aileron,
         d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
         Vh_V=i.Vh_V,
-        d_vt_spar=d_vt_spar, t_vt_spar=t_vt_spar,
-        mass_vt_spar=mass_vt_spar, defl_vt_spar=defl_vt_spar,
-        fail_mode_vt_spar=fail_vt_spar,
-        d_vt_rud=d_vt_rud, t_vt_rud=t_vt_rud,
-        mass_vt_rud=mass_vt_rud, defl_vt_rud=defl_vt_rud,
-        fail_mode_vt_rud=fail_vt_rud,
+        d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
+        defl_spar_ht=defl_spar_ht, fail_mode_spar_ht=fail_spar_ht,
+        d_control_ht=d_control_ht, t_control_ht=t_control_ht, mass_control_ht=mass_control_ht,
+        defl_control_ht=defl_control_ht, fail_mode_control_ht=fail_control_ht,
+        d_spar_vt=d_spar_vt, t_spar_vt=t_spar_vt, mass_spar_vt=mass_spar_vt,
+        defl_spar_vt=defl_spar_vt, fail_mode_spar_vt=fail_spar_vt,
+        d_control_vt=d_control_vt, t_control_vt=t_control_vt, mass_control_vt=mass_control_vt,
+        defl_control_vt=defl_control_vt, fail_mode_control_vt=fail_control_vt
     )
 
 
@@ -369,9 +362,9 @@ def summary(r: RodResult) -> None:
     print(f"  Sizing criterion     : {r.fail_mode_spar}")
     print(f"  Mass (each)          : {r.mass_spar:.3f}  kg")
 
-    print("\n--- Aileron rod (one of two) ---")
+    print("\n--- Aileron rod (two of two) ---")
     print(f"  Outer diameter       : {r.d_aileron * 1000:.2f}  mm")
-    print(f"  Wall thickness       : {r.t_aileron * 1000:.2f}  mm")
+    print(f"  Wall thickness       : {r.t_control * 1000:.2f}  mm")
     print(f"  Tip deflection       : {r.defl_aileron * 1000:.2f}  mm")
     print(f"  Sizing criterion     : {r.fail_mode_aileron}")
     print(f"  Mass (each)          : {r.mass_aileron:.3f}  kg")
@@ -383,20 +376,33 @@ def summary(r: RodResult) -> None:
     print(f"  Sizing criterion     : {r.fail_mode_t}")
     print(f"  Mass                 : {r.mass_t:.3f}  kg")
 
-    print("\n--- V-tail forward/spar rod (one per plane, 2 total) ---")
-    print(f"  Outer diameter       : {r.d_vt_spar * 1000:.2f}  mm")
-    print(f"  Wall thickness       : {r.t_vt_spar * 1000:.2f}  mm")
-    print(f"  Tip deflection       : {r.defl_vt_spar * 1000:.2f}  mm")
-    print(f"  Sizing criterion     : {r.fail_mode_vt_spar}")
-    print(f"  Mass (each)          : {r.mass_vt_spar:.3f}  kg")
+    print("\n--- Spar rod horizontal tail (one of two) ---")
+    print(f"  Outer diameter       : {r.d_spar_ht * 1000:.2f}  mm")
+    print(f"  Wall thickness       : {r.t_spar_ht * 1000:.2f}  mm")
+    print(f"  Tip deflection       : {r.defl_spar_ht * 1000:.2f}  mm")
+    print(f"  Sizing criterion     : {r.fail_mode_spar_ht}")
+    print(f"  Mass (each)          : {r.mass_spar_ht:.3f}  kg")
 
-    print("\n--- V-tail ruddervator rod (one per plane, 2 total) ---")
-    print(f"  Outer diameter       : {r.d_vt_rud * 1000:.2f}  mm")
-    print(f"  Wall thickness       : {r.t_vt_rud * 1000:.2f}  mm")
-    print(f"  Tip deflection       : {r.defl_vt_rud * 1000:.2f}  mm")
-    print(f"  Sizing criterion     : {r.fail_mode_vt_rud}")
-    print(f"  Mass (each)          : {r.mass_vt_rud:.3f}  kg")
+    print("\n--- Elevator rod (two of two) ---")
+    print(f"  Outer diameter       : {r.d_control_ht * 1000:.2f}  mm")
+    print(f"  Wall thickness       : {r.t_control_ht * 1000:.2f}  mm")
+    print(f"  Tip deflection       : {r.defl_control_ht * 1000:.2f}  mm")
+    print(f"  Sizing criterion     : {r.fail_mode_control_ht}")
+    print(f"  Mass (each)          : {r.mass_control_ht:.3f}  kg")
 
+    print("\n--- Spar rod vertical tail (one of two) ---")
+    print(f"  Outer diameter       : {r.d_spar_vt * 1000:.2f}  mm")
+    print(f"  Wall thickness       : {r.t_spar_vt * 1000:.2f}  mm")
+    print(f"  Tip deflection       : {r.defl_spar_vt * 1000:.2f}  mm")
+    print(f"  Sizing criterion     : {r.fail_mode_spar_vt}")
+    print(f"  Mass (each)          : {r.mass_spar_vt:.3f}  kg")
+
+    print("\n--- Rudder rod (two of two) ---")
+    print(f"  Outer diameter       : {r.d_control_vt * 1000:.2f}  mm")
+    print(f"  Wall thickness       : {r.t_control_vt * 1000:.2f}  mm")
+    print(f"  Tip deflection       : {r.defl_control_vt * 1000:.2f}  mm")
+    print(f"  Sizing criterion     : {r.fail_mode_control_vt}")
+    print(f"  Mass (each)          : {r.mass_control_vt:.3f}  kg")
 
 if __name__ == "__main__":
     from sizing import aileron, wing
