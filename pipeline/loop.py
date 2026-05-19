@@ -309,7 +309,7 @@ def run_pipeline(config) -> PipelineResult:
         )
         y_cg = weights_mass.compute_y_cg(
             sizing=sizing, fus=p.fus, structure=p.struct,
-            masses=p.masses, airfoil_path=airfoil,
+            masses=p.masses, airfoil_path=airfoil, cg=p.cg,
         )
         scissor = compute_scissor_data(
             sizing, p.fus,
@@ -429,7 +429,7 @@ def run_pipeline(config) -> PipelineResult:
     # ----- Step 8: stability scissor line on the final consistent state -----
     y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
-        masses=p.masses, airfoil_path=airfoil,
+        masses=p.masses, airfoil_path=airfoil, cg=p.cg,
     )
     scissor = compute_scissor_data(
         sizing, p.fus,

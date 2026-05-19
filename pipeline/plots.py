@@ -127,7 +127,8 @@ def plot_cg_side_view(
         airfoil.polygon[:, 0] * root_chord,
         airfoil.polygon[:, 1] * root_chord,
     ))
-    airfoil_coords[:, 1] -= float(np.min(airfoil_coords[:, 1]))
+    airfoil_y_offset = -float(np.min(airfoil_coords[:, 1]))
+    airfoil_coords[:, 1] += airfoil_y_offset
     airfoil_height = float(np.max(airfoil_coords[:, 1]))
 
     x_motor = cg["motors"]
@@ -140,6 +141,12 @@ def plot_cg_side_view(
     # Tail LE position from LEMAC: tail AC sits at 0.25·c + lh; LE is 0.25·ct ahead.
     x_tail_root = 0.25 * sizing.c + sizing.lh - 0.25 * sizing.ct
 
+    # Rod centres sit on the airfoil mid-thickness line at their own x/c.
+    _, y_up_s, y_lo_s = airfoil.compute_thickness(x_rod_wing / root_chord)
+    _, y_up_a, y_lo_a = airfoil.compute_thickness(x_rod_aileron / root_chord)
+    y_rod_spar = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
+    y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
+
     rod_radius_w = struct.d_w / 2.0
     rod_radius_a = struct.d_aileron / 2.0
     battery_length = fus.battery_length
@@ -148,7 +155,9 @@ def plot_cg_side_view(
     tube_height = max(max(struct.d_spar, struct.d_aileron) * 1.1, 0.03)
     tube_length = max(rod_span_length + 0.1, battery_length * 0.8)
     tube_x0 = max(x_pvc - tube_length / 2.0, 0.0)
-    tube_y0 = max(airfoil_height - tube_height - 0.005, 0.0)
+    # Tube centred on the mean rod-centre height so it encloses both rods.
+    tube_yc = 0.5 * (y_rod_spar + y_rod_aileron)
+    tube_y0 = tube_yc - tube_height / 2.0
     batt_x0 = x_batt - battery_length / 2.0
     batt_y0 = tube_y0 + tube_height + 0.005
     plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
@@ -171,17 +180,16 @@ def plot_cg_side_view(
                          tube_height, tube_height,
                          facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
 
-    rod_y = tube_y0 + tube_height / 2.0
-    ax.add_patch(Circle((x_rod_wing, rod_y), rod_radius_w,
+    ax.add_patch(Circle((x_rod_wing, y_rod_spar), rod_radius_w,
                         color="brown", alpha=0.8, label="Wing rod"))
-    ax.add_patch(Circle((x_rod_aileron, rod_y), rod_radius_a,
+    ax.add_patch(Circle((x_rod_aileron, y_rod_aileron), rod_radius_a,
                         color="sienna", alpha=0.8, label="Aileron rod"))
 
     tail_start = x_rod_aileron + rod_radius_a + 0.001
-    ax.plot([tail_start, x_tail_root], [rod_y, rod_y],
+    ax.plot([tail_start, x_tail_root], [y_rod_aileron, y_rod_aileron],
             color="gray", linewidth=3, solid_capstyle="butt", label="Tail rod")
 
-    y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path)
+    y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     motor_y = y_cg["motors"]
     tail_y = y_cg["tail"]
     overall_y = y_cg["overall"]

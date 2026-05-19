@@ -156,25 +156,34 @@ def compute_y_cg(
     structure: RodResult,
     masses: dict[str, float],
     airfoil_path: str | Path,
+    cg: dict[str, float],
 ) -> dict[str, float]:
     """Compute vertical (y) CG position of each component and overall aircraft.
 
     Vertical positions are measured from the bottom of the airfoil/fuselage,
     using the same drawing-layout conventions as the side-view sketch (tube
-    sits just under the upper skin; battery sits on top of the tube; rods
-    pass through the tube centre).
+    sits just under the upper skin; battery sits on top of the tube; each
+    rod is centred on the airfoil mid-thickness line at its own x/c).
     """
     airfoil = AirfoilGeometry(airfoil_path)
     root_chord = sizing.c_root
     x_coords = airfoil.polygon[:, 0] * root_chord
     y_coords = airfoil.polygon[:, 1] * root_chord
-    y_coords = y_coords - float(np.min(y_coords))
+    airfoil_y_offset = -float(np.min(y_coords))
+    y_coords = y_coords + airfoil_y_offset
     airfoil_height = float(np.max(y_coords))
 
     tube_height = max(max(structure.d_spar, structure.d_aileron) * 1.1, 0.03)
-    tube_y0 = max(airfoil_height - tube_height - 0.005, 0.0)
+
+    # Rods sit on the airfoil mid-thickness line at their respective x/c.
+    _, y_up_s, y_lo_s = airfoil.compute_thickness(cg["rod_spar"] / root_chord)
+    _, y_up_a, y_lo_a = airfoil.compute_thickness(cg["rod_aileron"] / root_chord)
+    y_rod_spar = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
+    y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
+
+    # Tube centred on the mean rod-centre height; battery sits on top of tube.
+    tube_y0 = 0.5 * (y_rod_spar + y_rod_aileron) - tube_height / 2.0
     batt_y0 = tube_y0 + tube_height + 0.005
-    rod_y = tube_y0 + tube_height / 2.0
 
     le_x = float(np.min(x_coords))
     le_mask = np.isclose(x_coords, le_x, atol=1e-6)
@@ -184,14 +193,14 @@ def compute_y_cg(
     y_fus = fus.height / 2.0
     y_wing = 0.5 * airfoil_height
     y_batt = batt_y0 + fus.battery_height / 2.0
-    y_pvc = rod_y
-    y_tail_rod = rod_y
+    y_pvc = tube_y0 + tube_height / 2.0
+    y_tail_rod = y_rod_aileron
     # V-tail foam surfaces and the spar/ruddervator rods all share the same
     # panel-half-span centroid above the aileron-rod height (bv is the
     # vertical projection of one V-tail panel — see sizing.wing).
-    y_tail = rod_y + 0.5 * sizing.bv
-    y_vt_spar = rod_y + 0.5 * sizing.bv
-    y_vt_rud  = rod_y + 0.5 * sizing.bv
+    y_tail = y_rod_aileron + 0.5 * sizing.bv
+    y_vt_spar = y_rod_aileron + 0.5 * sizing.bv
+    y_vt_rud  = y_rod_aileron + 0.5 * sizing.bv
 
     m_vt_spar = masses.get("vt_spar", 0.0)
     m_vt_rud  = masses.get("vt_rud", 0.0)
@@ -209,8 +218,8 @@ def compute_y_cg(
             + y_batt    * masses["battery"]
             + y_motor   * masses["motors"]
             + y_wing    * masses["wing"]
-            + rod_y     * masses["rod_spar"]
-            + rod_y     * masses["rod_aileron"]
+            + y_rod_spar     * masses["rod_spar"]
+            + y_rod_aileron  * masses["rod_aileron"]
             + y_tail    * masses["tail"]
             + y_tail_rod * masses["tail_rod"]
             + y_vt_spar * (2.0 * m_vt_spar)
@@ -227,8 +236,8 @@ def compute_y_cg(
         'battery':     y_batt,
         'motors':      y_motor,
         'wing':        y_wing,
-        'rod_spar':    rod_y,
-        'rod_aileron': rod_y,
+        'rod_spar':    y_rod_spar,
+        'rod_aileron': y_rod_aileron,
         'tail':        y_tail,
         'tail_rod':    y_tail_rod,
         'vt_spar':     y_vt_spar,
