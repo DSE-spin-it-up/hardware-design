@@ -24,7 +24,6 @@ from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
-from aerodynamics.drag_buildup import DragResult
 
 
 @dataclass
@@ -35,6 +34,7 @@ class RodInputs:
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
+    Vh_V: float = 0.85                # V_tail/V_cruise — used for tail download
     t_spar: float = 0.0016256         # [m] minimum thickness of the spar rod
     t_aileron: float = 0.00079375     # [m] minimum thickness of the aileron rod
     t_t: float = 0.00079375           # [m] minimum thickness of the spar rod
@@ -61,6 +61,7 @@ class RodResult:
     mass_t: float
     defl_t: float
     fail_mode_t: str
+    Vh_V : float
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -149,7 +150,6 @@ def _check_wall(t: float, d: float, label: str) -> None:
 def run(
     sizing: SizingResult,
     aileron: AileronResult,
-    drag: DragResult,
     airfoil_path: str,                 # ← required, no default
     inputs: RodInputs | None = None,
 ) -> RodResult:
@@ -222,7 +222,7 @@ def run(
 
     section_thickness_t = s.ct * i.tail_tc
     d_t = i.d_to_section_ratio * section_thickness_t
-    F_tail = s.Sh * CL_h * s.q_cruise * drag.inputs.Vh_V  # tail download as point load [N]
+    F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download as point load [N]
     L_t = s.L_tail * i.safety_factor
     M_t = F_tail * L_t
     t_t = i.t_t
@@ -243,7 +243,7 @@ def run(
         defl_spar=defl_spar, fail_mode_spar=fail_spar,
         d_aileron=d_aileron, t_aileron=t_aileron, mass_aileron=mass_aileron,
         defl_aileron=defl_aileron, fail_mode_aileron=fail_aileron,
-        d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
+        d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t, Vh_V=i.Vh_V,
     )
 
 

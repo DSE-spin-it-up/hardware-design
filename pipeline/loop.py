@@ -311,7 +311,7 @@ def run_pipeline(config) -> PipelineResult:
             tail_llt=tail_loading["llt_tail"],
             x_cg_current=x_cg,
             y_cg=y_cg["overall"],
-            Vh_V=p.drag.inputs.Vh_V,
+            Vh_V=p.struct.Vh_V,
         )
 
         Sh_S_new = calculate_Sh_S(x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, l_h=scissor.l_h,

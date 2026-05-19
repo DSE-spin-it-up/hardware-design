@@ -41,7 +41,6 @@ class DragInputs:
     tail_airfoil: str = "airfoils/NACA0010.dat"
     sweep_wing: float = 0.0       # quarter-chord sweep [rad]
     sweep_tail: float = 0.0       # [rad]
-    Vh_V: float = 0.85            # V_tail/V_cruise — used for tail Re/Mach only
     # Raymer interference factors (Q_i in CD0 buildup)
     Q_wing: float = 1.0
     Q_tail: float = 1.03          # conventional aft tail
@@ -112,8 +111,8 @@ def run(
     V = s.inputs.V_cruise
     rho = s.rho
     M_cruise = V / np.sqrt(gamma_air * R_air * s.T_isa)
-    M_tail = i.Vh_V * M_cruise
-    V_tail = i.Vh_V * V
+    M_tail = rods.Vh_V * M_cruise
+    V_tail = rods.Vh_V * V
 
     # Airfoil thicknesses
     tc_w, xtc_w = _max_tc_with_location(i.wing_airfoil)
