@@ -39,6 +39,12 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Prop mass    : {masses['props']:.3f} kg")
     print(f"  Wing mass    : {masses['wing']:.3f} kg")
     print(f"  Tail mass    : {masses['tail']:.3f} kg")
+    if 'glass_sheet_wing' in masses:
+            print(f"  Glass sheet (wing): {masses['glass_sheet_wing']:.3f} kg")
+    if 'glass_sheet_tail' in masses:
+            print(f"  Glass sheet (tail): {masses['glass_sheet_tail']:.3f} kg")
+    if 'glass_sheet' in masses:
+            print(f"  Glass sheet (total): {masses['glass_sheet']:.3f} kg")
     print(f"  Spar rod mass   : {masses['rod_spar']:.3f} kg")
     print(f"  Aileron rod mass: {masses['rod_aileron']:.3f} kg")
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from structures.materials import CFRP, CF_PLA, EPP, PLA, Material, Wood
+from structures.materials import CFRP, CF_PLA, EPP, PLA, Material, Wood, Glass_Fiber
 
 MATERIAL_REGISTRY: dict[str, type[Material]] = {
     "CFRP": CFRP,
@@ -8,6 +8,7 @@ MATERIAL_REGISTRY: dict[str, type[Material]] = {
     "CF_PLA": CF_PLA,
     "PLA": PLA,
     "Wood": Wood,
+    "Glass_Fiber": Glass_Fiber,
 }
 
 
@@ -27,6 +28,8 @@ class PartMaterials:
     wing: Material = field(default_factory=EPP)
     rod: Material = field(default_factory=CFRP)
     tail: Material = field(default_factory=EPP)
+    # Material used for external glass-fibre skin/sheet coverings
+    sheet: Material = field(default_factory=Glass_Fiber)
 
     @classmethod
     def from_names(cls, names: dict[str, str]) -> "PartMaterials":

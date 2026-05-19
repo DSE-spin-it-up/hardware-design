@@ -216,9 +216,13 @@ def run(
     # ------------------------------------------------------------------ #
     # Tail rod                                                             #
     # ------------------------------------------------------------------ #
+    # Trim tail CL from scissor-plot statistical fit (Slingerland/Torenbeek).
+    AR_tail = s.bh ** 2 / s.Sh
+    CL_h = abs(-0.35 * AR_tail ** (1.0 / 3.0))
+
     section_thickness_t = s.ct * i.tail_tc
     d_t = i.d_to_section_ratio * section_thickness_t
-    F_tail = s.Sh * i.CLt_max * s.q_cruise * drag.inputs.Vh_V  # tail download as point load [N]
+    F_tail = s.Sh * CL_h * s.q_cruise * drag.inputs.Vh_V  # tail download as point load [N]
     L_t = s.L_tail * i.safety_factor
     M_t = F_tail * L_t
     t_t = i.t_t
