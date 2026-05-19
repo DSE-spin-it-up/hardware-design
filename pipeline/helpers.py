@@ -96,7 +96,7 @@ def tail_drag_at_cruise(
         flight=flight,
         alpha_cruise=llt.alpha_root,
         CL_wing_cruise=llt.CL,
-        l_tail=sizing.L_tail,
+        l_tail=sizing.lh,
         x_cg=x_cg,
     )
     result["CD_i_tail_wing_ref"] = result["CD_i_tail"] * sizing.Sh / sizing.Sw
@@ -174,7 +174,7 @@ def compute_scissor_data(
     CL_alpha_A_h = lift_slope_A_minus_h(CL_alpha_w, s.inputs.b, b_f, s.Sw, S_net)
 
     # --- Slingerland downwash (Λ=0, m_tv=0) ---
-    r = 2.0 * s.L_tail / s.inputs.b
+    r = 2.0 * s.lh / s.inputs.b
     dep_da = downwash_gradient(
         CL_alpha_w=CL_alpha_w, A_wing=s.inputs.AR, r=r, m_tv=0.0, sweep_qc=0.0,
     )
@@ -186,7 +186,7 @@ def compute_scissor_data(
     x_ac = 0.25 * s.c  # MAC quarter chord, from LEMAC
 
     ShS_stab = stability_line_ShS(
-        x_cg, x_ac=x_ac, c=s.c, l_h=s.L_tail,
+        x_cg, x_ac=x_ac, c=s.c, l_h=s.lh,
         CL_alpha_h=CL_alpha_h, CL_alpha_A_h=CL_alpha_A_h,
         dep_da=dep_da, Vh_V=Vh_V, SM=SM,
     )
@@ -205,7 +205,7 @@ def compute_scissor_data(
         Cm_ac -= payload_per_drone * 9.81 * y_cg / (sizing.q_cruise * sizing.Sw * sizing.c)
 
     ShS_ctrl = controllability_line_ShS(
-        x_cg, x_ac=x_ac, c=s.c, l_h=s.L_tail,
+        x_cg, x_ac=x_ac, c=s.c, l_h=s.lh,
         CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac, Vh_V=Vh_V,
     )
 
@@ -216,7 +216,7 @@ def compute_scissor_data(
         CL_alpha_A_h=CL_alpha_A_h, dep_da=dep_da,
         CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac,
         SM=SM, Vh_V=Vh_V, x_ac=x_ac,
-        c=s.c, l_h=s.L_tail,
+        c=s.c, l_h=s.lh,
         x_cg_current=x_cg_current,
         ShS_current=s.Sh / s.Sw,
     )

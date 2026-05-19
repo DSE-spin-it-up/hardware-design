@@ -20,8 +20,10 @@ V-tail has four rods total, two per V-tail plane, each of length bt/2:
                          but each rod carries F_tail/2 (quarter of total
                          tail load).
 
-Tail rod: cantilever connecting tail to fuselage, with the tail download
-as a point load at the tip.  Length = L_tail (trailing-edge extent).
+Tail rod: cantilever connecting the tail to the aileron-hinge anchor on the
+wing, with the tail download as a point load at the tip. Length = L_tail
+(aileron hinge → tail TE), strictly longer than the aero moment arm lh
+since it extends past the tail AC to its trailing edge.
 """
 from __future__ import annotations
 
@@ -67,7 +69,7 @@ class RodResult:
     mass_aileron: float
     defl_aileron: float
     fail_mode_aileron: str
-    # Tail rod (fuselage → trailing edge, length = L_tail)
+    # Tail rod (aileron hinge → tail TE, length = L_tail boom length)
     d_t: float
     t_t: float
     mass_t: float
@@ -267,7 +269,7 @@ def run(
     mass_aileron = _tube_mass(b_w, d_aileron, t_aileron, rho_mat)
 
     # ------------------------------------------------------------------ #
-    # Tail rod (fuselage → trailing edge, cantilever point load)          #
+    # Tail rod (aileron hinge → tail TE, cantilever point load)           #
     # ------------------------------------------------------------------ #
     AR_tail = s.bh ** 2 / s.Sh
     CL_h = abs(-0.35 * AR_tail ** (1.0 / 3.0))
@@ -374,7 +376,7 @@ def summary(r: RodResult) -> None:
     print(f"  Sizing criterion     : {r.fail_mode_aileron}")
     print(f"  Mass (each)          : {r.mass_aileron:.3f}  kg")
 
-    print("\n--- Tail rod (fuselage → trailing edge) ---")
+    print("\n--- Tail rod (aileron hinge → tail TE) ---")
     print(f"  Outer diameter       : {r.d_t * 1000:.2f}  mm")
     print(f"  Wall thickness       : {r.t_t * 1000:.2f}  mm")
     print(f"  Tip deflection       : {r.defl_t * 1000:.2f}  mm")

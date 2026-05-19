@@ -124,8 +124,9 @@ def run(
     Re_fus  = rho * V * f.length / MU_AIR
 
     # Tail boom geometry from structural sizing — no duplication of data.
-    # rods.d_t is the outer diameter [m]; s.L_tail is the cantilever length
-    # used in rods.py, so both modules share the same source of truth.
+    # rods.d_t is the outer diameter [m]; s.L_tail is the physical boom length
+    # (aileron hinge → tail TE) used in rods.py, so both modules share the same
+    # source of truth. Note: this is the boom length, not the aero moment arm lh.
     boom_diameter = rods.d_t
     boom_length   = s.L_tail
     Re_boom = rho * V * boom_length / MU_AIR
