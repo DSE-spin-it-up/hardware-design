@@ -24,6 +24,7 @@ from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
+from aerodynamics.drag_buildup import DragResult
 
 
 @dataclass
@@ -148,6 +149,7 @@ def _check_wall(t: float, d: float, label: str) -> None:
 def run(
     sizing: SizingResult,
     aileron: AileronResult,
+    drag: DragResult,
     airfoil_path: str,                 # ← required, no default
     inputs: RodInputs | None = None,
 ) -> RodResult:
@@ -216,7 +218,7 @@ def run(
     # ------------------------------------------------------------------ #
     section_thickness_t = s.ct * i.tail_tc
     d_t = i.d_to_section_ratio * section_thickness_t
-    F_tail = s.Sh * i.CLt_max * s.q_cruise   # tail download as point load [N]
+    F_tail = s.Sh * i.CLt_max * s.q_cruise * drag.inputs.Vh_V  # tail download as point load [N]
     L_t = s.L_tail * i.safety_factor
     M_t = F_tail * L_t
     t_t = i.t_t
