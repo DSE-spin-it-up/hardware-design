@@ -38,9 +38,9 @@ class SizingInputs:
     Vh: float = 0.50
     # Tail moment arm lh, wing AC → tail AC (the quantity that goes into the
     # tail-volume coefficients Vh = Sh·lh/(Sw·c) and Vv = Sv·lh/(Sw·b), and into
-    # the stability/controllability scissor). The physical boom length L_tail
-    # below is derived from lh and the wing/aileron/tail geometry; it is not
-    # equal to lh because the actual tail extends past its AC to its TE.
+    # the stability/controllability scissor). The physical boom length L_boom
+    # is derived from lh and the wing/aileron/tail geometry; it is strictly
+    # longer than lh because the actual tail extends past its AC to its TE.
     # When None, run() falls back to deriving lh from the Vh tail-volume estimate.
     lh: float | None = None
     # Optional override for the horizontal tail area. When None, run() derives
@@ -86,10 +86,10 @@ class SizingResult:
     # lh = tail moment arm (wing AC → tail AC). Used by the stability /
     # controllability scissor and by the Vh, Vv tail-volume coefficients.
     lh: float
-    # L_tail = physical boom length (aileron hinge → tail TE). Used for the
-    # tail-rod cantilever sizing, the tail boom drag wetted area, the tail
+    # L_boom = physical tail-boom length (aileron hinge → tail TE). Used for
+    # the tail-rod cantilever sizing, the tail boom drag wetted area, the tail
     # mass arm, and the side-view plot. Always strictly longer than lh.
-    L_tail: float
+    L_boom: float
     Sv: float
     bv: float
     St: float
@@ -171,14 +171,14 @@ def run(
     m_tail = i.foam_density * St * tt
 
     # Physical tail boom length, datum at LEMAC:
-    #   L_tail = lh − (x_aileron_hinge − x_ac_wing) + 0.75·ct
+    #   L_boom = lh − (x_aileron_hinge − x_ac_wing) + 0.75·ct
     # i.e. boom spans from the aileron hinge (its inboard structural anchor)
     # to the tail TE (its outboard end). lh is wing AC → tail AC, so the
     # correction subtracts the wing AC → aileron-hinge offset and adds the
     # tail AC → tail TE offset (0.75·ct, AC at quarter chord).
     x_ac_wing = 0.25 * c
     x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
-    L_tail = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * ct
+    L_boom = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * ct
 
     return SizingResult(
         inputs=inputs,
@@ -205,7 +205,7 @@ def run(
         bh=bh,
         Sh=Sh,
         lh=lh,
-        L_tail=L_tail,
+        L_boom=L_boom,
         Sv=Sv,
         bv=bv,
         St=St,
@@ -247,7 +247,7 @@ def summary(r: SizingResult) -> None:
     print(f"  Horizontal tail area : {r.Sh:.4f}  m²")
     print(f"  Vertical tail area   : {r.Sv:.4f}  m²")
     print(f"  lh (AC → AC)         : {r.lh:.4f}  m")
-    print(f"  L_tail (boom length) : {r.L_tail:.4f}  m")
+    print(f"  L_boom (boom length) : {r.L_boom:.4f}  m")
     print(f"  Tail chord           : {r.ct:.4f}  m")
 
 

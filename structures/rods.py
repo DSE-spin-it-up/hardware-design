@@ -21,7 +21,7 @@ V-tail has four rods total, two per V-tail plane, each of length bt/2:
                          tail load).
 
 Tail rod: cantilever connecting the tail to the aileron-hinge anchor on the
-wing, with the tail download as a point load at the tip. Length = L_tail
+wing, with the tail download as a point load at the tip. Length = L_boom
 (aileron hinge → tail TE), strictly longer than the aero moment arm lh
 since it extends past the tail AC to its trailing edge.
 """
@@ -69,7 +69,7 @@ class RodResult:
     mass_aileron: float
     defl_aileron: float
     fail_mode_aileron: str
-    # Tail rod (aileron hinge → tail TE, length = L_tail boom length)
+    # Tail rod (aileron hinge → tail TE, length = L_boom)
     d_t: float
     t_t: float
     mass_t: float
@@ -276,7 +276,7 @@ def run(
 
     section_thickness_t = s.ct * i.tail_tc
     F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download [N]
-    L_t = s.L_tail * i.safety_factor
+    L_t = s.L_boom * i.safety_factor
     M_t = F_tail * L_t
     t_t = i.t_t
 

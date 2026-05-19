@@ -70,20 +70,30 @@ def compute_cg(
     x_mid_rods = 0.5 * (x_rod_spar + x_rod_aileron)
     x_batt = x_mid_rods if battery_x is None else battery_x
     # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
-    # Tail boom runs from the aileron hinge to the tail TE (length = L_tail),
-    # so its centroid sits at x_rod_aileron + L_tail/2.
+    # Tail boom runs from the aileron hinge to the tail TE (length = L_boom),
+    # so its centroid sits at x_rod_aileron + L_boom/2.
     x_tail = 0.25 * sizing.c + sizing.lh
-    x_tail_rod = x_rod_aileron + sizing.L_tail / 2.0
+    x_tail_rod = x_rod_aileron + sizing.L_boom / 2.0
     x_pvc = x_mid_rods
+
+    # V-tail rods: tail LE from LEMAC = lh + 0.25·c − 0.25·ct, then the spar rod
+    # sits at the tail airfoil's max-thickness x/c (same logic as the wing spar),
+    # and the ruddervator rod sits at its hinge x/c = 1 − c_ruddervator_to_c_tail
+    # (same logic as the aileron rod). Both fractions are scaled by ct.
+    x_LE_tail = sizing.lh + 0.25 * sizing.c - 0.25 * sizing.ct
+    x_vt_spar = x_LE_tail + _max_tc_x(tail_airfoil_path) * sizing.ct
+    x_vt_rud  = x_LE_tail + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.ct
 
     m_fus = materials.fuselage.mass(fus.volume_shell)
     m_batt = propulsion.battery_mass
     m_motor = propulsion.total_motor_mass
     m_wing = wing_mass(sizing, airfoil_path, materials=materials)
-    m_rod_spar = structure.mass_spar        
-    m_rod_aileron = structure.mass_aileron  
-    m_vt_spar = structure.mass_vt_spar      # 2 planes
-    m_vt_rud  = structure.mass_vt_rud       # 2 planes
+    m_rod_spar = structure.mass_spar
+    m_rod_aileron = structure.mass_aileron
+    # mass_vt_spar / mass_vt_rud is the mass of ONE rod; there are 2 of each
+    # (one per V-tail plane), so multiply by 2 for the CG mass-weighted sum.
+    m_vt_spar = structure.mass_vt_spar
+    m_vt_rud  = structure.mass_vt_rud
     m_tail = tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod = structure.mass_t
     m_pvc = PVC_TUBES_MASS if pvc_tubes_mass_override is None else pvc_tubes_mass_override
@@ -100,6 +110,7 @@ def compute_cg(
         m_fus + m_batt + m_motor + m_wing
         + m_rod_spar + m_rod_aileron
         + m_tail + m_tail_rod + m_pvc
+        + 2.0 * m_vt_spar + 2.0 * m_vt_rud
         + m_glass_sheet
     )
     if total_cg_mass > 0:
@@ -112,6 +123,8 @@ def compute_cg(
             + x_rod_aileron  * m_rod_aileron
             + x_tail     * m_tail
             + x_tail_rod * m_tail_rod
+            + x_vt_spar  * (2.0 * m_vt_spar)
+            + x_vt_rud   * (2.0 * m_vt_rud)
             + x_pvc      * m_pvc
             + ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
                (wing_sheet_area + tail_sheet_area) * m_glass_sheet if (wing_sheet_area + tail_sheet_area) > 0 else 0.0)
@@ -128,8 +141,8 @@ def compute_cg(
         'rod_aileron':  x_rod_aileron,
         'tail':         x_tail,
         'tail_rod':     x_tail_rod,
-        'rod_tail_spar':    m_vt_spar,
-        'rod_tail_rud':     m_vt_rud,
+        'vt_spar':      x_vt_spar,
+        'vt_rud':       x_vt_rud,
         'pvc_tubes':    x_pvc,
         'glass_sheet':  ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
                          (wing_sheet_area + tail_sheet_area) if (wing_sheet_area + tail_sheet_area) > 0 else 0.0),
@@ -172,13 +185,22 @@ def compute_y_cg(
     y_wing = 0.5 * airfoil_height
     y_batt = batt_y0 + fus.battery_height / 2.0
     y_pvc = rod_y
-    y_tail = rod_y
     y_tail_rod = rod_y
+    # V-tail foam surfaces and the spar/ruddervator rods all share the same
+    # panel-half-span centroid above the aileron-rod height (bv is the
+    # vertical projection of one V-tail panel — see sizing.wing).
+    y_tail = rod_y + 0.5 * sizing.bv
+    y_vt_spar = rod_y + 0.5 * sizing.bv
+    y_vt_rud  = rod_y + 0.5 * sizing.bv
+
+    m_vt_spar = masses.get("vt_spar", 0.0)
+    m_vt_rud  = masses.get("vt_rud", 0.0)
 
     m_total = (
         masses["fuselage"] + masses["battery"] + masses["motors"]
         + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"]
         + masses["tail"] + masses["tail_rod"] + masses["pvc_tubes"]
+        + 2.0 * m_vt_spar + 2.0 * m_vt_rud
         + masses.get("glass_sheet_wing", 0.0) + masses.get("glass_sheet_tail", 0.0)
     )
     if m_total > 0:
@@ -191,6 +213,8 @@ def compute_y_cg(
             + rod_y     * masses["rod_aileron"]
             + y_tail    * masses["tail"]
             + y_tail_rod * masses["tail_rod"]
+            + y_vt_spar * (2.0 * m_vt_spar)
+            + y_vt_rud  * (2.0 * m_vt_rud)
             + y_pvc     * masses["pvc_tubes"]
             + y_wing * masses.get("glass_sheet_wing", 0.0)
             + y_tail * masses.get("glass_sheet_tail", 0.0)
@@ -207,6 +231,8 @@ def compute_y_cg(
         'rod_aileron': rod_y,
         'tail':        y_tail,
         'tail_rod':    y_tail_rod,
+        'vt_spar':     y_vt_spar,
+        'vt_rud':      y_vt_rud,
         'pvc_tubes':   y_pvc,
         'glass_sheet_wing': y_wing,
         'glass_sheet_tail': y_tail,

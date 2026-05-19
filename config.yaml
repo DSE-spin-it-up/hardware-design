@@ -71,14 +71,14 @@ sizing:
   # Tail
   Vv: 0.04
   Vh: 0.50                 # used only for the initial Sh estimate; scissor takes over after iteration 0
-  lh: 1.55                 # tail moment arm [m] (wing AC → tail AC); boom length L_tail is derived
+  lh: 1.55                 # tail moment arm [m] (wing AC → tail AC); boom length L_boom is derived
   ARt: 4.5
   lam_t: 1.0
 
 # ----- Propulsion -----
 propulsion:
   # Propeller
-  csv_prop: data\15x10E_performance.csv
+  csv_prop: data/15x10E_performance.csv
   n_props: 3
   prop_mass: 0.1         # [kg] mass per propeller
   # Motor / drivetrain

@@ -19,6 +19,7 @@ from weights.part_materials import PartMaterials
 
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+PROJECT_ROOT = CONFIG_PATH.parent
 
 
 def _load() -> dict:
@@ -26,7 +27,29 @@ def _load() -> dict:
         return yaml.safe_load(f)
 
 
+def _resolve_repo_path(value):
+    """Anchor a relative .dat/.csv path against the repo root.
+
+    Lets Windows + Linux teammates run `python main.py` from any cwd without
+    breaking `airfoils/...` / `data/...` lookups. NACA digit strings, nulls,
+    and already-absolute paths pass through untouched.
+    """
+    if not isinstance(value, str):
+        return value
+    suffix = value.lower()
+    if not (suffix.endswith(".dat") or suffix.endswith(".csv")):
+        return value
+    p = Path(value)
+    if p.is_absolute():
+        return value
+    return str((PROJECT_ROOT / p).resolve())
+
+
 _data = _load()
+
+_data["airfoil"] = _resolve_repo_path(_data.get("airfoil"))
+_data["tail_airfoil"] = _resolve_repo_path(_data.get("tail_airfoil"))
+_data["propulsion"]["csv_prop"] = _resolve_repo_path(_data["propulsion"]["csv_prop"])
 
 MATERIALS = PartMaterials.from_names(_data["materials"])
 
