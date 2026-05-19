@@ -32,7 +32,6 @@ class RodInputs:
     safety_factor: float = 1.2
     defl_max: float = 0.05            # [m] max tip deflection
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
-    CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
 
 
@@ -211,7 +210,10 @@ def run(
     # ------------------------------------------------------------------ #
     section_thickness_t = s.ct * i.tail_tc
     d_t = i.d_to_section_ratio * section_thickness_t
-    F_tail = s.Sh * i.CLt_max * s.q_cruise   # tail download as point load [N]
+    # Trim tail CL from scissor-plot statistical fit (Slingerland/Torenbeek).
+    AR_tail = s.bh ** 2 / s.Sh
+    CL_h = abs(-0.35 * AR_tail ** (1.0 / 3.0))
+    F_tail = s.Sh * CL_h * s.q_cruise   # tail download as point load [N]
     L_t = s.L_tail
     M_t = F_tail * L_t
 

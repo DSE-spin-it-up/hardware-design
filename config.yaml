@@ -141,7 +141,6 @@ structure:
   safety_factor: 1.2
   defl_max: 0.05             # [m] 50 mm tip deflection budget
   d_to_section_ratio: 0.8    # rod OD as fraction of section thickness
-  CLt_max: 1.0
   tail_tc: 0.10              # matches NACA0010 tail
 
 # ----- Material selection -----
