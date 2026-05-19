@@ -156,12 +156,12 @@ def calculate_tail_loading(
         "llt_tail": tail_result,
     }
 
-def calculate_lh(
+def calculate_Sh_S(
     x_cg: float,
     *,
     x_ac: float,
     c: float,
-    Sh_S: float,
+    l_h: float,
     CL_h: float,
     CL_A_h: float,
     Cm_ac: float,
@@ -171,11 +171,16 @@ def calculate_lh(
     dep_da: float,
     SM: float,
 ) -> float:
+    """Minimum S_h/S satisfying both stability and controllability at this x_cg.
 
-    factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * Sh_S * Vh_V**2
-    factor_cont = (CL_h / CL_A_h) * Sh_S * Vh_V**2
+    Mirror of `stability_line_ShS` / `controllability_line_ShS`, solving the
+    scissor inversions for S_h/S at a fixed tail length l_h instead of solving
+    for l_h at a fixed S_h/S. Returns the binding (larger) of the two.
+    """
+    factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * (l_h / c) * Vh_V**2
+    factor_cont = (CL_h / CL_A_h) * (l_h / c) * Vh_V**2
 
-    lh_c_stab = ((x_cg - x_ac) / c + SM) / factor_stab
-    lh_c_cont = ((x_cg - x_ac) / c + (Cm_ac / CL_A_h)) / factor_cont
+    ShS_stab = ((x_cg - x_ac) / c + SM) / factor_stab
+    ShS_cont = ((x_cg - x_ac) / c + Cm_ac / CL_A_h) / factor_cont
 
-    return max(lh_c_stab, lh_c_cont) * c
+    return max(ShS_stab, ShS_cont)

@@ -70,7 +70,8 @@ sizing:
   foam_density: 48       # [kg/m^3]
   # Tail
   Vv: 0.04
-  Vh: 0.50
+  Vh: 0.50                 # used only for the initial Sh estimate; scissor takes over after iteration 0
+  L_tail: 1.55             # fixed tail length [m] (CG → tail AC)
   ARt: 4.5
   lam_t: 1.0
 
