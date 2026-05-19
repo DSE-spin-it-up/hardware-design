@@ -32,7 +32,11 @@ class RodInputs:
     safety_factor: float = 1.2
     defl_max: float = 0.05            # [m] max tip deflection
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
+    CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
+    t_spar: float = 0.0016256         # [m] minimum thickness of the spar rod
+    t_aileron: float = 0.00079375     # [m] minimum thickness of the aileron rod
+    t_t: float = 0.00079375           # [m] minimum thickness of the spar rod
 
 
 @dataclass
@@ -88,30 +92,30 @@ def _I_tube(t: float, d: float) -> float:
     return np.pi * t * d ** 3 / 8
 
 
-def _t_for_defl_half_cantilever_udl(
-    F_total: float, L_span: float, E: float, d: float, defl_max: float
+def _d_for_defl_half_cantilever_udl(
+    F_total: float, L_span: float, E: float, t: float, defl_max: float
 ) -> float:
     """Wall thickness for tip deflection ≤ defl_max (half-cantilever, UDL).
 
     δ = F·L³/(8·E·I); I = π·t·d³/8  →  t = F·L³/(π·E·d³·δ)
     """
     F, L = F_total / 2, L_span / 2
-    return F * L ** 3 / (np.pi * E * d ** 3 * defl_max)
+    return (F * L ** 3 / (np.pi * E * t * defl_max))**(1 / 3)
 
 
-def _t_for_defl_cantilever_point(
-    F: float, L: float, E: float, d: float, defl_max: float
+def _d_for_defl_cantilever_point(
+    F: float, L: float, E: float, t: float, defl_max: float
 ) -> float:
     """Wall thickness for tip deflection ≤ defl_max (cantilever, point load).
 
     δ = F·L³/(3·E·I); I = π·t·d³/8  →  t = 8·F·L³/(3·π·E·d³·δ)
     """
-    return 8 * F * L ** 3 / (3 * np.pi * E * d ** 3 * defl_max)
+    return (8 * F * L ** 3 / (3 * np.pi * E * t * defl_max))**(1 / 3)
 
 
-def _t_for_stress(M: float, sigma_lim: float, d: float) -> float:
+def _d_for_stress(M: float, sigma_lim: float, t: float) -> float:
     """Wall thickness so bending stress ≤ sigma_lim at outer fibre."""
-    return 4 * M / (np.pi * sigma_lim * d ** 2)
+    return np.sqrt(4 * M / (np.pi * sigma_lim * t))
 
 
 def _defl_half_cantilever_udl(
@@ -153,7 +157,7 @@ def run(
     s = sizing
     si = s.inputs
     mat = i.material
-    sigma_lim = mat.s_c / i.safety_factor
+    sigma_lim = mat.s_c
     E = mat.E
     rho_mat = mat.rho
 
@@ -161,7 +165,7 @@ def run(
     airfoil = AirfoilGeometry(airfoil_path)
 
     # Total wing lift and span (shared by both wing rods).
-    L_lift = s.CL * s.q_cruise * s.Sw    # [N]
+    L_lift = s.CL * s.q_cruise * s.Sw / 2 * i.safety_factor  # [N]
     b_w = si.b
 
     # ------------------------------------------------------------------ #
@@ -169,16 +173,17 @@ def run(
     # ------------------------------------------------------------------ #
     tc_spar, _ = airfoil.compute_maximum_thickness()   # (t/c, x/c)
     section_h_spar = s.c_root * tc_spar
-    d_spar = i.d_to_section_ratio * section_h_spar
+    d_spar_max = i.d_to_section_ratio * section_h_spar
+    t_spar = i.t_spar
 
-    M_spar = L_lift * b_w / 8             # half-cantilever UDL max bending moment
+    M_spar = L_lift * b_w / 16             # half-cantilever UDL max bending moment
 
-    t_spar_defl = _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_spar, i.defl_max)
-    t_spar_comp = _t_for_stress(M_spar, sigma_lim, d_spar)
-    if t_spar_defl >= t_spar_comp:
-        t_spar, fail_spar = t_spar_defl, "deflection"
+    d_spar_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_spar, i.defl_max)
+    d_spar_comp = _d_for_stress(M_spar, sigma_lim, t_spar)
+    if d_spar_defl >= d_spar_comp:
+        d_spar, fail_spar = d_spar_defl, "deflection"
     else:
-        t_spar, fail_spar = t_spar_comp, "compressive"
+        d_spar, fail_spar = d_spar_comp, "compressive"
     _check_wall(t_spar, d_spar, "Spar rod")
     defl_spar = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_spar, d_spar))
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
@@ -190,17 +195,18 @@ def run(
     tc_aileron, _, _ = airfoil.compute_thickness(x_hinge)   # local t/c at hinge
     section_h_aileron = s.c_root * tc_aileron
     d_aileron = i.d_to_section_ratio * section_h_aileron
+    t_aileron = i.t_aileron
 
     # Aileron rod carries only the aileron hinge load — modelled as a
     # simple beam with the same UDL as the spar (conservative; actual
     # hinge loads are lower).  Primarily deflection-governed at this
     # smaller diameter.
-    t_ail_defl = _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_aileron, i.defl_max)
-    t_ail_comp = _t_for_stress(M_spar, sigma_lim, d_aileron)
-    if t_ail_defl >= t_ail_comp:
-        t_aileron, fail_aileron = t_ail_defl, "deflection"
+    d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_aileron, i.defl_max)
+    d_ail_comp = _d_for_stress(M_spar, sigma_lim, t_aileron)
+    if d_ail_defl >= d_ail_comp:
+        d_aileron, fail_aileron = d_ail_defl, "deflection"
     else:
-        t_aileron, fail_aileron = t_ail_comp, "compressive"
+        d_aileron, fail_aileron = d_ail_comp, "compressive"
     _check_wall(t_aileron, d_aileron, "Aileron rod")
     defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_aileron, d_aileron))
     mass_aileron = _tube_mass(b_w, d_aileron, t_aileron, rho_mat)
@@ -210,19 +216,17 @@ def run(
     # ------------------------------------------------------------------ #
     section_thickness_t = s.ct * i.tail_tc
     d_t = i.d_to_section_ratio * section_thickness_t
-    # Trim tail CL from scissor-plot statistical fit (Slingerland/Torenbeek).
-    AR_tail = s.bh ** 2 / s.Sh
-    CL_h = abs(-0.35 * AR_tail ** (1.0 / 3.0))
-    F_tail = s.Sh * CL_h * s.q_cruise   # tail download as point load [N]
-    L_t = s.L_tail
+    F_tail = s.Sh * i.CLt_max * s.q_cruise   # tail download as point load [N]
+    L_t = s.L_tail * i.safety_factor
     M_t = F_tail * L_t
+    t_t = i.t_t
 
-    t_t_defl = _t_for_defl_cantilever_point(F_tail, L_t, E, d_t, i.defl_max)
-    t_t_comp = _t_for_stress(M_t, sigma_lim, d_t)
-    if t_t_defl >= t_t_comp:
-        t_t, fail_t = t_t_defl, "deflection"
+    d_t_defl = _d_for_defl_cantilever_point(F_tail, L_t, E, t_t, i.defl_max)
+    d_t_comp = _d_for_stress(M_t, sigma_lim, t_t)
+    if d_t_defl >= d_t_comp:
+        d_t, fail_t = d_t_defl, "deflection"
     else:
-        t_t, fail_t = t_t_comp, "compressive"
+        d_t, fail_t = d_t_comp, "compressive"
     _check_wall(t_t, d_t, "Tail rod")
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
