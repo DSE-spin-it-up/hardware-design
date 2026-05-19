@@ -81,8 +81,10 @@ def compute_cg(
     # and the ruddervator rod sits at its hinge x/c = 1 − c_ruddervator_to_c_tail
     # (same logic as the aileron rod). Both fractions are scaled by ct.
     x_LE_tail = sizing.lh + 0.25 * sizing.c - 0.25 * sizing.ct
-    x_vt_spar = x_LE_tail + _max_tc_x(tail_airfoil_path) * sizing.ct
-    x_vt_rud  = x_LE_tail + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.ct
+    x_spar_ht = x_LE_tail + _max_tc_x(tail_airfoil_path) * sizing.bh / sizing.inputs.ARt
+    x_control_ht  = x_LE_tail + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.bh / sizing.inputs.ARt
+    x_spar_vt = x_LE_tail + _max_tc_x(tail_airfoil_path) * 2 * sizing.bv / sizing.inputs.ARt
+    x_control_vt = x_LE_tail + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * 2 * sizing.bv / sizing.inputs.ARt
 
     m_fus = materials.fuselage.mass(fus.volume_shell)
     m_batt = propulsion.battery_mass
@@ -92,8 +94,10 @@ def compute_cg(
     m_rod_aileron = structure.mass_aileron
     # mass_vt_spar / mass_vt_rud is the mass of ONE rod; there are 2 of each
     # (one per V-tail plane), so multiply by 2 for the CG mass-weighted sum.
-    m_vt_spar = structure.mass_vt_spar
-    m_vt_rud  = structure.mass_vt_rud
+    m_spar_ht = structure.mass_spar_ht
+    m_control_ht  = structure.mass_control_ht
+    m_spar_vt = structure.mass_spar_vt
+    m_control_vt = structure.mass_control_vt
     m_tail = tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod = structure.mass_t
     m_pvc = PVC_TUBES_MASS if pvc_tubes_mass_override is None else pvc_tubes_mass_override
@@ -110,7 +114,8 @@ def compute_cg(
         m_fus + m_batt + m_motor + m_wing
         + m_rod_spar + m_rod_aileron
         + m_tail + m_tail_rod + m_pvc
-        + 2.0 * m_vt_spar + 2.0 * m_vt_rud
+        + m_spar_ht + m_control_ht
+        + m_spar_vt + m_control_vt
         + m_glass_sheet
     )
     if total_cg_mass > 0:
@@ -123,8 +128,10 @@ def compute_cg(
             + x_rod_aileron  * m_rod_aileron
             + x_tail     * m_tail
             + x_tail_rod * m_tail_rod
-            + x_vt_spar  * (2.0 * m_vt_spar)
-            + x_vt_rud   * (2.0 * m_vt_rud)
+            + x_spar_ht * m_spar_ht
+            + x_control_ht * m_control_ht
+            + x_spar_vt * m_spar_vt
+            + x_control_vt * m_control_vt
             + x_pvc      * m_pvc
             + ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
                (wing_sheet_area + tail_sheet_area) * m_glass_sheet if (wing_sheet_area + tail_sheet_area) > 0 else 0.0)
@@ -141,8 +148,10 @@ def compute_cg(
         'rod_aileron':  x_rod_aileron,
         'tail':         x_tail,
         'tail_rod':     x_tail_rod,
-        'vt_spar':      x_vt_spar,
-        'vt_rud':       x_vt_rud,
+        'ht_spar':      x_spar_ht,
+        'ht_rud':       x_control_ht,
+        'vt_spar':      x_spar_vt,
+        'vt_rud':       x_control_vt,
         'pvc_tubes':    x_pvc,
         'glass_sheet':  ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
                          (wing_sheet_area + tail_sheet_area) if (wing_sheet_area + tail_sheet_area) > 0 else 0.0),
@@ -266,8 +275,10 @@ def total_mass(
     m_props = propulsion.inputs.n_props * propulsion.inputs.prop_mass
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness, materials=materials)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
-    m_vt_spar = structure.mass_vt_spar
-    m_vt_rud  = structure.mass_vt_rud
+    m_spar_ht = structure.mass_spar_ht
+    m_control_ht  = structure.mass_control_ht
+    m_spar_vt = structure.mass_spar_vt
+    m_control_vt = structure.mass_control_vt
     m_rod_spar    = structure.mass_spar
     m_rod_aileron = structure.mass_aileron
     m_tail_rod = structure.mass_t
@@ -284,7 +295,7 @@ def total_mass(
 
     m_total = (
         m_battery + m_motors + m_props + m_wing + m_tail
-        + m_rod_spar + m_rod_aileron + 2* m_vt_spar + 2*m_vt_rud + m_tail_rod + m_fuselage + m_pvc
+        + m_rod_spar + m_rod_aileron + m_spar_ht + m_control_ht + m_spar_vt + m_control_vt + m_tail_rod + m_fuselage + m_pvc
         + m_glass_sheet
     )
     return {
@@ -296,8 +307,10 @@ def total_mass(
         'rod_spar':         m_rod_spar,
         'rod_aileron':      m_rod_aileron,
         'tail_rod':         m_tail_rod,
-        'vt_spar':          m_vt_spar,
-        'vt_rud':           m_vt_rud,
+        'ht_spar':          m_spar_ht,
+        'ht_rud':           m_control_ht,
+        'vt_spar':          m_spar_vt,
+        'vt_rud':           m_control_vt,
         'fuselage':         m_fuselage,
         'pvc_tubes':        m_pvc,
         'glass_sheet_wing': m_sheet_wing,

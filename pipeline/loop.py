@@ -113,7 +113,7 @@ def _run_design_pass(
         wing_airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,
     )
-    struct = rods.run(sizing, control_surface, airfoil, config.TAIL_AIRFOIL, config.STRUCTURE)
+    struct = rods.run(sizing, control_surface, propulsion, airfoil, config.TAIL_AIRFOIL, config.STRUCTURE)
     masses = weights_mass.total_mass(
         sizing=sizing,
         propulsion=propulsion,

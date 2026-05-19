@@ -295,7 +295,6 @@ def run(
         d_control_ht, fail_control_ht = d_control_defl_ht, "deflection"
     else:
         d_control_ht, fail_control_ht = d_control_comp_ht, "compressive"
-    print(t_control_ht, d_control_ht)
     _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
     defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
     mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
