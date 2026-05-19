@@ -344,9 +344,8 @@ def run_pipeline(config) -> PipelineResult:
             AR_new = sizing_inputs.AR
 
         # --- Feed CD0, b, Sh, (m_drone) back into sizing inputs and re-run wing sizing ---
-        # lh stays at its config value; Sh is driven by the scissor and L_tail
-        # is re-derived from lh and the updated tail chord inside wing.run().
-        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "Sh": Sh_new}
+        # L_tail stays at its config value; Sh is driven by the scissor.
+        replace_kwargs: dict = {"Cd0": p.drag.CD0, "AR": AR_new, "Sh": Sh_new}
 
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
