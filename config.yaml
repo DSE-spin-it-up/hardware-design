@@ -45,14 +45,14 @@ V_stall: 14.0
 # of the CG buildup. Set to null to default to the midpoint between the spar
 # and aileron rods (current behaviour). Override to slide the battery fore/aft
 # and trade x_cg.
-battery_x: 0.23
+battery_x: 0.11
 
 # ----- Initial / wing sizing -----
 sizing:
   # Payload & fleet
   m_payload: 60          # [kg]
   m_drone_empty: 10      # [kg]
-  n_drones: 3            # [-]
+  n_drones: 4            # [-]
   # Geometry
   b: 3.0                 # wingspan [m]
   AR: 7.5                # aspect ratio [-]
@@ -78,9 +78,8 @@ sizing:
 # ----- Propulsion -----
 propulsion:
   # Propeller
-  csv_prop: data/20x10E_performance.csv
-  n_props: 2
-  D_prop: 0.508          # [m]  (= 20 * 0.0254 ; null to derive from csv_prop name)
+  csv_prop: data\15x10E_performance.csv
+  n_props: 3
   prop_mass: 0.1         # [kg] mass per propeller
   # Motor / drivetrain
   eff_motor: 0.8
