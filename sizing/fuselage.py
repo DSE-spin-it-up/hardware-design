@@ -18,8 +18,9 @@ class FuselageInputs:
     AR_lh: float = 0.0  # length / height
     # Geometric margins
     housing_factor: float = 1.5  # axial battery housing factor
-    casing_factor: float = 1.1   # all-around casing margin
+    casing_factor: float = 1.1   # all-around casing margin (applied to battery dims only)
     casing_thickness: float = 0.001  # [m] wall thickness of casing shell
+    height_clearance: float = 0.002  # [m] fixed vertical clearance between airfoil and battery
 
 
 @dataclass
@@ -47,46 +48,48 @@ def run(
         inputs = FuselageInputs()
     i = inputs
 
+    # ------------------------------------------------------------------ battery dims
     if i.AR_lw > 0 and i.AR_lh > 0:
         # L * (L/AR_lw) * (L/AR_lh) = V  =>  L = (V * AR_lw * AR_lh)^(1/3)
         b_length = (battery_volume * i.AR_lw * i.AR_lh) ** (1 / 3)
-        b_width = b_length / i.AR_lw
+        b_width  = b_length / i.AR_lw
         b_height = b_length / i.AR_lh
     else:
         b_length = i.battery_length
-        b_width = i.battery_width
+        b_width  = i.battery_width
         b_height = i.battery_height
 
+    # ------------------------------------------------------------------ height
+    # casing_factor is applied only to the battery portion.
+    # The airfoil thickness is a hard geometric constraint — do not scale it.
     if airfoil_path is not None:
         airfoil = AirfoilGeometry(airfoil_path)
         airfoil_height = airfoil.global_thickness * sizing.c_root
-        # Battery sits above the PVC tube inside the fuselage, so the total
-        # fuselage height must include both the wing root thickness and the
-        # battery height plus a small clearance.
-        height = (airfoil_height + b_height + 0.02) * i.casing_factor
+        height = airfoil_height + b_height * i.casing_factor + i.height_clearance
     else:
         height = b_height * i.casing_factor
 
+    # ------------------------------------------------------------------ length
+    # Each candidate is padded independently; casing_factor is not applied on
+    # top of housing_factor to avoid double-scaling the battery length.
     length = max(
-        i.casing_factor * sizing.c_root,
-        b_length * i.housing_factor * i.casing_factor,
+        sizing.c_root * i.casing_factor,                          # must enclose root chord
+        b_length * i.housing_factor + 2.0 * i.casing_thickness,  # battery + walls only
     )
+
+    # ------------------------------------------------------------------ width
     width = b_width * i.casing_factor
 
+    # ------------------------------------------------------------------ derived
     d_eq     = np.sqrt(width * height)
     fineness = length / d_eq
-    Swet     = 2 * (length * width + length * height + width * height)
+    Swet     = 2.0 * (length * width + length * height + width * height)
 
-    t = i.casing_thickness
-
+    t    = i.casing_thickness
     l_in = max(length - 2.0 * t, 0.0)
-    w_in = max(width - 2.0 * t, 0.0)
+    w_in = max(width  - 2.0 * t, 0.0)
     h_in = max(height - 2.0 * t, 0.0)
-
-    volume_shell = (
-        length * width * height
-        - l_in * w_in * h_in
-    )
+    volume_shell = length * width * height - l_in * w_in * h_in
 
     return FuselageResult(
         inputs=inputs,
