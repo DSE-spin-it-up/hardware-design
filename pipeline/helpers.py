@@ -18,6 +18,7 @@ from aerodynamics.stability import (
     lift_slope_from_llt,
     stability_line_ShS,
 )
+from propulsion.sizing import PropulsionResult
 from sizing.aileron import AileronResult
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
@@ -34,10 +35,11 @@ def estimate_cd0(
     sizing: SizingResult,
     fus: FuselageResult,
     aileron: AileronResult,
+    propulsion: PropulsionResult,
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
-    rods = rods_mod.run(sizing, aileron, wing_airfoil, tail_airfoil)   # ← pass airfoil_path
+    rods = rods_mod.run(sizing, aileron, propulsion, wing_airfoil, tail_airfoil)   # ← pass airfoil_path
     return drag_buildup.run(
         sizing,
         fus,

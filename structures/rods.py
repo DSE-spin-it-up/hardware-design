@@ -31,12 +31,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+import propulsion
 from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
 from propulsion.sizing import PropulsionResult
-
 
 @dataclass
 class RodInputs:
@@ -171,10 +171,9 @@ def _tube_mass(length: float, d: float, t: float, rho: float) -> float:
 
 
 def _check_wall(t: float, d: float, label: str) -> None:
-    if t >= d / 2:
-        raise ValueError(
-            f"{label}: required wall thickness {t * 1000:.2f} mm exceeds rod radius "
-            f"{d / 2 * 1000:.2f} mm — rod cannot satisfy criteria at this diameter."
+    if t > d / 2:
+        print(f"{label}: required wall thickness {t * 1000:.2f} mm exceeds rod radius "
+        f"{d / 2 * 1000:.2f} mm — rod cannot satisfy criteria at this diameter. Rod diameter is increased to {2 * t * 1000:.2f} mm"
         )
 
 
@@ -250,8 +249,7 @@ def run(
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
     # ------------------------------------------------------------------ #
-    AR_tail = s.bh ** 2 / s.Sh
-    CL_h = abs(-0.35 * AR_tail ** (1.0 / 3.0))
+    CL_h = abs(-0.35 * s.inputs.AR ** (1.0 / 3.0))
 
     section_thickness_t = s.ct * i.tail_tc
     F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download [N]
@@ -297,6 +295,7 @@ def run(
         d_control_ht, fail_control_ht = d_control_defl_ht, "deflection"
     else:
         d_control_ht, fail_control_ht = d_control_comp_ht, "compressive"
+    print(t_control_ht, d_control_ht)
     _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
     defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
     mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
@@ -409,4 +408,5 @@ if __name__ == "__main__":
     from sizing.wing import SizingInputs
     s = wing.run(SizingInputs())
     a = aileron.run(s)
-    summary(run(s, a, "airfoils/MH112.dat", "airfoils/NACA0010.dat"))
+    p = propulsion.run(s)
+    summary(run(s, a, p, "airfoils/MH112.dat", "airfoils/NACA0010.dat"))

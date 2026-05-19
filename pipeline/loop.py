@@ -109,7 +109,7 @@ def _run_design_pass(
     # Aileron must be computed before rods and drag — both need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
     drag = estimate_cd0(
-        sizing, fus, control_surface,
+        sizing, fus, control_surface, propulsion,
         wing_airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,
     )
