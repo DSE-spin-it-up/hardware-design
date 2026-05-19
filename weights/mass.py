@@ -48,7 +48,7 @@ def _max_tc_x(airfoil_path: str | Path) -> float:
 def compute_cg(
     sizing: SizingResult,
     propulsion: PropulsionResult,
-    structure: RodResult,
+        structure: RodResult,
     fus: FuselageResult,
     aileron: AileronResult,
     airfoil_path: str | Path,
@@ -77,8 +77,10 @@ def compute_cg(
     m_batt = propulsion.battery_mass
     m_motor = propulsion.total_motor_mass
     m_wing = wing_mass(sizing, airfoil_path, materials=materials)
-    m_rod_spar = structure.mass_spar        # one spar rod; total uses 2×
-    m_rod_aileron = structure.mass_aileron  # one aileron rod; total uses 2×
+    m_rod_spar = structure.mass_spar        
+    m_rod_aileron = structure.mass_aileron  
+    m_vt_spar = structure.mass_vt_spar      # 2 planes
+    m_vt_rud  = structure.mass_vt_rud       # 2 planes
     m_tail = tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod = structure.mass_t
     m_pvc = PVC_TUBES_MASS if pvc_tubes_mass_override is None else pvc_tubes_mass_override
@@ -93,7 +95,7 @@ def compute_cg(
 
     total_cg_mass = (
         m_fus + m_batt + m_motor + m_wing
-        + 2 * m_rod_spar + 2 * m_rod_aileron
+        + m_rod_spar + m_rod_aileron
         + m_tail + m_tail_rod + m_pvc
         + m_glass_sheet
     )
@@ -103,8 +105,8 @@ def compute_cg(
             + x_batt     * m_batt
             + x_motor    * m_motor
             + x_wing     * m_wing
-            + x_rod_spar    * 2 * m_rod_spar
-            + x_rod_aileron * 2 * m_rod_aileron
+            + x_rod_spar    * m_rod_spar
+            + x_rod_aileron  * m_rod_aileron
             + x_tail     * m_tail
             + x_tail_rod * m_tail_rod
             + x_pvc      * m_pvc
@@ -123,6 +125,8 @@ def compute_cg(
         'rod_aileron':  x_rod_aileron,
         'tail':         x_tail,
         'tail_rod':     x_tail_rod,
+        'rod_tail_spar':    m_vt_spar,
+        'rod_tail_rud':     m_vt_rud,
         'pvc_tubes':    x_pvc,
         'glass_sheet':  ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
                          (wing_sheet_area + tail_sheet_area) if (wing_sheet_area + tail_sheet_area) > 0 else 0.0),
@@ -224,8 +228,10 @@ def total_mass(
     m_props = propulsion.inputs.n_props * propulsion.inputs.prop_mass
     m_wing = wing_mass(sizing, airfoil_path, wing_thickness, materials=materials)
     m_tail = tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
-    m_rod_spar    = 2 * structure.mass_spar
-    m_rod_aileron = 2 * structure.mass_aileron
+    m_vt_spar = structure.mass_vt_spar
+    m_vt_rud  = structure.mass_vt_rud
+    m_rod_spar    = structure.mass_spar
+    m_rod_aileron = structure.mass_aileron
     m_tail_rod = structure.mass_t
     m_fuselage = materials.fuselage.mass(fus.volume_shell)
     m_pvc = PVC_TUBES_MASS
@@ -240,7 +246,7 @@ def total_mass(
 
     m_total = (
         m_battery + m_motors + m_props + m_wing + m_tail
-        + m_rod_spar + m_rod_aileron + m_tail_rod + m_fuselage + m_pvc
+        + m_rod_spar + m_rod_aileron + 2* m_vt_spar + 2*m_vt_rud + m_tail_rod + m_fuselage + m_pvc
         + m_glass_sheet
     )
     return {
@@ -252,6 +258,8 @@ def total_mass(
         'rod_spar':         m_rod_spar,
         'rod_aileron':      m_rod_aileron,
         'tail_rod':         m_tail_rod,
+        'vt_spar':          m_vt_spar,
+        'vt_rud':           m_vt_rud,
         'fuselage':         m_fuselage,
         'pvc_tubes':        m_pvc,
         'glass_sheet_wing': m_sheet_wing,
