@@ -46,8 +46,8 @@ class RodInputs:
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
     Vh_V: float = 0.85                # V_tail/V_cruise — used for tail download
-    t_spar: float = 0.0016256         # [m] minimum wall thickness of the spar rod
-    t_aileron: float = 0.00079375     # [m] minimum wall thickness of the aileron rod
+    t_spar: float = 0.00079375         # [m] minimum wall thickness of the spar rod
+    t_aileron: float = 0.0016256     # [m] minimum wall thickness of the aileron rod
     t_t: float = 0.00079375           # [m] minimum wall thickness of the tail rod
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
