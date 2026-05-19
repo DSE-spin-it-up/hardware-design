@@ -257,5 +257,5 @@ def total_mass(
         'glass_sheet_wing': m_sheet_wing,
         'glass_sheet_tail': m_sheet_tail,
         'glass_sheet':      m_glass_sheet,
-        'total':            m_total*1.4,
+        'total':            m_total*1.21,
     }
