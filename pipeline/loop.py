@@ -427,7 +427,7 @@ def run_pipeline(config) -> PipelineResult:
         tail_llt=tail_loading["llt_tail"],
         x_cg_current=p.cg["overall"],
         y_cg=y_cg["overall"],
-        Vh_V=p.drag.inputs.Vh_V,
+        Vh_V=p.struct.inputs.Vh_V,
     )
 
 
