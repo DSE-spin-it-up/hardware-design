@@ -128,8 +128,10 @@ def calculate_tail_loading(
 ) -> dict:
     """Trim tail CL (no downwash) plus induced-drag properties from LLT on the tail planform.
 
-    Moment balance about the CG, with l_tail measured from CG to tail AC (+aft)
-    and x_ac,wing = 0.25 · c_mean (thin-airfoil approximation):
+    Moment balance about the CG, with `l_tail` the wing-AC → tail-AC arm
+    (i.e. the `lh` quantity used in the scissor and Vh tail-volume coefficient,
+    not the physical boom length), and x_ac,wing = 0.25 · c_mean
+    (thin-airfoil approximation):
 
         CM_ac,wing + CL_w · (x_cg − x_ac,wing)/c  −  CL_t · (S_t/S_w)(l_t/c)  =  0
     """

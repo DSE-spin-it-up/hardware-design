@@ -137,7 +137,8 @@ def plot_cg_side_view(
     x_batt = cg["battery"]
     x_tail = cg["tail"]
     x_overall = cg["overall"]
-    x_tail_root = sizing.c_root + sizing.L_tail
+    # Tail LE position from LEMAC: tail AC sits at 0.25·c + lh; LE is 0.25·ct ahead.
+    x_tail_root = 0.25 * sizing.c + sizing.lh - 0.25 * sizing.ct
 
     rod_radius_w = struct.d_w / 2.0
     rod_radius_a = struct.d_aileron / 2.0

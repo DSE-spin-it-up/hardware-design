@@ -36,11 +36,15 @@ class SizingInputs:
     # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
     Vv: float = 0.04
     Vh: float = 0.50
-    # Fixed tail length (typically supplied via config.yaml). When None, run()
-    # falls back to deriving L_tail from the Vh·Sw·c/Sh tail-volume estimate.
-    L_tail: float | None = None
+    # Tail moment arm lh, wing AC → tail AC (the quantity that goes into the
+    # tail-volume coefficients Vh = Sh·lh/(Sw·c) and Vv = Sv·lh/(Sw·b), and into
+    # the stability/controllability scissor). The physical boom length L_tail
+    # below is derived from lh and the wing/aileron/tail geometry; it is not
+    # equal to lh because the actual tail extends past its AC to its TE.
+    # When None, run() falls back to deriving lh from the Vh tail-volume estimate.
+    lh: float | None = None
     # Optional override for the horizontal tail area. When None, run() derives
-    # it from the tail volume coefficient (or bh²/ARt if L_tail is also None).
+    # it from the tail volume coefficient (or bh²/ARt if lh is also None).
     # The pipeline loop overwrites this with the scissor-plot result each pass.
     Sh: float | None = None
     # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
@@ -79,6 +83,12 @@ class SizingResult:
     # Tail
     bh: float
     Sh: float
+    # lh = tail moment arm (wing AC → tail AC). Used by the stability /
+    # controllability scissor and by the Vh, Vv tail-volume coefficients.
+    lh: float
+    # L_tail = physical boom length (aileron hinge → tail TE). Used for the
+    # tail-rod cantilever sizing, the tail boom drag wetted area, the tail
+    # mass arm, and the side-view plot. Always strictly longer than lh.
     L_tail: float
     Sv: float
     bv: float
@@ -96,12 +106,18 @@ def run(
     inputs: SizingInputs | None = None,
     *,
     t_over_c_root: float = 0.12,
+    c_aileron_to_c_wing: float = 0.3,
 ) -> SizingResult:
     """Run initial sizing.
 
     `t_over_c_root` is supplied externally (typically from the chosen
     airfoil's geometry) since it's a property of the section, not a
     free design knob.
+
+    `c_aileron_to_c_wing` is the aileron-to-wing chord ratio; it pins the
+    aileron hinge x/c, which is the inboard end of the tail boom. It must
+    match the value used by aileron sizing, so the pipeline supplies it from
+    the same config block (`CONTROL_SURFACE.c_aileron_to_c_wing`).
     """
     if inputs is None:
         inputs = SizingInputs()
@@ -141,18 +157,28 @@ def run(
     bh = i.b * 0.365445026178  # [m] Desmos
     if i.Sh is not None:
         Sh = i.Sh
-    elif i.L_tail is None:
+    elif i.lh is None:
         Sh = bh ** 2 / i.ARt
     else:
-        Sh = i.Vh * Sw * c / i.L_tail
-    L_tail = i.L_tail if i.L_tail is not None else (i.Vh * Sw * c / Sh)
-    Sv = i.Vv * Sw * i.b / L_tail
+        Sh = i.Vh * Sw * c / i.lh
+    lh = i.lh if i.lh is not None else (i.Vh * Sw * c / Sh)
+    Sv = i.Vv * Sw * i.b / lh
     bv = np.sqrt(2 * i.ARt * Sv) / 2
     St = Sh + Sv
     bt = np.sqrt(bh ** 2 + bv ** 2)
     ct = tail_chord(0.5, St, bt, i.lam_t)
     tt = ct * t_over_c_root
     m_tail = i.foam_density * St * tt
+
+    # Physical tail boom length, datum at LEMAC:
+    #   L_tail = lh − (x_aileron_hinge − x_ac_wing) + 0.75·ct
+    # i.e. boom spans from the aileron hinge (its inboard structural anchor)
+    # to the tail TE (its outboard end). lh is wing AC → tail AC, so the
+    # correction subtracts the wing AC → aileron-hinge offset and adds the
+    # tail AC → tail TE offset (0.75·ct, AC at quarter chord).
+    x_ac_wing = 0.25 * c
+    x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
+    L_tail = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * ct
 
     return SizingResult(
         inputs=inputs,
@@ -178,6 +204,7 @@ def run(
         LD_ratio=LD_ratio,
         bh=bh,
         Sh=Sh,
+        lh=lh,
         L_tail=L_tail,
         Sv=Sv,
         bv=bv,
@@ -219,7 +246,8 @@ def summary(r: SizingResult) -> None:
     print("\n--- Tail ---")
     print(f"  Horizontal tail area : {r.Sh:.4f}  m²")
     print(f"  Vertical tail area   : {r.Sv:.4f}  m²")
-    print(f"  Tail length          : {r.L_tail:.4f}  m")
+    print(f"  lh (AC → AC)         : {r.lh:.4f}  m")
+    print(f"  L_tail (boom length) : {r.L_tail:.4f}  m")
     print(f"  Tail chord           : {r.ct:.4f}  m")
 
 

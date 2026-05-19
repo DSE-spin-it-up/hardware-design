@@ -69,8 +69,11 @@ def compute_cg(
     x_rod_aileron = (1.0 - aileron.inputs.c_aileron_to_c_wing) * sizing.c_root
     x_mid_rods = 0.5 * (x_rod_spar + x_rod_aileron)
     x_batt = x_mid_rods if battery_x is None else battery_x
-    x_tail = sizing.c_root + sizing.L_tail
-    x_tail_rod = sizing.c_root + sizing.L_tail / 2.0
+    # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
+    # Tail boom runs from the aileron hinge to the tail TE (length = L_tail),
+    # so its centroid sits at x_rod_aileron + L_tail/2.
+    x_tail = 0.25 * sizing.c + sizing.lh
+    x_tail_rod = x_rod_aileron + sizing.L_tail / 2.0
     x_pvc = x_mid_rods
 
     m_fus = materials.fuselage.mass(fus.volume_shell)
