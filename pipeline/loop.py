@@ -137,7 +137,7 @@ def _run_design_pass(
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)
 
 
-def _sw_closure_b(
+def _sw_closure_ar(
     sizing: SizingResult,
     drag: DragResult,
     polar: AirfoilPolar,
@@ -147,7 +147,7 @@ def _sw_closure_b(
     cl_max_wing: float,
     V_stall: float,
 ) -> tuple[float, float, float, bool]:
-    """Pick the span that places the operating CL at max drone+payload L/D,
+    """Pick the aspect ratio that places the operating CL at max drone+payload L/D,
     clamped by the stall-speed bound.
 
     CL_stall_bound = (V_stall / V_cruise)^2 · CL_max_wing is the largest cruise
@@ -156,7 +156,7 @@ def _sw_closure_b(
     sub-optimal L/D. `cl_max_wing` is the 3D wing CL_max
     (section Cl_max · AR/(AR+2)).
 
-    Returns (b_new, CL_target, CL_stall_bound, stall_binding).
+    Returns (AR_new, CL_target, CL_stall_bound, stall_binding).
     """
     s = sizing.inputs
     CL_sw, CD_wing_sw = wing_drag_polar(sizing, polar, alpha_range)
@@ -171,8 +171,8 @@ def _sw_closure_b(
 
     W = (m_drone_eff + s.m_payload / s.n_drones) * 9.80665
     Sw_new = W / (sizing.q_cruise * CL_target)
-    b_new = float(np.sqrt(s.AR * Sw_new))
-    return b_new, CL_target, CL_stall_bound, stall_binding
+    AR_new = float(sizing.inputs.b ** 2 / Sw_new)
+    return AR_new, CL_target, CL_stall_bound, stall_binding
 
 
 def _exit_criteria(config) -> str:
@@ -215,7 +215,7 @@ def _print_iter(
           f"CD0={p.drag.CD0:.6f}(Δ={dCD0:.1e})  "
           f"m_drone={m_drone:.3f}(Δ={dM:.1e})  "
           f"Sw={sizing.Sw:.4f}(Δ={dSw:.1e})  "
-          f"b={sizing.inputs.b:.3f}  {cl_str}"
+          f"b={sizing.inputs.b:.3f} AR={sizing.inputs.AR:.3f}  {cl_str}"
           f"x_cg={x_cg:.4f}  "
           f"t_w={p.struct.t_w * 1000:.2f}mm({p.struct.fail_mode_w[:4]})  "
           f"t_t={p.struct.t_t * 1000:.2f}mm({p.struct.fail_mode_t[:4]})  "
@@ -330,7 +330,7 @@ def run_pipeline(config) -> PipelineResult:
         #     clamped by the stall-speed bound ---
         if config.SW_CLOSURE:
             m_eff = m_drone if config.MASS_CLOSURE else sizing_inputs.m_drone_empty
-            b_new, CL_target, CL_stall_bound, stall_binding = _sw_closure_b(
+            AR_new, CL_target, CL_stall_bound, stall_binding = _sw_closure_ar(
                 sizing, p.drag, polar,
                 m_drone_eff=m_eff,
                 alpha_range=config.ALPHA_SWEEP_LOOP_DEG,
@@ -341,12 +341,11 @@ def run_pipeline(config) -> PipelineResult:
             CL_target = None
             CL_stall_bound = (config.V_STALL / sizing_inputs.V_cruise) ** 2 * CL_max_wing
             stall_binding = False
-            b_new = sizing_inputs.b
+            AR_new = sizing_inputs.AR
 
         # --- Feed CD0, b, Sh, (m_drone) back into sizing inputs and re-run wing sizing ---
-        # lh stays at its config value; Sh is driven by the scissor and L_boom
-        # is re-derived from lh and the updated tail chord inside wing.run().
-        replace_kwargs: dict = {"Cd0": p.drag.CD0, "b": b_new, "Sh": Sh_new}
+        # L_tail stays at its config value; Sh is driven by the scissor.
+        replace_kwargs: dict = {"Cd0": p.drag.CD0, "AR": AR_new, "Sh": Sh_new}
 
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
