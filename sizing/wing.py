@@ -30,6 +30,8 @@ class SizingInputs:
     R: float = 20000             # Range [m]
     # Materials
     foam_density: float = 48     # [kg/m^3]
+    # Glass fibre sheet thickness used for skin mass calculations [mm]
+    glass_sheet_thickness_mm: float = 1.0
     # Tail
     # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
     Vv: float = 0.04

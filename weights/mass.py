@@ -83,10 +83,19 @@ def compute_cg(
     m_tail_rod = structure.mass_t
     m_pvc = PVC_TUBES_MASS if pvc_tubes_mass_override is None else pvc_tubes_mass_override
 
+    # Glass fibre sheet mass (covering wing + tail on both sides)
+    thickness_m = float(sizing.inputs.glass_sheet_thickness_mm) * 1e-3
+    wing_sheet_area = 2.0 * sizing.Sw
+    tail_sheet_area = 2.0 * sizing.St
+    m_sheet_wing = materials.sheet.mass(wing_sheet_area * thickness_m)
+    m_sheet_tail = materials.sheet.mass(tail_sheet_area * thickness_m)
+    m_glass_sheet = m_sheet_wing + m_sheet_tail
+
     total_cg_mass = (
         m_fus + m_batt + m_motor + m_wing
         + 2 * m_rod_spar + 2 * m_rod_aileron
         + m_tail + m_tail_rod + m_pvc
+        + m_glass_sheet
     )
     if total_cg_mass > 0:
         x_cg = (
@@ -99,6 +108,8 @@ def compute_cg(
             + x_tail     * m_tail
             + x_tail_rod * m_tail_rod
             + x_pvc      * m_pvc
+            + ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
+               (wing_sheet_area + tail_sheet_area) * m_glass_sheet if (wing_sheet_area + tail_sheet_area) > 0 else 0.0)
         ) / total_cg_mass
     else:
         x_cg = 0.0
@@ -113,6 +124,8 @@ def compute_cg(
         'tail':         x_tail,
         'tail_rod':     x_tail_rod,
         'pvc_tubes':    x_pvc,
+        'glass_sheet':  ((x_wing * wing_sheet_area + x_tail * tail_sheet_area) /
+                         (wing_sheet_area + tail_sheet_area) if (wing_sheet_area + tail_sheet_area) > 0 else 0.0),
         'overall':      x_cg,
     }
 
@@ -159,6 +172,7 @@ def compute_y_cg(
         masses["fuselage"] + masses["battery"] + masses["motors"]
         + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"]
         + masses["tail"] + masses["tail_rod"] + masses["pvc_tubes"]
+        + masses.get("glass_sheet_wing", 0.0) + masses.get("glass_sheet_tail", 0.0)
     )
     if m_total > 0:
         y_overall = (
@@ -171,6 +185,8 @@ def compute_y_cg(
             + y_tail    * masses["tail"]
             + y_tail_rod * masses["tail_rod"]
             + y_pvc     * masses["pvc_tubes"]
+            + y_wing * masses.get("glass_sheet_wing", 0.0)
+            + y_tail * masses.get("glass_sheet_tail", 0.0)
         ) / m_total
     else:
         y_overall = 0.0
@@ -185,6 +201,8 @@ def compute_y_cg(
         'tail':        y_tail,
         'tail_rod':    y_tail_rod,
         'pvc_tubes':   y_pvc,
+        'glass_sheet_wing': y_wing,
+        'glass_sheet_tail': y_tail,
         'overall':     y_overall,
     }
 
@@ -212,21 +230,32 @@ def total_mass(
     m_fuselage = materials.fuselage.mass(fus.volume_shell)
     m_pvc = PVC_TUBES_MASS
 
+    # Glass fibre sheet mass (wing + tail, both sides)
+    
+    wing_sheet_area = 2.0 * sizing.Sw
+    tail_sheet_area = 2.0 * sizing.St
+    m_sheet_wing = materials.sheet.mass(wing_sheet_area)
+    m_sheet_tail = materials.sheet.mass(tail_sheet_area)
+    m_glass_sheet = m_sheet_wing + m_sheet_tail
+
     m_total = (
         m_battery + m_motors + m_props + m_wing + m_tail
         + m_rod_spar + m_rod_aileron + m_tail_rod + m_fuselage + m_pvc
+        + m_glass_sheet
     )
-
     return {
-        'battery':      m_battery,
-        'motors':       m_motors,
-        'props':        m_props,
-        'wing':         m_wing,
-        'tail':         m_tail,
-        'rod_spar':     m_rod_spar,
-        'rod_aileron':  m_rod_aileron,
-        'tail_rod':     m_tail_rod,
-        'fuselage':     m_fuselage,
-        'pvc_tubes':    m_pvc,
-        'total':        m_total,
+        'battery':          m_battery,
+        'motors':           m_motors,
+        'props':            m_props,
+        'wing':             m_wing,
+        'tail':             m_tail,
+        'rod_spar':         m_rod_spar,
+        'rod_aileron':      m_rod_aileron,
+        'tail_rod':         m_tail_rod,
+        'fuselage':         m_fuselage,
+        'pvc_tubes':        m_pvc,
+        'glass_sheet_wing': m_sheet_wing,
+        'glass_sheet_tail': m_sheet_tail,
+        'glass_sheet':      m_glass_sheet,
+        'total':            m_total*1.4,
     }
