@@ -48,6 +48,8 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Spar rod mass   : {masses['rod_spar']:.3f} kg")
     print(f"  Aileron rod mass: {masses['rod_aileron']:.3f} kg")
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
+    print(f"  VT spar mass: {masses['vt_spar']:.3f} kg")
+    print(f"  VT rud mass: {masses['vt_rud']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
     if 'pvc_tubes' in masses:
         print(f"  PVC tubes    : {masses['pvc_tubes']:.3f} kg")

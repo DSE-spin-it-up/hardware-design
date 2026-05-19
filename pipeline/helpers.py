@@ -37,7 +37,7 @@ def estimate_cd0(
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
-    rods = rods_mod.run(sizing, aileron, wing_airfoil)   # ← pass airfoil_path
+    rods = rods_mod.run(sizing, aileron, wing_airfoil, tail_airfoil)   # ← pass airfoil_path
     return drag_buildup.run(
         sizing,
         fus,
