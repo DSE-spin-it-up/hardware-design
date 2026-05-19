@@ -249,7 +249,7 @@ def run(
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
     # ------------------------------------------------------------------ #
-    CL_h = abs(-0.35 * s.inputs.AR ** (1.0 / 3.0))
+    CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
     section_thickness_t = s.ct * i.tail_tc
     F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download [N]
