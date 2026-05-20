@@ -122,11 +122,11 @@ def compute_cg(
         x_cg = (
             x_fus        * m_fus
             + x_batt     * m_batt
-            + x_motor    * m_motor
+            + x_motor    * m_motor*2/3
             + x_wing     * m_wing
             + x_rod_spar    * m_rod_spar
             + x_rod_aileron  * m_rod_aileron
-            + x_tail     * m_tail
+            + x_tail     * (m_tail+1/3*m_motor)
             + x_tail_rod * m_tail_rod
             + x_spar_ht * m_spar_ht
             + x_control_ht * m_control_ht
@@ -210,7 +210,7 @@ def compute_y_cg(
     y_tail = y_rod_aileron + 0.5 * sizing.bv
     y_vt_spar = y_rod_aileron + 0.5 * sizing.bv
     y_vt_rud  = y_rod_aileron + 0.5 * sizing.bv
-
+    y_motor_back=sizing.bv
     m_vt_spar = masses.get("vt_spar", 0.0)
     m_vt_rud  = masses.get("vt_rud", 0.0)
 
@@ -225,7 +225,7 @@ def compute_y_cg(
         y_overall = (
             y_fus       * masses["fuselage"]
             + y_batt    * masses["battery"]
-            + y_motor   * masses["motors"]
+            + y_motor   * masses["motors"]*2/3
             + y_wing    * masses["wing"]
             + y_rod_spar     * masses["rod_spar"]
             + y_rod_aileron  * masses["rod_aileron"]
@@ -236,6 +236,7 @@ def compute_y_cg(
             + y_pvc     * masses["pvc_tubes"]
             + y_wing * masses.get("glass_sheet_wing", 0.0)
             + y_tail * masses.get("glass_sheet_tail", 0.0)
+            +y_motor_back * masses["motors"]*1/3
         ) / m_total
     else:
         y_overall = 0.0
