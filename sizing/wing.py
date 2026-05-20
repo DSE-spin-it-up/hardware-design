@@ -89,6 +89,7 @@ class SizingResult:
     # L_boom = physical tail-boom length (aileron hinge → tail TE). Used for
     # the tail-rod cantilever sizing, the tail boom drag wetted area, the tail
     # mass arm, and the side-view plot. Always strictly longer than lh.
+    ARt : float
     L_boom: float
     Sv: float
     bv: float
@@ -154,7 +155,7 @@ def run(
     m_wing = i.foam_density * (t_over_c_root * c) * Sw
 
     # Tail geometry
-    bh = i.b * 0.365445026178  # [m] Desmos
+    bh = np.sqrt(i.Sh * i.ARt) if i.Sh is not None else (i.b * 0.365445026178)  # [m] Desmos
     if i.Sh is not None:
         Sh = i.Sh
     elif i.lh is None:
@@ -205,6 +206,7 @@ def run(
         bh=bh,
         Sh=Sh,
         lh=lh,
+        ARt=i.ARt,
         L_boom=L_boom,
         Sv=Sv,
         bv=bv,

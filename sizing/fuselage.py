@@ -36,6 +36,7 @@ class FuselageResult:
     battery_width: float   # [m]
     battery_height: float  # [m]
     volume_shell: float = 0.0  # [m³] structural material volume
+    x_nose: float = 0.0  # [m] fuselage nose x from LEMAC (negative = ahead of LE)
 
 
 def run(
@@ -43,7 +44,11 @@ def run(
     inputs: FuselageInputs | None = None,
     battery_volume: float = 0.0,
     airfoil_path: str | Path | None = None,
+    battery_x: float | None = None,
 ) -> FuselageResult:
+    
+    FILLED = True
+
     if inputs is None:
         inputs = FuselageInputs()
     i = inputs
@@ -70,12 +75,28 @@ def run(
         height = b_height * i.casing_factor
 
     # ------------------------------------------------------------------ length
-    # Each candidate is padded independently; casing_factor is not applied on
-    # top of housing_factor to avoid double-scaling the battery length.
-    length = max(
-        sizing.c_root * i.casing_factor,                          # must enclose root chord
-        b_length * i.housing_factor + 2.0 * i.casing_thickness,  # battery + walls only
-    )
+    # Battery housing extent: axial housing_factor plus the two end walls.
+    # casing_factor is not applied on top to avoid double-scaling the battery.
+    battery_extent = b_length * i.housing_factor + 2.0 * i.casing_thickness
+
+    # battery_x is the battery centroid measured aft-positive from the LEMAC
+    # (same convention as the CG buildup). A negative value places the battery
+    # ahead of the wing leading edge.
+    if battery_x is not None and battery_x < 0.0:
+        # Battery in front of the wing: the fuselage spans from the battery
+        # housing tip (battery_x - battery_extent/2) to the wing trailing edge
+        # (at c_root from the LE), so the two lengths add.
+        x_nose = battery_x - battery_extent / 2.0
+        length = sizing.c_root - x_nose
+    else:
+        # Battery nested inside the chord-length body; take whichever of the
+        # root chord (with casing margin) or the battery housing is longer.
+        # The body starts at the LEMAC and runs aft.
+        x_nose = 0.0
+        length = max(
+            sizing.c_root * i.casing_factor,  # must enclose root chord
+            battery_extent,                   # battery + walls only
+        )
 
     # ------------------------------------------------------------------ width
     width = b_width * i.casing_factor
@@ -89,7 +110,10 @@ def run(
     l_in = max(length - 2.0 * t, 0.0)
     w_in = max(width  - 2.0 * t, 0.0)
     h_in = max(height - 2.0 * t, 0.0)
-    volume_shell = length * width * height - l_in * w_in * h_in
+
+
+    if FILLED:
+        volume_shell = length * width * height
 
     return FuselageResult(
         inputs=inputs,
@@ -103,6 +127,7 @@ def run(
         battery_width=b_width,
         battery_height=b_height,
         volume_shell=volume_shell,
+        x_nose=x_nose,
     )
 
 
@@ -111,6 +136,7 @@ def summary(r: FuselageResult) -> None:
     print(f"  Battery L × W × H    : "
           f"{r.battery_length:.4f} × {r.battery_width:.4f} × {r.battery_height:.4f}  m")
     print(f"  Length               : {r.length:.4f}  m")
+    print(f"  Nose x (from LEMAC)  : {r.x_nose:.4f}  m")
     print(f"  Width                : {r.width:.4f}  m")
     print(f"  Height               : {r.height:.4f}  m")
     print(f"  Fineness ratio       : {r.fineness:.3f}")

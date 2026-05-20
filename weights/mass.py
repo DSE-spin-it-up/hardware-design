@@ -62,7 +62,10 @@ def compute_cg(
     All positions are relative to the leading edge of the mean aerodynamic
     chord (LEMAC).
     """
-    x_fus = fus.length / 2.0
+       # Fuselage centroid: nose (x_nose, negative when the body extends ahead of
+    # the LE for a forward battery) plus half the length.
+    x_fus = fus.x_nose + fus.length / 2.0
+    
     x_motor = 0.0
     x_wing = 0.25 * sizing.c_root
     x_rod_spar = _max_tc_x(airfoil_path) * sizing.c_root

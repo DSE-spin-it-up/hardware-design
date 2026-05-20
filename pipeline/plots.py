@@ -163,7 +163,7 @@ def plot_cg_side_view(
     plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.add_patch(Rectangle((0.0, 0.0), fus.length, fus.height,
+    ax.add_patch(Rectangle((fus.x_nose, 0.0), fus.length, fus.height,
                            fill=False, linewidth=2, label="Fuselage"))
     ax.add_patch(Polygon(airfoil_coords, closed=True,
                          facecolor="lightblue", edgecolor="navy", alpha=0.6,

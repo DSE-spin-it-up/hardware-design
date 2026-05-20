@@ -105,6 +105,7 @@ def _run_design_pass(
         config.FUSELAGE,
         battery_volume=propulsion.battery_volume,
         airfoil_path=airfoil,
+        battery_x=config.BATTERY_X,
     )
     # Aileron must be computed before rods and drag — both need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
