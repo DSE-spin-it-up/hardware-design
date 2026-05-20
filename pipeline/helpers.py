@@ -197,7 +197,7 @@ def compute_scissor_data(
     # Defaults: cruise condition reuses existing LLT outputs. Override for
     # the conservative landing case.
     if CL_h is None:
-        AR_tail = s.bh ** 2 / s.Sh
+        AR_tail = s.ARt
         CL_h = -0.35 * AR_tail ** (1.0 / 3.0)
     if CL_A_h is None:
         CL_A_h = wing_llt.CL  # wing-only proxy, ignoring fuselage lift contribution
