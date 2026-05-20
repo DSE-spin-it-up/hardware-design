@@ -204,7 +204,8 @@ def plot_cg_side_view(
     ax.set_title("Aircraft CG side view")
     ax.set_xlabel("x [m] from LEMAC")
     ax.set_ylabel("vertical position [m]")
-    ax.set_xlim(-0.05, max(fus.length, x_tail, x_overall) + 0.2)
+    ax.set_xlim(min(-0.05, fus.x_nose - 0.05),
+                max(fus.x_nose + fus.length, x_tail, x_overall) + 0.2)
     ax.set_ylim(-0.05, plot_height + 0.05)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, linestyle="--", alpha=0.3)

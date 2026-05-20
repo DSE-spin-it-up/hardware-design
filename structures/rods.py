@@ -163,11 +163,13 @@ def _tube_mass(length: float, d: float, t: float, rho: float) -> float:
 
 def _check_wall(t: float, d: float, label: str) -> None:
     if t >= d / 2:
-        raise ValueError(
+        print(
             f"{label}: required wall thickness {t * 1000:.2f} mm exceeds rod radius "
             f"{d / 2 * 1000:.2f} mm — rod cannot satisfy criteria at this diameter."
         )
-
+        return 2 * t
+    else:
+        return d
 
 # ---------------------------------------------------------------------------
 # Internal helper: size one cantilever rod (point-load model)
@@ -194,7 +196,7 @@ def _size_cantilever_rod(
         d, fail = d_defl, "deflection"
     else:
         d, fail = d_comp, "compressive"
-    _check_wall(t_min, d, label)
+    d = _check_wall(t_min, d, label)
     defl = _defl_cantilever_point(F, L, E, _I_tube(t_min, d))
     mass = _tube_mass(L, d, t_min, rho_mat)
     return d, t_min, mass, defl, fail
@@ -245,7 +247,7 @@ def run(
         d_spar, fail_spar = d_spar_defl, "deflection"
     else:
         d_spar, fail_spar = d_spar_comp, "compressive"
-    _check_wall(t_spar, d_spar, "Spar rod")
+    d_spar = _check_wall(t_spar, d_spar, "Spar rod")
     defl_spar = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_spar, d_spar))
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
 
@@ -264,7 +266,7 @@ def run(
         d_aileron, fail_aileron = d_ail_defl, "deflection"
     else:
         d_aileron, fail_aileron = d_ail_comp, "compressive"
-    _check_wall(t_aileron, d_aileron, "Aileron rod")
+    d_aileron =   _check_wall(t_aileron, d_aileron, "Aileron rod")
     defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_aileron, d_aileron))
     mass_aileron = _tube_mass(b_w, d_aileron, t_aileron, rho_mat)
 
@@ -286,7 +288,7 @@ def run(
         d_t, fail_t = d_t_defl, "deflection"
     else:
         d_t, fail_t = d_t_comp, "compressive"
-    _check_wall(t_t, d_t, "Tail rod")
+    d_t = _check_wall(t_t, d_t, "Tail rod")
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
 
