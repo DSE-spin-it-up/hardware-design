@@ -97,6 +97,8 @@ class SizingResult:
     bt: float
     ct: float
     tt: float
+    gamma_air: float
+    R_air: float
 
 
 def tail_chord(yb: float, St: float, bt: float, lam_t: float) -> float:
@@ -214,6 +216,8 @@ def run(
         bt=bt,
         ct=ct,
         tt=tt,
+        gamma_air=gamma_air,
+        R_air=R_air,
     )
 
 

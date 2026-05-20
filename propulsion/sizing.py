@@ -289,7 +289,17 @@ def run(
     max_thrust_per_prop = thrust_cases[governing_thrust_segment]
     max_power_elec = power_cases[governing_power_segment]
     max_energy = energy_cases[governing_energy_segment]
-    
+
+    a_low = np.sqrt(15.00 + 273.15 * s.gamma_air * s.R_air)
+    a_alt = np.sqrt(s.T_isa * s.gamma_air * s.R_air)
+
+    M_tip_cr = np.sqrt((np.pi * D_prop * n_cruise)**2 + si.V_cruise**2) / a_alt
+    M_tip_climb = np.sqrt((np.pi * D_prop * n_climb)**2 + V_climb**2) / a_low
+    M_tip_vtol = np.sqrt((np.pi * D_prop * n_vtol)**2) / a_low
+
+    if M_tip_cr >= 0.72 or M_tip_climb >= 0.72 or M_tip_vtol >= 0.72:
+        print(f"WARNING: Noise is too high. Cruise tip mach number: {M_tip_cr}, climb tip mach number: {M_tip_climb}, vtol tip mach number: {M_tip_vtol}")
+
     return PropulsionResult(
         inputs=inputs,
         voltage_battery=voltage_battery,
