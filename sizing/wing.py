@@ -154,7 +154,7 @@ def run(
     m_wing = i.foam_density * (t_over_c_root * c) * Sw
 
     # Tail geometry
-    bh = i.b * 0.365445026178  # [m] Desmos
+    bh = np.sqrt(i.Sh * i.ARt) if i.Sh is not None else (i.b * 0.365445026178)  # [m] Desmos
     if i.Sh is not None:
         Sh = i.Sh
     elif i.lh is None:
