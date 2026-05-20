@@ -163,7 +163,7 @@ def plot_cg_side_view(
     plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.add_patch(Rectangle((0.0, 0.0), fus.length, fus.height,
+    ax.add_patch(Rectangle((fus.x_nose, 0.0), fus.length, fus.height,
                            fill=False, linewidth=2, label="Fuselage"))
     ax.add_patch(Polygon(airfoil_coords, closed=True,
                          facecolor="lightblue", edgecolor="navy", alpha=0.6,
@@ -204,7 +204,8 @@ def plot_cg_side_view(
     ax.set_title("Aircraft CG side view")
     ax.set_xlabel("x [m] from LEMAC")
     ax.set_ylabel("vertical position [m]")
-    ax.set_xlim(-0.05, max(fus.length, x_tail, x_overall) + 0.2)
+    ax.set_xlim(min(-0.05, fus.x_nose - 0.05),
+                max(fus.x_nose + fus.length, x_tail, x_overall) + 0.2)
     ax.set_ylim(-0.05, plot_height + 0.05)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, linestyle="--", alpha=0.3)
