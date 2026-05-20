@@ -53,7 +53,8 @@ class DragResult:
     inputs: DragInputs
     # Reynolds & Mach
     Re_wing: float
-    Re_tail: float
+    Re_tail_h: float
+    Re_tail_v: float
     Re_fus: float
     Re_boom: float
     M_cruise: float
@@ -62,9 +63,12 @@ class DragResult:
     Cf_wing: float
     FF_wing: float
     Swet_wing: float
-    Cf_tail: float
-    FF_tail: float
-    Swet_tail: float
+    Cf_tail_h: float
+    Cf_tail_v: float
+    FF_tail_h: float
+    FF_tail_v: float
+    Swet_tail_h: float
+    Swet_tail_v: float
     Cf_fus: float
     FF_fus: float
     Swet_fus: float
@@ -73,7 +77,8 @@ class DragResult:
     Swet_boom: float
     # Aggregate
     CD0_wing: float
-    CD0_tail: float
+    CD0_tail_h: float
+    CD0_tail_v: float
     CD0_fus: float
     CD0_boom: float
     CD0: float
@@ -120,7 +125,8 @@ def run(
 
     # Reynolds numbers
     Re_wing = rho * V * s.c / MU_AIR
-    Re_tail = rho * V_tail * s.ct / MU_AIR
+    Re_tail_h = rho * V_tail * s.ch / MU_AIR
+    Re_tail_v = rho * V_tail * s.cv / MU_AIR
     Re_fus  = rho * V * f.length / MU_AIR
 
     # Tail boom geometry from structural sizing — no duplication of data.
@@ -133,55 +139,60 @@ def run(
 
     # Skin friction
     Cf_wing = _skin_friction_turbulent(Re_wing, M_cruise)
-    Cf_tail = _skin_friction_turbulent(Re_tail, M_cruise)
+    Cf_tail_h = _skin_friction_turbulent(Re_tail_h, M_cruise)
+    Cf_tail_v = _skin_friction_turbulent(Re_tail_v, M_cruise)
     Cf_fus  = _skin_friction_turbulent(Re_fus,  M_cruise)
     Cf_boom = _skin_friction_turbulent(Re_boom, M_cruise)
 
     # Form factors
     FF_wing = _form_factor_lifting(tc_w, xtc_w, M_cruise, i.sweep_wing)
-    FF_tail = _form_factor_lifting(tc_t, xtc_t, M_tail,   i.sweep_tail)
+    FF_tail_h = _form_factor_lifting(tc_t, xtc_t, M_tail, i.sweep_tail)
+    FF_tail_v = _form_factor_lifting(tc_t, xtc_t, M_cruise, i.sweep_tail)
     FF_fus  = _form_factor_fuselage(f.fineness)
     FF_boom = _form_factor_fuselage(boom_length / boom_diameter)
 
     # Wetted areas
     Swet_wing = 2.0 * s.Sw                          # lifting surface ≈ 2 × planform
-    Swet_tail = 2.0 * s.St
+    Swet_tail_h = 2.0 * s.Sh
+    Swet_tail_v = 2.0 * s.Sv
     Swet_fus  = f.Swet
     Swet_boom = np.pi * boom_diameter * boom_length  # lateral surface of cylinder
 
     # Per-component CD0 referenced to wing area.
     S_ref    = s.Sw
     CD0_wing = Cf_wing * FF_wing * i.Q_wing * Swet_wing / S_ref
-    CD0_tail = Cf_tail * FF_tail * i.Q_tail * Swet_tail / S_ref
+    CD0_tail_h = Cf_tail_h * FF_tail_h * i.Q_tail * Swet_tail_h / S_ref
+    CD0_tail_v = Cf_tail_v * FF_tail_v * i.Q_tail * Swet_tail_h / S_ref
     CD0_fus  = Cf_fus  * FF_fus  * i.Q_fus  * Swet_fus  / S_ref
     CD0_boom = Cf_boom * FF_boom * i.Q_boom * Swet_boom / S_ref
-    CD0      = CD0_wing + CD0_tail + CD0_fus + CD0_boom
+    CD0      = CD0_wing + CD0_tail_h + CD0_tail_v + CD0_fus + CD0_boom
 
     return DragResult(
         inputs=inputs,
-        Re_wing=Re_wing, Re_tail=Re_tail, Re_fus=Re_fus, Re_boom=Re_boom,
+        Re_wing=Re_wing, Re_tail_h=Re_tail_h, Re_tail_v=Re_tail_v, Re_fus=Re_fus, Re_boom=Re_boom,
         M_cruise=M_cruise, M_tail=M_tail,
         Cf_wing=Cf_wing, FF_wing=FF_wing, Swet_wing=Swet_wing,
-        Cf_tail=Cf_tail, FF_tail=FF_tail, Swet_tail=Swet_tail,
-        Cf_fus=Cf_fus,   FF_fus=FF_fus,   Swet_fus=Swet_fus,
+        Cf_tail_h=Cf_tail_h, Cf_tail_v=Cf_tail_v, FF_tail_h=FF_tail_h, FF_tail_v=FF_tail_v, Swet_tail_h=Swet_tail_h,
+        Swet_tail_v=Swet_tail_v, Cf_fus=Cf_fus,   FF_fus=FF_fus,   Swet_fus=Swet_fus,
         Cf_boom=Cf_boom, FF_boom=FF_boom, Swet_boom=Swet_boom,
-        CD0_wing=CD0_wing, CD0_tail=CD0_tail, CD0_fus=CD0_fus,
+        CD0_wing=CD0_wing, CD0_tail_h=CD0_tail_h, CD0_tail_v=CD0_tail_v, CD0_fus=CD0_fus,
         CD0_boom=CD0_boom, CD0=CD0,
     )
 
 
 def summary(r: DragResult) -> None:
     print("\n--- Drag buildup (CD0) ---")
-    print(f"  Re wing / tail / fus / boom : {r.Re_wing:.2e} / {r.Re_tail:.2e} / {r.Re_fus:.2e} / {r.Re_boom:.2e}")
+    print(f"  Re wing / hor. tail / ver. tail / fus / boom : {r.Re_wing:.2e} / {r.Re_tail_h:.2e} / {r.Re_tail_v:.2e} / {r.Re_fus:.2e} / {r.Re_boom:.2e}")
     print(f"  M cruise / tail             : {r.M_cruise:.4f} / {r.M_tail:.4f}")
-    print(f"  Cf  wing / tail / fus / boom: {r.Cf_wing:.5f} / {r.Cf_tail:.5f} / {r.Cf_fus:.5f} / {r.Cf_boom:.5f}")
-    print(f"  FF  wing / tail / fus / boom: {r.FF_wing:.3f} / {r.FF_tail:.3f} / {r.FF_fus:.3f} / {r.FF_boom:.3f}")
-    print(f"  Swet wing / tail / fus / boom: {r.Swet_wing:.3f} / {r.Swet_tail:.3f} / {r.Swet_fus:.3f} / {r.Swet_boom:.3f}  m²")
+    print(f"  Cf  wing / hor. tail / ver.tail / fus / boom: {r.Cf_wing:.5f} / {r.Cf_tail_h:.5f} / {r.Cf_tail_v:.5f} / {r.Cf_fus:.5f} / {r.Cf_boom:.5f}")
+    print(f"  FF  wing / hor. tail / ver. tail / fus / boom: {r.FF_wing:.3f} / {r.FF_tail_h:.3f} / {r.FF_tail_v:.3f} / {r.FF_fus:.3f} / {r.FF_boom:.3f}")
+    print(f"  Swet wing / hor. tail / ver. tail / fus / boom: {r.Swet_wing:.3f} / {r.Swet_tail_h:.3f} / {r.Swet_tail_v:.3f} / {r.Swet_fus:.3f} / {r.Swet_boom:.3f}  m²")
 
     total = r.CD0 if r.CD0 > 0 else 1.0
     pct = lambda x: 100 * x / total  # noqa: E731
     print(f"  CD0 wing     : {r.CD0_wing:.5f}  ({pct(r.CD0_wing):5.1f}%)")
-    print(f"  CD0 tail     : {r.CD0_tail:.5f}  ({pct(r.CD0_tail):5.1f}%)")
+    print(f"  CD0 hor. tail     : {r.CD0_tail_h:.5f}  ({pct(r.CD0_tail_h):5.1f}%)")
+    print(f"  CD0 ver. tail     : {r.CD0_tail_v:.5f}  ({pct(r.CD0_tail_v):5.1f}%)")
     print(f"  CD0 fuselage : {r.CD0_fus:.5f}  ({pct(r.CD0_fus):5.1f}%)")
     print(f"  CD0 boom     : {r.CD0_boom:.5f}  ({pct(r.CD0_boom):5.1f}%)")
     print(f"  CD0 total    : {r.CD0:.5f}")

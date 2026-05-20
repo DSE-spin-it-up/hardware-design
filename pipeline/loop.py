@@ -161,7 +161,7 @@ def _sw_closure_ar(
     """
     s = sizing.inputs
     CL_sw, CD_wing_sw = wing_drag_polar(sizing, polar, alpha_range)
-    CD_nonwing = drag.CD0_tail + drag.CD0_fus
+    CD_nonwing = drag.CD0_tail_h + drag.CD0_tail_h + drag.CD0_fus
     CD_payload = s.Cd_payload * s.S_payload / (s.n_drones * sizing.Sw)
     LD = CL_sw / (CD_wing_sw + CD_nonwing + CD_payload)
     CL_optLD = float(CL_sw[int(np.argmax(LD))])
@@ -377,7 +377,6 @@ def run_pipeline(config) -> PipelineResult:
         cd0_prev = p.drag.CD0
         m_prev = m_drone
         sw_prev = sizing.Sw
-        print(sizing.ct)
 
     if converged:
         print(f"    ✓ Converged in {it} iterations ({_exit_criteria(config)}).")
@@ -412,7 +411,7 @@ def run_pipeline(config) -> PipelineResult:
 
     # ----- Step 6: CL/CD sweep → drone-only and drone+payload polars -----
     CL_sweep, CD_wing_sweep = wing_drag_polar(sizing, polar, config.ALPHA_SWEEP_DEG)
-    CD_nonwing = p.drag.CD0_tail + p.drag.CD0_fus
+    CD_nonwing = p.drag.CD0_tail_h + p.drag.CD0_tail_v + p.drag.CD0_fus
     CD_payload = sizing.inputs.Cd_payload * sizing.inputs.S_payload / (
         sizing.inputs.n_drones * sizing.Sw
     )

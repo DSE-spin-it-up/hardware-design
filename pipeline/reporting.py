@@ -38,18 +38,23 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Motor mass   : {masses['motors']:.3f} kg")
     print(f"  Prop mass    : {masses['props']:.3f} kg")
     print(f"  Wing mass    : {masses['wing']:.3f} kg")
-    print(f"  Tail mass    : {masses['tail']:.3f} kg")
+    print(f"  Horizontal tail mass    : {masses['hor_tail']:.3f} kg")
+    print(f"  Vertical tail mass    : {masses['ver_tail']:.3f} kg")
     if 'glass_sheet_wing' in masses:
             print(f"  Glass sheet (wing): {masses['glass_sheet_wing']:.3f} kg")
-    if 'glass_sheet_tail' in masses:
-            print(f"  Glass sheet (tail): {masses['glass_sheet_tail']:.3f} kg")
+    if 'glass_sheet_tail_h' in masses:
+            print(f"  Glass sheet (hor. tail): {masses['glass_sheet_tail_h']:.3f} kg")
+    if 'glass_sheet_tail_v' in masses:
+            print(f"  Glass sheet (ver. tail): {masses['glass_sheet_tail_v']:.3f} kg")
     if 'glass_sheet' in masses:
             print(f"  Glass sheet (total): {masses['glass_sheet']:.3f} kg")
     print(f"  Spar rod mass   : {masses['rod_spar']:.3f} kg")
     print(f"  Aileron rod mass: {masses['rod_aileron']:.3f} kg")
     print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
+    print(f"  HT spar mass: {masses['ht_spar']:.3f} kg")
+    print(f"  HT elevator mass: {masses['ht_rud']:.3f} kg")
     print(f"  VT spar mass: {masses['vt_spar']:.3f} kg")
-    print(f"  VT rud mass: {masses['vt_rud']:.3f} kg")
+    print(f"  VT rudder mass: {masses['vt_rud']:.3f} kg")
     print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
     if 'pvc_tubes' in masses:
         print(f"  PVC tubes    : {masses['pvc_tubes']:.3f} kg")
@@ -64,7 +69,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Tail rod CG     : {cg['tail_rod']:8.4f}  m from LEMAC")
     print(f"  VT spar rod CG  : {cg['vt_spar']:8.4f}  m from LEMAC")
     print(f"  VT rud rod CG   : {cg['vt_rud']:8.4f}  m from LEMAC")
-    print(f"  Tail CG         : {cg['tail']:8.4f}  m from LEMAC")
+    print(f"  Tail CG    : {cg['tail']:8.4f}  m from LEMAC")
     print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
     print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
     print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")

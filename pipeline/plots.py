@@ -139,7 +139,7 @@ def plot_cg_side_view(
     x_tail = cg["tail"]
     x_overall = cg["overall"]
     # Tail LE position from LEMAC: tail AC sits at 0.25·c + lh; LE is 0.25·ct ahead.
-    x_tail_root = 0.25 * sizing.c + sizing.lh - 0.25 * sizing.ct
+    x_tail_root = 0.25 * sizing.c + sizing.lh - 0.25 * max(sizing.ch, sizing.cv)
 
     # Rod centres sit on the airfoil mid-thickness line at their own x/c.
     _, y_up_s, y_lo_s = airfoil.compute_thickness(x_rod_wing / root_chord)
@@ -191,7 +191,7 @@ def plot_cg_side_view(
 
     y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     motor_y = y_cg["motors"]
-    tail_y = y_cg["tail"]
+    tail_y = y_cg["ver_tail"]
     overall_y = y_cg["overall"]
     plot_height = max(plot_height, tail_y + 0.05)
 

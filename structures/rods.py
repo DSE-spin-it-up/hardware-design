@@ -175,6 +175,9 @@ def _check_wall(t: float, d: float, label: str) -> None:
         print(f"{label}: required wall thickness {t * 1000:.2f} mm exceeds rod radius "
         f"{d / 2 * 1000:.2f} mm — rod cannot satisfy criteria at this diameter. Rod diameter is increased to {2 * t * 1000:.2f} mm"
         )
+        return 2 * t
+    else:
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +226,7 @@ def run(
         d_spar, fail_spar = d_spar_defl, "deflection"
     else:
         d_spar, fail_spar = d_spar_comp, "compressive"
-    _check_wall(t_spar, d_spar, "Spar rod")
+    d_spar = _check_wall(t_spar, d_spar, "Spar rod")
     defl_spar = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_spar, d_spar))
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
 
@@ -242,7 +245,7 @@ def run(
         d_aileron, fail_aileron = d_ail_defl, "deflection"
     else:
         d_aileron, fail_aileron = d_ail_comp, "compressive"
-    _check_wall(t_control, d_aileron, "Aileron rod")
+    d_aileron = _check_wall(t_control, d_aileron, "Aileron rod")
     defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_control, d_aileron))
     mass_aileron = _tube_mass(b_w, d_aileron, t_control, rho_mat)
 
@@ -251,7 +254,6 @@ def run(
     # ------------------------------------------------------------------ #
     CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
-    section_thickness_t = s.ct * i.tail_tc
     F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download [N]
     L_t = s.L_boom * i.safety_factor
     M_t = F_tail * L_t
@@ -263,7 +265,7 @@ def run(
         d_t, fail_t = d_t_defl, "deflection"
     else:
         d_t, fail_t = d_t_comp, "compressive"
-    _check_wall(t_t, d_t, "Tail rod")
+    d_t = _check_wall(t_t, d_t, "Tail rod")
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
 
@@ -280,7 +282,7 @@ def run(
         d_spar_ht, fail_spar_ht = d_spar_defl_ht, "deflection"
     else:
         d_spar_ht, fail_spar_ht = d_spar_comp_ht, "compressive"
-    _check_wall(t_spar_ht, d_spar_ht, "Spar rod horizontal tail")
+    d_spar_ht = _check_wall(t_spar_ht, d_spar_ht, "Spar rod horizontal tail")
     defl_spar_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_spar_ht, d_spar_ht))
     mass_spar_ht = _tube_mass(L_ht, d_spar_ht, t_spar_ht, rho_mat)
 
@@ -295,7 +297,7 @@ def run(
         d_control_ht, fail_control_ht = d_control_defl_ht, "deflection"
     else:
         d_control_ht, fail_control_ht = d_control_comp_ht, "compressive"
-    _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
+    d_control_ht = _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
     defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
     mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
 
@@ -312,7 +314,7 @@ def run(
         d_spar_vt, fail_spar_vt = d_spar_defl_vt, "deflection"
     else:
         d_spar_vt, fail_spar_vt = d_spar_comp_vt, "compressive"
-    _check_wall(t_spar_vt, d_spar_vt, "Spar rod vertical tail")
+    d_spar_vt = _check_wall(t_spar_vt, d_spar_vt, "Spar rod vertical tail")
     defl_spar_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
     mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
@@ -327,7 +329,7 @@ def run(
         d_control_vt, fail_control_vt = d_control_defl_vt, "deflection"
     else:
         d_control_vt, fail_control_vt = d_control_comp_vt, "compressive"
-    _check_wall(t_control_vt, d_control_vt, "Rudder rod horizontal tail")
+    d_control_vt = _check_wall(t_control_vt, d_control_vt, "Rudder rod horizontal tail")
     defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
     mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
     

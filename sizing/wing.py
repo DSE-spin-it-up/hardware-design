@@ -59,7 +59,8 @@ class SizingResult:
     # Mass
     m_drone_loaded: float
     m_wing: float
-    m_tail: float
+    m_tail_h: float
+    m_tail_v: float
     # Atmosphere
     T_isa: float
     p: float
@@ -86,6 +87,8 @@ class SizingResult:
     # lh = tail moment arm (wing AC → tail AC). Used by the stability /
     # controllability scissor and by the Vh, Vv tail-volume coefficients.
     lh: float
+    ch: float
+    tt_h: float
     # L_boom = physical tail-boom length (aileron hinge → tail TE). Used for
     # the tail-rod cantilever sizing, the tail boom drag wetted area, the tail
     # mass arm, and the side-view plot. Always strictly longer than lh.
@@ -93,10 +96,8 @@ class SizingResult:
     L_boom: float
     Sv: float
     bv: float
-    St: float
-    bt: float
-    ct: float
-    tt: float
+    cv: float
+    tt_v: float
     gamma_air: float
     R_air: float
 
@@ -165,13 +166,14 @@ def run(
     else:
         Sh = i.Vh * Sw * c / i.lh
     lh = i.lh if i.lh is not None else (i.Vh * Sw * c / Sh)
+    ch = bh / i.ARt
     Sv = i.Vv * Sw * i.b / lh
     bv = np.sqrt(2 * i.ARt * Sv) / 2
-    St = Sh + Sv
-    bt = np.sqrt(bh ** 2 + bv ** 2)
-    ct = tail_chord(0.5, St, bt, i.lam_t)
-    tt = ct * t_over_c_root
-    m_tail = i.foam_density * St * tt
+    cv = bv / i.ARt
+    tt_h = ch * t_over_c_root
+    tt_v = cv * t_over_c_root
+    m_tail_h = i.foam_density * Sh * tt_h
+    m_tail_v = i.foam_density * Sv * tt_v
 
     # Physical tail boom length, datum at LEMAC:
     #   L_boom = lh − (x_aileron_hinge − x_ac_wing) + 0.75·ct
@@ -181,14 +183,15 @@ def run(
     # tail AC → tail TE offset (0.75·ct, AC at quarter chord).
     x_ac_wing = 0.25 * c
     x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
-    L_boom = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * ct
+    L_boom = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * max(ch, cv)
 
     return SizingResult(
         inputs=inputs,
         t_over_c_root=t_over_c_root,
         m_drone_loaded=m_drone_loaded,
         m_wing=m_wing,
-        m_tail=m_tail,
+        m_tail_h=m_tail_h,
+        m_tail_v=m_tail_v,
         T_isa=T_isa,
         p=p,
         rho=rho,
@@ -212,10 +215,10 @@ def run(
         L_boom=L_boom,
         Sv=Sv,
         bv=bv,
-        St=St,
-        bt=bt,
-        ct=ct,
-        tt=tt,
+        tt_h=tt_h,
+        tt_v=tt_v,
+        ch=ch,
+        cv=cv,
         gamma_air=gamma_air,
         R_air=R_air,
     )
@@ -230,7 +233,8 @@ def summary(r: SizingResult) -> None:
     print("\n--- Mass ---")
     print(f"  Loaded drone mass    : {r.m_drone_loaded:.2f}  kg")
     print(f"  Wing mass            : {r.m_wing:.3f}  kg")
-    print(f"  Tail mass            : {r.m_tail:.3f}  kg")
+    print(f"  Horizontal tail mass : {r.m_tail_h:.3f}  kg")
+    print(f"  Vertical tail mass   : {r.m_tail_v:.3f}  kg")
 
     print("\n--- Wing Geometry ---")
     print(f"  Wing area            : {r.Sw:.4f}  m²")
@@ -254,7 +258,10 @@ def summary(r: SizingResult) -> None:
     print(f"  Vertical tail area   : {r.Sv:.4f}  m²")
     print(f"  lh (AC → AC)         : {r.lh:.4f}  m")
     print(f"  L_boom (boom length) : {r.L_boom:.4f}  m")
-    print(f"  Tail chord           : {r.ct:.4f}  m")
+    print(f"  Horizontal tail chord: {r.ch:.4f}  m")
+    print(f"  Vertical tail chord  : {r.cv:.4f}  m")
+    print(f"  Horizontal tail span : {r.bh:.4f}  m")
+    print(f"  Vertical tail span   : {r.bv:.4f}  m")
 
 
 if __name__ == "__main__":
