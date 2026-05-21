@@ -148,8 +148,8 @@ def plot_dual_axis(
     # if
 
     x_plot = np.arange(len(xs)) if categorical else np.asarray(xs, dtype=float)
-    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="System mass $m$")
-    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="System energy $E$")
+    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="System mass")
+    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="System energy")
 
     if categorical:
         ax1.set_xticks(x_plot)
@@ -159,8 +159,8 @@ def plot_dual_axis(
         ax1.set_xticklabels([f"{int(round(x))}" for x in x_plot])
 
     ax1.set_xlabel(xlabel)
-    ax1.set_ylabel("System mass $m$ (fleet)  [kg]", color="C0")
-    ax2.set_ylabel("System energy $E$ (fleet)  [Wh]", color="C3")
+    ax1.set_ylabel("System mass (fleet)  [kg]", color="C0")
+    ax2.set_ylabel("System energy (fleet)  [Wh]", color="C3")
     ax1.tick_params(axis="y", colors="C0")
     ax2.tick_params(axis="y", colors="C3")
     # ax1.set_title(title)
