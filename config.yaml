@@ -3,7 +3,7 @@
 # reads this file and exposes each section as a dataclass on the same module.
 
 # Wing airfoil: .dat path or NACA digits (e.g. "2412"). Set to null to prompt at runtime.
-airfoil: airfoils/NACA4412.dat
+airfoil: airfoils/E423.dat
 
 # Tail airfoil: .dat path or NACA digits. Symmetric sections are typical.
 tail_airfoil: airfoils/NACA0010.dat
@@ -45,7 +45,7 @@ V_stall: 14.0
 # of the CG buildup. Set to null to default to the midpoint between the spar
 # and aileron rods (current behaviour). Override to slide the battery fore/aft
 # and trade x_cg.
-battery_x: -0.15
+battery_x: -0.0001
 
 # ----- Initial / wing sizing -----
 sizing:
@@ -78,7 +78,7 @@ sizing:
 # ----- Propulsion -----
 propulsion:
   # Propeller
-  csv_prop: data/20x10E_performance.csv
+  csv_prop: data/14x10E_performance.csv
   n_props: 2
   prop_mass: 0.1         # [kg] mass per propeller
   # Motor / drivetrain
