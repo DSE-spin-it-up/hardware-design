@@ -1,10 +1,10 @@
-"""One-factor-at-a-time sensitivity analysis for total mass and energy.
+"""One-factor-at-a-time sensitivity analysis for system mass and energy.
 
 For each design variable, hold the other knobs at their ``config.yaml`` baseline,
 sweep the chosen variable across a list of values, re-run the full sizing
-pipeline at every point, and read off the per-drone total mass ``m`` and total
-energy ``E``. Each sweep is rendered as a twin-axis plot: mass on the left
-y-axis, energy on the right.
+pipeline at every point, and read off the *whole-fleet* mass ``m`` and energy
+``E`` (per-drone values × ``n_drones``, payload excluded). Each sweep is rendered
+as a twin-axis plot: mass on the left y-axis, energy on the right.
 
 The driver script lives at the repo root (``sensitivity.py``); this module holds
 the reusable machinery. Nothing here mutates ``pipeline.config`` — every run
@@ -57,12 +57,18 @@ def evaluate(
     V_cruise: float | None = None,
     R: float | None = None,
     csv_prop: str | None = None,
-) -> tuple[float, float]:
-    """Run the pipeline for one design point → ``(m_total [kg], E_total [Wh])``.
+) -> tuple[float, float, float, float]:
+    """Run the pipeline for one design point.
+
+    Returns ``(m_system, E_system, m_per_drone, E_per_drone)`` with mass in kg
+    and energy in Wh. The ``_system`` values are *whole-fleet* totals: the
+    per-drone empty mass and per-drone cruise+climb energy multiplied by
+    ``n_drones`` (payload excluded), so sweeping ``n_drones`` scales the fleet
+    linearly. The ``_per_drone`` values are the single-drone figures.
 
     Any argument left at ``None`` keeps its ``config.yaml`` baseline. Solver
     failures at extreme sweep values (prop non-convergence, motor KV out of fit
-    range, …) are caught and returned as ``(nan, nan)`` so one bad point does
+    range, …) are caught and returned as all-``nan`` so one bad point does
     not abort the whole sweep — it just shows up as a gap in the plot.
     """
     sizing_over: dict = {}
@@ -85,8 +91,17 @@ def evaluate(
             result = loop.run_pipeline(cfg)
     except Exception as exc:  # noqa: BLE001 — any solver failure → NaN point
         print(f"    ! run failed: {type(exc).__name__}: {exc}")
-        return float("nan"), float("nan")
-    return result.masses["total"], result.propulsion.E_total / 3600.0
+        nan = float("nan")
+        return nan, nan, nan, nan
+    # Per-drone figures, then whole-fleet totals: scale the per-drone empty mass
+    # and per-drone energy by the number of drones (payload excluded —
+    # hardware-only system mass).
+    n = result.sizing.inputs.n_drones
+    m_per_drone = result.masses["total"]
+    E_per_drone = result.propulsion.E_total / 3600.0
+    m_system = m_per_drone * n
+    E_system = E_per_drone * n
+    return m_system, E_system, m_per_drone, E_per_drone
 
 
 def sweep_one(
@@ -100,8 +115,10 @@ def sweep_one(
     masses: list[float] = []
     energies: list[float] = []
     for v in values:
-        m, e = evaluate(**{variable: v})
-        print(f"    {variable} = {v!r:<28} m = {m:7.3f} kg   E = {e:8.2f} Wh")
+        m, e, m_pd, e_pd = evaluate(**{variable: v})
+        print(f"    {variable} = {v!r:<28} "
+              f"fleet: m = {m:7.3f} kg  E = {e:8.2f} Wh   "
+              f"per drone: m = {m_pd:6.3f} kg  E = {e_pd:7.2f} Wh")
         masses.append(m)
         energies.append(e)
     return list(values), np.array(masses), np.array(energies)
@@ -117,7 +134,7 @@ def plot_dual_axis(
     categorical: bool = False,
     show: bool = True,
 ) -> plt.Figure:
-    """Twin-axis plot: mass on the left y-axis, energy on the right.
+    """Twin-axis plot: fleet mass on the left y-axis, fleet energy on the right.
 
     Set ``categorical=True`` for non-numeric x values (e.g. propeller names),
     which are placed at evenly spaced ticks and labelled by ``xs``.
@@ -126,16 +143,16 @@ def plot_dual_axis(
     ax2 = ax1.twinx()
 
     x_plot = np.arange(len(xs)) if categorical else np.asarray(xs, dtype=float)
-    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="mass $m$")
-    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="energy $E$")
+    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="system mass $m$")
+    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="system energy $E$")
 
     if categorical:
         ax1.set_xticks(x_plot)
         ax1.set_xticklabels([str(x) for x in xs], rotation=30, ha="right")
 
     ax1.set_xlabel(xlabel)
-    ax1.set_ylabel("total mass $m$  [kg]", color="C0")
-    ax2.set_ylabel("total energy $E$  [Wh]", color="C3")
+    ax1.set_ylabel("system mass $m$ (fleet)  [kg]", color="C0")
+    ax2.set_ylabel("system energy $E$ (fleet)  [Wh]", color="C3")
     ax1.tick_params(axis="y", colors="C0")
     ax2.tick_params(axis="y", colors="C3")
     ax1.set_title(title)
