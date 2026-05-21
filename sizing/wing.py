@@ -169,7 +169,7 @@ def run(
     ch = bh / i.ARt
     Sv = i.Vv * Sw * i.b / lh
     bv = np.sqrt(2 * i.ARt * Sv) / 2
-    cv = bv / i.ARt
+    cv = 2 * bv / i.ARt
     tt_h = ch * t_over_c_root
     tt_v = cv * t_over_c_root
     m_tail_h = i.foam_density * Sh * tt_h

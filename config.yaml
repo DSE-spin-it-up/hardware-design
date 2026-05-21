@@ -51,7 +51,7 @@ battery_x: -0.212
 sizing:
   # Payload & fleet
   m_payload: 60          # [kg]
-  m_drone_empty: 10      # [kg]
+  m_drone_empty: 8      # [kg]
   n_drones: 3            # [-]
   # Geometry
   b: 3.0                 # wingspan [m]
