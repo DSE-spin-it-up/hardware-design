@@ -300,6 +300,11 @@ def run(
     if M_tip_cr >= 0.72 or M_tip_climb >= 0.72 or M_tip_vtol >= 0.72:
         print(f"WARNING: Noise is too high. Cruise tip mach number: {M_tip_cr}, climb tip mach number: {M_tip_climb}, vtol tip mach number: {M_tip_vtol}")
 
+    print("\n---Noise Characterisation---")
+    print(f"Mach number at the tip of the propeller blade during cruise: {M_tip_cr}")
+    print(f"Mach number at the tip of the propeller blade during climb: {M_tip_climb}")
+    print(f"Mach number at the tip of the propeller blade during vertical take-off: {M_tip_vtol}")
+
     return PropulsionResult(
         inputs=inputs,
         voltage_battery=voltage_battery,

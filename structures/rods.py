@@ -254,8 +254,8 @@ def run(
     # ------------------------------------------------------------------ #
     CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
-    F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V  # tail download [N]
-    L_t = s.L_boom * i.safety_factor
+    F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V * i.safety_factor  # tail download [N]
+    L_t = s.L_boom
     M_t = F_tail * L_t
     t_t = i.t_t
 
