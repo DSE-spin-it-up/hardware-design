@@ -132,32 +132,40 @@ def plot_dual_axis(
     xlabel: str,
     title: str,
     categorical: bool = False,
+    integer_x: bool = False,
     show: bool = True,
 ) -> plt.Figure:
     """Twin-axis plot: fleet mass on the left y-axis, fleet energy on the right.
 
     Set ``categorical=True`` for non-numeric x values (e.g. propeller names),
-    which are placed at evenly spaced ticks and labelled by ``xs``.
+    which are placed at evenly spaced ticks and labelled by ``xs``. Set
+    ``integer_x=True`` to label the x-axis with exactly the (integer) sweep
+    values, suppressing fractional auto-ticks (e.g. the drone-count sweep).
     """
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax2 = ax1.twinx()
 
+    # if
+
     x_plot = np.arange(len(xs)) if categorical else np.asarray(xs, dtype=float)
-    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="system mass $m$")
-    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="system energy $E$")
+    (l_m,) = ax1.plot(x_plot, masses, "o-", color="C0", label="System mass $m$")
+    (l_e,) = ax2.plot(x_plot, energies, "s--", color="C3", label="System energy $E$")
 
     if categorical:
         ax1.set_xticks(x_plot)
         ax1.set_xticklabels([str(x) for x in xs], rotation=30, ha="right")
+    elif integer_x:
+        ax1.set_xticks(x_plot)
+        ax1.set_xticklabels([f"{int(round(x))}" for x in x_plot])
 
     ax1.set_xlabel(xlabel)
-    ax1.set_ylabel("system mass $m$ (fleet)  [kg]", color="C0")
-    ax2.set_ylabel("system energy $E$ (fleet)  [Wh]", color="C3")
+    ax1.set_ylabel("System mass $m$ (fleet)  [kg]", color="C0")
+    ax2.set_ylabel("System energy $E$ (fleet)  [Wh]", color="C3")
     ax1.tick_params(axis="y", colors="C0")
     ax2.tick_params(axis="y", colors="C3")
-    ax1.set_title(title)
+    # ax1.set_title(title)
     ax1.grid(True, alpha=0.3)
-    ax1.legend(handles=[l_m, l_e], loc="best")
+    ax1.legend(handles=[l_m, l_e], loc="lower right")
 
     fig.tight_layout()
     if show:

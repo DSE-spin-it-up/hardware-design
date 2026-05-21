@@ -50,26 +50,27 @@ SWEEPS: dict[str, dict] = {
     "n_drones": dict(
         variable="n_drones",
         values=N_DRONES,
-        xlabel="number of drones  [-]",
+        xlabel="Number of drones  [-]",
         title="Sensitivity to number of drones",
+        integer_x=True,
     ),
     "V_cruise": dict(
         variable="V_cruise",
         values=V_CRUISE,
-        xlabel="cruise velocity  [m/s]",
+        xlabel="Cruise velocity  [m/s]",
         title="Sensitivity to cruise velocity",
     ),
     "Range": dict(
         variable="R",
         values=RANGE_M,
-        xlabel="range  [km]",
+        xlabel="Range  [km]",
         title="Sensitivity to range",
         x_transform=lambda xs: np.array(xs) / 1000.0,
     ),
     "props": dict(
         variable="csv_prop",
         values=CSV_PROPS,
-        xlabel="propeller",
+        xlabel="Propeller",
         title="Sensitivity to propeller",
         categorical=True,
         x_transform=lambda xs: [_prop_label(p) for p in xs],
@@ -86,7 +87,8 @@ def run_sweep(name: str, show_plots: bool = True) -> None:
     sensitivity.plot_dual_axis(
         x_plot, m, e,
         xlabel=spec["xlabel"], title=spec["title"],
-        categorical=spec.get("categorical", False), show=show_plots,
+        categorical=spec.get("categorical", False),
+        integer_x=spec.get("integer_x", False), show=show_plots,
     )
 
 
