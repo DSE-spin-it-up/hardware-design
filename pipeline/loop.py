@@ -28,9 +28,11 @@ from pipeline.helpers import (
 )
 from propulsion import sizing as prop_sizing
 from propulsion.sizing import PropulsionResult
-from sizing import aileron, fuselage, wing
+from sizing import aileron, elevator, fuselage, rudder, wing
 from sizing.aileron import AileronResult
+from sizing.elevator import ElevatorResult
 from sizing.fuselage import FuselageResult
+from sizing.rudder import RudderResult
 from sizing.wing import SizingResult
 from structures import rods
 from structures.rods import RodResult
@@ -53,6 +55,8 @@ class PipelineResult:
     drag: DragResult
     struct: RodResult
     control_surface: AileronResult
+    elevator: ElevatorResult
+    rudder: RudderResult
     masses: dict[str, float]
     cg: dict[str, float]
 
@@ -441,7 +445,13 @@ def run_pipeline(config) -> PipelineResult:
         Vh_V=p.struct.inputs.Vh_V,
     )
 
-
+    # ----- Step 9: elevator + rudder control-surface sizing on the final state -----
+    elevator_result = elevator.run(
+        sizing, scissor, llt, tail_loading, p.propulsion, polar, config.ELEVATOR,
+    )
+    rudder_result = rudder.run(
+        sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
+    )
 
     return PipelineResult(
         airfoil=airfoil,
@@ -455,6 +465,8 @@ def run_pipeline(config) -> PipelineResult:
         drag=p.drag,
         struct=p.struct,
         control_surface=p.control_surface,
+        elevator=elevator_result,
+        rudder=rudder_result,
         masses=p.masses,
         cg=p.cg,
         cd0_history=cd0_history,

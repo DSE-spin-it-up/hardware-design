@@ -12,7 +12,9 @@ import yaml
 
 from propulsion.sizing import PropulsionInputs
 from sizing.aileron import AileronInputs
+from sizing.elevator import ElevatorInputs
 from sizing.fuselage import FuselageInputs
+from sizing.rudder import RudderInputs
 from sizing.wing import SizingInputs
 from structures.rods import RodInputs
 from weights.part_materials import PartMaterials
@@ -57,6 +59,8 @@ SIZING = SizingInputs(**_data["sizing"])
 PROPULSION = PropulsionInputs(**_data["propulsion"])
 FUSELAGE = FuselageInputs(**_data["fuselage"])
 CONTROL_SURFACE = AileronInputs(**_data["control_surface"])
+ELEVATOR = ElevatorInputs(**_data.get("elevator", {}))
+RUDDER = RudderInputs(**_data.get("rudder", {}))
 STRUCTURE = RodInputs(**_data["structure"], material=MATERIALS.rod)
 
 AIRFOIL: str | None = _data["airfoil"]
