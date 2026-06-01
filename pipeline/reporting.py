@@ -12,7 +12,7 @@ import numpy as np
 from aerodynamics import drag_buildup
 from pipeline.loop import PipelineResult
 from propulsion import sizing as prop_sizing
-from sizing import aileron, fuselage, wing
+from sizing import aileron, elevator, fuselage, rudder, wing
 from structures import rods
 
 
@@ -29,7 +29,12 @@ def print_main_summary(result: PipelineResult) -> None:
     print("\n========== FUSELAGE ==========")
     fuselage.summary(result.fus)
     print("\n========== CONTROL SURFACES ==========")
+    print("Aileron:")
     aileron.summary(result.control_surface)
+    print("Elevator:")
+    elevator.summary(result.elevator)
+    print("Rudder:")
+    rudder.summary(result.rudder)
     print("\n========== STRUCTURE ==========")
     rods.summary(result.struct)
 
