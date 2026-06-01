@@ -3,24 +3,17 @@
 
 Procedure
 ---------
-1.  Compute tail angle of attack at cruise from downwash and incidence.
-2.  Solve the pitch-moment-disturbance requirement analytically for τ_e
-    (fixing δ_e = δ_up_max): the elevator-induced pitching moment at full
-    up-deflection must counteract the maximum cruise pitch disturbance
-    Cm_dist.  Because the elevator moment is written through the tail volume
-    (ΔCm = -CLαh·τ_e·δ·η_h·Vh), this is independent of bE/bh.  Invert τ_e to
-    get cE/ch.
-3.  Iterate bE/bh from the minimum (0.03) upward in steps of 0.01.
-    For each candidate:
-        a.  Check cE/ch ∈ [0.20, 0.40]  (same for every iteration, but
-            validated here so the loop can raise a clean error if it fails).
-        b.  Compute CM_δe and CL_δe with the candidate bE/bh.
-        c.  Compute the cruise trim deflection δ_e_cruise.
-        d.  Verify  |δ_e_cruise| < δ_up_max  (Eq. 10 of the methodology:
-            cruise deflection must be less than the takeoff up-limit).
-4.  Accept the first bE/bh that satisfies both constraints.
-5.  Derive SE/Sh = (cE/ch) × (bE/bh)  (rectangular-panel assumption).
-6.  Recompute all derivatives with the final geometry and return.
+1.  Solve for the tail incidence angle ih from moment equilibrium about the
+    CG at delta_e = 0.  Moments are contributed by:
+      - Wing-body pitching moment (Cm0, Cmalpha)
+      - Thrust: 2 front propellers at y_motor_front height,
+                1 back propeller  at y_motor_back  height
+      - Tail lift at alpha_h = alpha - epsilon + ih
+2.  Fix cE/ch (designer input), derive tau_e from the empirical polynomial,
+    then solve for bE/bh from the disturbance requirement:
+        bE/bh = Cm_dist / (CLalphah * eta_h * Vh * tau_e * delta_e_max)
+3.  Derive SE/Sh = (cE/ch) * (bE/bh)  (rectangular-panel assumption).
+4.  Compute all control derivatives and return.
 """
 from dataclasses import dataclass
 
@@ -39,36 +32,34 @@ from sizing.wing import SizingResult
 
 @dataclass
 class ElevatorInputs:
-    # User-defined sizing assumptions and limits.
-    ih:    float = 0.0               # horizontal-tail incidence angle [rad]
-    Z_T:   float = 0.0               # thrust-line vertical offset from CG [m]
-    eta_h: float = 0.85          # dynamic-pressure ratio at the tail (Vh/V)²
-
-    Cm_dist: float = 0.10            # max pitch-moment disturbance from cruise the
-                                     # elevator must counteract at δ_up_max [-]
-
+    cE_ch:                   float = 0.30   # elevator chord / tail chord [-] (designer choice)
+    eta_h:                   float = 0.85   # dynamic-pressure ratio at the tail (Vh/V)²
+    Cm_dist:                 float = 0.10   # pitch-moment disturbance the elevator must
+                                            # counteract at delta_e_max [-]
     max_deflection_up_deg:   float = 25.0   # elevator-up   deflection limit [deg]
     max_deflection_down_deg: float = 20.0   # elevator-down deflection limit [deg]
 
+
 @dataclass
 class ElevatorGeometry:
-    """Derived geometry — output of the sizing loop, never a designer input."""
+    """Derived geometry — output of sizing, never a designer input."""
     bE_bh: float   # elevator span  / tail span  [-]
     cE_ch: float   # elevator chord / tail chord [-]
     SE_Sh: float   # elevator area  / tail area  [-]
 
+
 @dataclass
 class ElevatorResult:
-    inputs:   ElevatorInputs
-    geometry: ElevatorGeometry    # ← replaces the three ratio fields
-    Vh:             float
-    alpha_h:        float
-    tau_e:          float
-    CM_deltaE:      float
-    CL_deltaE:      float
-    CLh_deltaE:     float
-    delta_e_cruise: float
-    within_limits:  bool
+    inputs:         ElevatorInputs
+    geometry:       ElevatorGeometry
+    ih:             float           # tail incidence angle from trim [rad]
+    Vh:             float           # tail volume coefficient [-]
+    alpha_h:        float           # tail angle of attack at cruise [rad]
+    tau_e:          float           # elevator effectiveness [-]
+    CM_deltaE:      float           # dCm/d(delta_e) [1/rad]
+    CL_deltaE:      float           # dCL/d(delta_e) [1/rad]
+    CLh_deltaE:     float           # dCLh/d(delta_e) [1/rad]
+
 
 # ---------------------------------------------------------------------------
 # Empirical τ ↔ chord-ratio relationships
@@ -79,37 +70,24 @@ def tau_from_chord_ratio(cf_c: float) -> float:
     return float(np.polyval([-6.624, 12.07, -8.292, 3.295, 0.004942], cf_c))
 
 
-def cE_ch_from_tau(tau_e: float) -> float:
-    """
-    Elevator chord ratio cE/ch from effectiveness τ_e (polynomial inversion).
-    Valid range: cE/ch ∈ [0.20, 0.40].
-    """
-    coeffs = [-6.624, 12.07, -8.292, 3.295, 0.004942 - tau_e]
-    roots  = np.roots(coeffs)
-    roots  = roots[np.isclose(roots.imag, 0)].real
-    valid  = roots[(roots >= 0.20) & (roots <= 0.40)]
-    if len(valid) == 0:
-        raise ValueError(f"No valid elevator chord ratio for tau_e = {tau_e:.4f}")
-    return float(valid[0])
-
-
 # ---------------------------------------------------------------------------
 # Main sizing routine
 # ---------------------------------------------------------------------------
 
 def run(
-    sizing:       SizingResult,
-    scissor:      ScissorData,
-    llt:          LLTResult,
-    propulsion:   PropulsionResult,
-    polar:        AirfoilPolar,
-    inputs:       ElevatorInputs | None = None,
+    sizing:     SizingResult,
+    scissor:    ScissorData,
+    llt:        LLTResult,
+    propulsion: PropulsionResult,
+    polar:      AirfoilPolar,
+    y_cg:       dict[str, float],
+    inputs:     ElevatorInputs | None = None,
 ) -> ElevatorResult:
     """
-    Size the elevator by finding the minimum bE/bh (starting from 0.03) such
-    that:
-      (a) cE/ch ∈ [0.20, 0.40], and
-      (b) the cruise trim deflection δ_e_cruise < δ_up_max  (Eq. 10).
+    Size the elevator by:
+      1. Solving for ih from moment equilibrium at delta_e = 0.
+      2. Fixing cE/ch (from inputs), deriving tau_e, then solving for bE/bh
+         from the disturbance requirement.
 
     Parameters
     ----------
@@ -118,11 +96,13 @@ def run(
     llt         : LLT result carrying the cruise angle of attack
     propulsion  : propulsion result for thrust pitching moment
     polar       : airfoil polar for zero-lift angle
+    y_cg        : vertical CG dict from compute_y_cg (keys: 'overall',
+                  'motors', 'motor_back')
     inputs      : ElevatorInputs overrides; defaults used when None
 
     Returns
     -------
-    ElevatorResult containing the converged elevator geometry and
+    ElevatorResult containing ih, converged elevator geometry, and
     associated control derivatives.
     """
     if inputs is None:
@@ -139,131 +119,101 @@ def run(
     Cm0      = scissor.Cm_ac
     AR       = s.inputs.AR
     alpha    = llt.alpha_root
-    CL0      = -CLalpha * polar.alpha_L0
-    CLcr     = s.CL
 
-    # Tail geometry coefficients
     Vh   = s.Sh * s.lh / (s.Sw * s.c)
     Sh_S = s.Sh / s.Sw
 
     # ------------------------------------------------------------------
-    # Downwash → tail angle of attack at cruise
-    # Both epsilon and ih are used here; alphah is fixed before the loop
-    # since it depends only on wing geometry, not on elevator sizing.
+    # Downwash at cruise
     # ------------------------------------------------------------------
+    CL0      = -CLalpha * polar.alpha_L0
     dedalpha = (2 * CLalpha) / (np.pi * AR)
     epsilon0 = (2 * CL0)    / (np.pi * AR)
     epsilon  = epsilon0 + dedalpha * alpha
-    alphah   = alpha + i.ih - epsilon
 
     # ------------------------------------------------------------------
-    # Thrust pitching moment (geometry-independent)
+    # Thrust pitching moments about CG
+    # 2 front propellers at y_cg["motors"], 1 back at y_cg["motor_back"].
+    # Z_T positive when motor is above CG (nose-up moment for puller config).
     # ------------------------------------------------------------------
-    T         = propulsion.thrust_cruise_per_prop * propulsion.inputs.n_props
-    q         = s.q_cruise
-    Cm_thrust = (T * i.Z_T) / (q * s.Sw * s.c)
+    y_overall = y_cg["overall"]
+    Z_T_front = y_cg["motors"]     - y_overall
+    Z_T_back  = y_cg["motor_back"] - y_overall
 
+    T_per_prop = propulsion.thrust_cruise_per_prop
+    q          = s.q_cruise
+
+    Cm_thrust = (
+        2.0 * T_per_prop * Z_T_front
+        + 1.0 * T_per_prop * Z_T_back
+    ) / (q * s.Sw * s.c)
+
+    # ------------------------------------------------------------------
+    # Solve for ih from moment equilibrium at delta_e = 0
+    #
+    # Cm_total = Cm0 + Cmalpha*(alpha - alpha_L0)          [wing-body]
+    #          + Cm_thrust                                  [propellers]
+    #          + CLalphah * eta_h * Vh                      [tail]
+    #            * (alpha - epsilon + ih - alpha_L0_h)
+    #          = 0
+    #
+    # alpha_L0_h = 0 for a symmetric tail airfoil.
+    # ------------------------------------------------------------------
+    alpha_L0   = polar.alpha_L0
+    alpha_L0_h = 0.0   # symmetric tail airfoil assumption
+
+    Cm_wing_body = Cm0 + Cmalpha * (alpha - alpha_L0)
+    Cm_tail_base = CLalphah * i.eta_h * Vh * (alpha - epsilon - alpha_L0_h)
+
+    ih = -(Cm_wing_body + Cm_thrust + Cm_tail_base) / (CLalphah * i.eta_h * Vh)
+
+    # Tail angle of attack at cruise with solved ih
+    alpha_h = alpha - epsilon + ih - alpha_L0_h
+
+    # ------------------------------------------------------------------
+    # Elevator sizing
+    #
+    # 1. Fix cE/ch (designer input) → tau_e from empirical polynomial.
+    # 2. Solve for bE/bh from disturbance requirement:
+    #      Cm_dist = CLalphah * eta_h * Vh * tau_e * delta_e_max * bE_bh
+    #      → bE_bh = Cm_dist / (CLalphah * eta_h * Vh * tau_e * delta_e_max)
+    # ------------------------------------------------------------------
     delta_e_max = np.radians(i.max_deflection_up_deg)
 
-    # ------------------------------------------------------------------
-    # Step 1 — solve the pitch-moment-disturbance requirement for tau_e
-    # and cE/ch.  This is independent of bE/bh so it is done once before
-    # the loop.
-    #
-    # At δ_e = δ_up_max the elevator-induced pitching moment must counteract
-    # the maximum cruise pitch disturbance Cm_dist.  Written through the tail
-    # volume (so it stays independent of the elevator span ratio):
-    #
-    #   |ΔCm| = CLalphah * tau_e * delta_e_max * eta_h * Vh = Cm_dist
-    #   → tau_e = Cm_dist / (CLalphah * eta_h * Vh * delta_e_max)
-    # ------------------------------------------------------------------
-    tau_e_req = i.Cm_dist / (CLalphah * i.eta_h * Vh * delta_e_max)
+    tau_e = tau_from_chord_ratio(i.cE_ch)
 
-    try:
-        cE_ch_val = cE_ch_from_tau(tau_e_req)
-    except ValueError:
+    bE_bh = i.Cm_dist / (CLalphah * i.eta_h * Vh * tau_e * delta_e_max)
+
+    if bE_bh > 1.0:
         raise ValueError(
-            f"Elevator sizing failed: the required effectiveness "
-            f"tau_e = {tau_e_req:.4f} cannot be achieved within "
-            f"cE/ch ∈ [0.20, 0.40].  Check tail volume, the pitch "
-            f"disturbance Cm_dist, or the deflection limit."
+            f"Elevator sizing failed: required bE/bh = {bE_bh:.3f} > 1.0.\n"
+            "The full tail span is insufficient to counteract Cm_dist.\n"
+            "Consider increasing cE/ch, increasing tail volume, or reducing Cm_dist."
         )
 
     # ------------------------------------------------------------------
-    # Step 2 — iterate bE/bh to satisfy the cruise-deflection check
-    # (Eq. 10: delta_e_cruise < delta_e_max)
-    #
-    # tau_e and cE/ch are the same for every iteration — they are set
-    # by the tail-CL constraint above.  What changes with bE/bh is the
-    # denominator of delta_e_cruise via CM_deltaE and CL_deltaE, so
-    # bE/bh directly controls how much pitch authority the elevator has.
-    # A larger span gives more authority, pulling delta_e_cruise down
-    # until it satisfies Eq. 10.
-    # ------------------------------------------------------------------
-    found        = False
-    chosen_bE_bh = None
-    delta_e_sol  = None
-
-    for bE_bh_val in np.arange(0.03, 0.121, 0.01):
-
-        # Control derivatives at this candidate span ratio (Eq. 11, 12, 13)
-        CM_dE_trial = -CLalphah * i.eta_h * Vh * bE_bh_val * tau_e_req
-        CL_dE_trial =  CLalphah * i.eta_h * Vh * Sh_S * bE_bh_val * tau_e_req
-
-        # Cruise trim deflection
-        delta_e_cruise_trial = (
-            (Cm_thrust + Cm0) * CLalpha
-            + (CLcr - CL0) * Cmalpha
-        ) / (CLalpha * CM_dE_trial - Cmalpha * CL_dE_trial)
-
-        # Eq. 10: cruise deflection must be strictly inside the up-limit
-        if abs(delta_e_cruise_trial) < delta_e_max:
-            found        = True
-            chosen_bE_bh = bE_bh_val
-            delta_e_sol  = delta_e_cruise_trial
-            break
-
-    if not found:
-        raise ValueError(
-            "Elevator sizing failed: no bE/bh ∈ [0.03, 0.12] brings the "
-            "cruise trim deflection below the up-limit of "
-            f"{i.max_deflection_up_deg:.1f}°.\n"
-            "Consider increasing tail volume, adjusting incidence, or "
-            "relaxing the deflection limit."
-        )
-
-    # ------------------------------------------------------------------
-    # Store converged elevator geometry
+    # Final geometry and derivatives
     # ------------------------------------------------------------------
     geometry = ElevatorGeometry(
-        bE_bh = chosen_bE_bh,
-        cE_ch = cE_ch_val,
-        SE_Sh = cE_ch_val * chosen_bE_bh,
+        bE_bh = bE_bh,
+        cE_ch = i.cE_ch,
+        SE_Sh = i.cE_ch * bE_bh,
     )
-    # ------------------------------------------------------------------
-    # Final derivatives with converged geometry (Eq. 11, 12, 13)
-    # ------------------------------------------------------------------
-    CM_deltaE  = -CLalphah * i.eta_h * Vh * chosen_bE_bh * tau_e_req
-    CL_deltaE  =  CLalphah * i.eta_h * Vh * Sh_S * chosen_bE_bh * tau_e_req
-    CLh_deltaE =  CLalphah * tau_e_req
 
-    within_limits = (
-        -np.radians(i.max_deflection_down_deg)
-        <= delta_e_sol
-        <= np.radians(i.max_deflection_up_deg)
-    )
+    CM_deltaE  = -CLalphah * i.eta_h * Vh * bE_bh * tau_e
+    CL_deltaE  =  CLalphah * i.eta_h * Vh * Sh_S * bE_bh * tau_e
+    CLh_deltaE =  CLalphah * tau_e
 
     return ElevatorResult(
-        inputs         = inputs,
-        geometry       = geometry,
-        Vh             = Vh,
-        alpha_h        = alphah,
-        tau_e          = tau_e_req,
-        CM_deltaE      = CM_deltaE,
-        CL_deltaE      = CL_deltaE,
-        CLh_deltaE     = CLh_deltaE,
-        delta_e_cruise = delta_e_sol,
-        within_limits  = within_limits,
+        inputs     = inputs,
+        geometry   = geometry,
+        ih         = ih,
+        Vh         = Vh,
+        alpha_h    = alpha_h,
+        tau_e      = tau_e,
+        CM_deltaE  = CM_deltaE,
+        CL_deltaE  = CL_deltaE,
+        CLh_deltaE = CLh_deltaE,
     )
 
 
@@ -273,21 +223,15 @@ def run(
 
 def summary(r: ElevatorResult) -> None:
     i = r.inputs
-    print(f"  Converged elevator geometry")
     g = r.geometry
-    print(f"    bE/bh : {g.bE_bh:.2f}")
-    print(f"    cE/ch : {g.cE_ch:.4f}")
-    print(f"    SE/Sh : {g.SE_Sh:.4f}")
-    print(f"  Effectiveness τ_e           : {r.tau_e:.3f}")
+    print(f"  Tail incidence angle ih     : {np.degrees(r.ih):+.3f}  °")
+    print(f"  Tail volume coefficient Vh  : {r.Vh:.4f}")
     print(f"  Tail AoA at cruise          : {np.degrees(r.alpha_h):.2f}  °")
+    print(f"  Elevator geometry")
+    print(f"    cE/ch : {g.cE_ch:.4f}  (designer input)")
+    print(f"    tau_e : {r.tau_e:.4f}")
+    print(f"    bE/bh : {g.bE_bh:.4f}  (from disturbance sizing)")
+    print(f"    SE/Sh : {g.SE_Sh:.4f}")
     print(f"  CM_δe                       : {r.CM_deltaE:.4f}  1/rad")
     print(f"  CL_δe                       : {r.CL_deltaE:.4f}  1/rad")
     print(f"  CLh_δe                      : {r.CLh_deltaE:.4f}  1/rad")
-    print(f"  Cruise trim deflection      : {np.degrees(r.delta_e_cruise):+.2f}  °")
-    if r.within_limits:
-        print(f"  ✓ Within [-{i.max_deflection_down_deg:.0f}°, "
-              f"+{i.max_deflection_up_deg:.0f}°] deflection limits")
-    else:
-        print(f"  ✗ Cruise deflection EXCEEDS the "
-              f"[-{i.max_deflection_down_deg:.0f}°, "
-              f"+{i.max_deflection_up_deg:.0f}°] limits")

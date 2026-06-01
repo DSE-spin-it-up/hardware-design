@@ -1,3 +1,4 @@
 # (SC) refers to the reference control surface planform area to evaluate, and (CCont) is the chord of the control surface to evaluate. From Equation 38, (Chi) is the coefficient of the hinge moment, (α) is the maximum angle of attack of the aircraft in its flight envelope, (CNo ) is the coefficient of the hinge moment when the AOA = 0°, (Chα α) is the slope of the curve of the coefficient of the hinge moment about the AOA and (ChδC δCont) represents the change in the hinge moment with respect to the control surface deflection.
 Chi = Ch0 + Chalpha*alpha + Chdeltac*deltac 
 H = 1/2*rho*V*Sc*C*Ccont*Chi 
+print(H)

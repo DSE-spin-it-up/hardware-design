@@ -191,13 +191,15 @@ def plot_cg_side_view(
 
     y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     motor_y = y_cg["motors"]
+    motor_back_y = y_cg["motor_back"]
     tail_y = y_cg["ver_tail"]
     overall_y = y_cg["overall"]
-    plot_height = max(plot_height, tail_y + 0.05)
-
-    ax.scatter([x_motor, x_tail, x_overall], [motor_y, tail_y, overall_y],
-               color=["red", "purple", "black"], zorder=5)
-    ax.text(x_motor, motor_y + 0.03, "Motors", color="red", ha="center")
+    plot_height = max(plot_height, tail_y + 0.05, motor_back_y + 0.05)
+    ax.scatter([x_motor, x_tail, x_tail, x_overall],
+            [motor_y, motor_back_y, tail_y, overall_y],
+            color=["red", "darkred", "purple", "black"], zorder=5)
+    ax.text(x_motor, motor_y + 0.03, "Motor (front)", color="red", ha="center")
+    ax.text(x_tail, motor_back_y + 0.02, "Motor (back)", color="darkred", ha="center")
     ax.text(x_tail, tail_y + 0.02, "Tail", color="purple", ha="center")
     ax.text(x_overall, overall_y + 0.02, "Overall CG", color="black", ha="center")
 

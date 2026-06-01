@@ -229,7 +229,7 @@ def compute_y_cg(
     y_tail_v = y_rod_aileron + 0.5 * sizing.bv
     y_vt_spar = y_rod_aileron + 0.5 * sizing.bv
     y_vt_rud  = y_rod_aileron + 0.5 * sizing.bv
-    y_motor_back=sizing.bv
+    y_motor_back = y_rod_aileron + sizing.bv
     m_ht_spar = masses.get("ht_spar", 0.0)
     m_ht_rud= masses.get("ht_rud", 0.0)
     m_vt_spar = masses.get("vt_spar", 0.0)
@@ -270,6 +270,7 @@ def compute_y_cg(
         'fuselage':    y_fus,
         'battery':     y_batt,
         'motors':      y_motor,
+        'motor_back':  y_motor_back,
         'wing':        y_wing,
         'rod_spar':    y_rod_spar,
         'rod_aileron': y_rod_aileron,
