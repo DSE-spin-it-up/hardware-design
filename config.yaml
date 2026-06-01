@@ -123,31 +123,37 @@ fuselage:
   casing_factor: 1.1
 
 # ----- Aileron / control surface -----
+# roll_moment_dist is the max roll-moment disturbance the ailerons must
+# counteract at max_da_deg; the inboard span grows until |Cl_δa·δ_a_max| ≥ it.
 control_surface:
   cl_alpha: 6.283185307179586   # = 2 * pi [1/rad]
   cd0_section: 0.04
-  roll_req_deg: 60.0
+  roll_moment_dist: 0.05
   max_da_deg: 10.0
   max_y_frac: 0.8
   c_aileron_to_c_wing: 0.3
 
 # ----- Elevator -----
-# Required cruise-trim deflection check. eta_h is the tail dynamic-pressure
-# ratio (V_h/V)²; Z_T is the thrust-line vertical offset from the CG
+# Pitch-moment-disturbance check: at δ_up_max the elevator moment must
+# counteract Cm_dist. eta_h is the tail dynamic-pressure ratio (V_h/V)²;
+# Z_T is the thrust-line vertical offset from the CG
 # (= (2·h_wing_prop + h_tail_prop)/3). Limits are the mechanical deflection caps.
 elevator:
   ih: 0.0
   Z_T: 0.0
   eta_h: 0.7225            # = 0.85²
+  Cm_dist: 0.35
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 20.0
 
 # ----- Rudder -----
 # Crosswind-gust deflection check. SR_SV/cR_CV/bR_bV are the rudder/vertical-tail
 # area, chord, and span ratios. Ss (body side area) is derived from the fuselage
-# when null. dc is the gust-force line angle in the yaw balance.
+# when null. dc is the gust-force line angle in the yaw balance. Cn_dist is the
+# max yaw-moment disturbance the rudder must counteract at δ_R_max (0 → non-binding).
 rudder:
   max_deflection_deg: 30.0
+  Cn_dist: 0.0
   Vgust: 5.0
   CDY: 0.8
   Kf1: 0.85
