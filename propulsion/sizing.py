@@ -75,6 +75,7 @@ class PropulsionInputs:
     n_cells: int = 6
     voltage_cell: float = 3.7    # [V]
     battery_density: float = 250 # [Wh/L]
+    DoD: float = 0.8
     # Propeller solver tuning (shared between cruise & climb)
     cruise_rpm_init: float = 6000
     climb_rpm_init: float = 9000
@@ -258,7 +259,7 @@ def run(
     # ----- Energy & Battery -----
     E_cruise = P_elec_cruise * s.t_cruise
     E_climb = P_elec_climb * i.t_climb
-    E_total = E_cruise + E_climb
+    E_total = (E_cruise + E_climb) / i.DoD
     battery_mass = battery_mass_from_energy(E_total, i.n_cells, i.voltage_cell)
     battery_volume = battery_volume_from_energy(E_total, i.battery_density)
 

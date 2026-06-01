@@ -78,7 +78,7 @@ sizing:
 # ----- Propulsion -----
 propulsion:
   # Propeller
-  csv_prop: data/12x8E_performance.csv
+  csv_prop: data\12x8E_performance.csv
   n_props: 3
   prop_mass: 0.1         # [kg] mass per propeller
   # Motor / drivetrain
@@ -92,6 +92,7 @@ propulsion:
   n_cells: 6
   voltage_cell: 3.7      # [V]
   battery_density: 250   # [Wh/L]
+  DoD: 0.8
   # Propeller solver tuning (shared between cruise & climb)
   cruise_rpm_init: 7000
   climb_rpm_init: 12000

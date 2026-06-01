@@ -97,6 +97,7 @@ class RodResult:
     mass_control_vt: float
     defl_control_vt: float
     fail_mode_control_vt: str
+    f_n_wing: float = 0.0
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -166,6 +167,18 @@ def _defl_cantilever_point(F: float, L: float, E: float, I: float) -> float:
     return F * L ** 3 / (3 * E * I)
 
 
+def _wing_natural_frequency(E: float, I: float, L: float, mass: float) -> float:
+    """First bending mode natural frequency for a cantilever beam.
+
+    f1 = beta1^2 / (2π) · sqrt(EI / (m'L^4)), where m' is mass per length.
+    """
+    if L <= 0 or mass <= 0:
+        return 0.0
+    beta1 = 1.875104068711961
+    m_per_length = mass / L
+    return beta1 ** 2 / (2 * np.pi) * np.sqrt(E * I / (m_per_length * L ** 4))
+
+
 def _tube_mass(length: float, d: float, t: float, rho: float) -> float:
     return ((d / 2) ** 2 - (d / 2 - t) ** 2) * np.pi * length * rho
 
@@ -207,7 +220,7 @@ def run(
     tail_airfoil = AirfoilGeometry(tail_airfoil_path)
 
     # Total wing lift and span (shared by both wing rods).
-    L_lift = s.CL * s.q_cruise * s.Sw / 2 * i.safety_factor  # [N]
+    L_lift = ((si.m_drone_empty + si.m_payload) / (si.n_drones-1)+si.m_drone_empty) * 9.81  # [N]
     b_w = si.b
 
     # ------------------------------------------------------------------ #
@@ -229,6 +242,7 @@ def run(
     d_spar = _check_wall(t_spar, d_spar, "Spar rod")
     defl_spar = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_spar, d_spar))
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
+    f_n_wing = _wing_natural_frequency(E, _I_tube(t_spar, d_spar), b_w / 2, mass_spar)
 
     # ------------------------------------------------------------------ #
     # Aileron rod — at hinge x/c = 1 - c_aileron/c_wing                  #
@@ -342,6 +356,7 @@ def run(
         d_aileron=d_aileron, t_control=t_control, mass_aileron=mass_aileron,
         defl_aileron=defl_aileron, fail_mode_aileron=fail_aileron,
         d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
+        f_n_wing=f_n_wing,
         Vh_V=i.Vh_V,
         d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
         defl_spar_ht=defl_spar_ht, fail_mode_spar_ht=fail_spar_ht,
@@ -361,6 +376,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection       : {r.defl_spar * 1000:.2f}  mm")
     print(f"  Sizing criterion     : {r.fail_mode_spar}")
     print(f"  Mass (each)          : {r.mass_spar:.3f}  kg")
+    print(f"  First bending frequency: {r.f_n_wing:.2f}  Hz")
 
     print("\n--- Aileron rod (two of two) ---")
     print(f"  Outer diameter       : {r.d_aileron * 1000:.2f}  mm")

@@ -64,7 +64,7 @@ class Glass_Fiber(Material):  # https://www.matweb.com/search/datasheet.aspx?Mat
     def __init__(self):
         super().__init__(
             E=68.9e9,
-            rho=80/1000,
+            rho=200/1000,
             Y=3310e6,
             s_t=3310e6
         )
