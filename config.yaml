@@ -136,8 +136,6 @@ control_surface:
 # ratio (V_h/V)²; Z_T is the thrust-line vertical offset from the CG
 # (= (2·h_wing_prop + h_tail_prop)/3). Limits are the mechanical deflection caps.
 elevator:
-  SE_Sh: 0.25
-  bE_bh: 0.08
   ih: 0.0
   Z_T: 0.0
   eta_h: 0.7225            # = 0.85²
@@ -149,16 +147,12 @@ elevator:
 # area, chord, and span ratios. Ss (body side area) is derived from the fuselage
 # when null. dc is the gust-force line angle in the yaw balance.
 rudder:
-  SR_SV: 0.25
-  cR_CV: 0.28
-  bR_bV: 0.85
   max_deflection_deg: 30.0
   Vgust: 5.0
   CDY: 0.8
   Kf1: 0.85
   Kf2: 1.0
-  eta_v: 0.7225           # = 0.85²
-  dc: 0.0
+  eta_v: 0.85          # = 0.85²
   Ss: null
 
 # ----- CFRP rod sizing -----
