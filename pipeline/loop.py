@@ -447,7 +447,7 @@ def run_pipeline(config) -> PipelineResult:
 
     # ----- Step 9: elevator + rudder control-surface sizing on the final state -----
     elevator_result = elevator.run(
-        sizing, scissor, llt, tail_loading, p.propulsion, polar, config.ELEVATOR,
+        sizing, scissor, llt, p.propulsion, polar, config.ELEVATOR,
     )
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,

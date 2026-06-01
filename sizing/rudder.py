@@ -12,7 +12,9 @@ Procedure
     cR/cV is a direct solver unknown; τ_r is computed forward from it
     inside the residual via the empirical polynomial — no inversion needed
     and Cy_δr is always exact.
-4.  Accept the first bR/bV for which cR/cV ∈ [0.15, 0.40].
+4.  Accept the first bR/bV for which cR/cV ∈ [0.15, 0.40] AND the rudder has
+    enough yaw authority at δ_R_max to counteract the maximum yaw-moment
+    disturbance Cn_dist  (|Cn_δr · δ_R_max| ≥ Cn_dist).
 5.  Derive SR/SV = (cR/cV) × (bR/bV)  (rectangular-panel assumption).
 6.  Recompute all derivatives with the final geometry and return.
 """
@@ -34,6 +36,8 @@ from sizing.wing import SizingResult
 class RudderInputs:
     """Fixed design parameters — set by the designer, never overwritten."""
     max_deflection_deg: float = 30.0  # hard deflection limit [deg]
+    Cn_dist: float = 0.0              # max yaw-moment disturbance the rudder must
+                                      # counteract at δ_R_max [-]  (0 → non-binding)
     Vgust: float = 5.0                # lateral gust velocity [m/s]
     CDY:   float = 0.8                # fuselage side-drag coefficient [-]
     Kf1:   float = 0.85               # fuselage correction on Cn_β [-]

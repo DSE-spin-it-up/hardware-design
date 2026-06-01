@@ -4,8 +4,12 @@
 Procedure
 ---------
 1.  Compute tail angle of attack at cruise from downwash and incidence.
-2.  Solve the tail-CL requirement analytically for τ_e (fixing δ_e = δ_up_max),
-    then invert to get cE/ch.  This is independent of bE/bh.
+2.  Solve the pitch-moment-disturbance requirement analytically for τ_e
+    (fixing δ_e = δ_up_max): the elevator-induced pitching moment at full
+    up-deflection must counteract the maximum cruise pitch disturbance
+    Cm_dist.  Because the elevator moment is written through the tail volume
+    (ΔCm = -CLαh·τ_e·δ·η_h·Vh), this is independent of bE/bh.  Invert τ_e to
+    get cE/ch.
 3.  Iterate bE/bh from the minimum (0.03) upward in steps of 0.01.
     For each candidate:
         a.  Check cE/ch ∈ [0.20, 0.40]  (same for every iteration, but
@@ -39,6 +43,9 @@ class ElevatorInputs:
     ih:    float = 0.0               # horizontal-tail incidence angle [rad]
     Z_T:   float = 0.0               # thrust-line vertical offset from CG [m]
     eta_h: float = 0.85          # dynamic-pressure ratio at the tail (Vh/V)²
+
+    Cm_dist: float = 0.10            # max pitch-moment disturbance from cruise the
+                                     # elevator must counteract at δ_up_max [-]
 
     max_deflection_up_deg:   float = 25.0   # elevator-up   deflection limit [deg]
     max_deflection_down_deg: float = 20.0   # elevator-down deflection limit [deg]
@@ -94,7 +101,6 @@ def run(
     sizing:       SizingResult,
     scissor:      ScissorData,
     llt:          LLTResult,
-    tail_loading: dict,
     propulsion:   PropulsionResult,
     polar:        AirfoilPolar,
     inputs:       ElevatorInputs | None = None,
@@ -110,7 +116,6 @@ def run(
     sizing      : converged wing/tail sizing result
     scissor     : scissor-plot stability data
     llt         : LLT result carrying the cruise angle of attack
-    tail_loading: dict with key 'CL_tail' — trim tail CL at cruise
     propulsion  : propulsion result for thrust pitching moment
     polar       : airfoil polar for zero-lift angle
     inputs      : ElevatorInputs overrides; defaults used when None
@@ -136,7 +141,6 @@ def run(
     alpha    = llt.alpha_root
     CL0      = -CLalpha * polar.alpha_L0
     CLcr     = s.CL
-    CLh      = tail_loading["CL_tail"]
 
     # Tail geometry coefficients
     Vh   = s.Sh * s.lh / (s.Sw * s.c)
@@ -162,13 +166,18 @@ def run(
     delta_e_max = np.radians(i.max_deflection_up_deg)
 
     # ------------------------------------------------------------------
-    # Step 1 — solve tail-CL requirement for tau_e and cE/ch
-    # This is independent of bE/bh so it is done once before the loop.
+    # Step 1 — solve the pitch-moment-disturbance requirement for tau_e
+    # and cE/ch.  This is independent of bE/bh so it is done once before
+    # the loop.
     #
-    #   CLh = CLalphah * (alphah + tau_e * delta_e_max)
-    #   → tau_e = (CLh - CLalphah * alphah) / (CLalphah * delta_e_max)
+    # At δ_e = δ_up_max the elevator-induced pitching moment must counteract
+    # the maximum cruise pitch disturbance Cm_dist.  Written through the tail
+    # volume (so it stays independent of the elevator span ratio):
+    #
+    #   |ΔCm| = CLalphah * tau_e * delta_e_max * eta_h * Vh = Cm_dist
+    #   → tau_e = Cm_dist / (CLalphah * eta_h * Vh * delta_e_max)
     # ------------------------------------------------------------------
-    tau_e_req = (CLh - CLalphah * alphah) / (CLalphah * delta_e_max)
+    tau_e_req = i.Cm_dist / (CLalphah * i.eta_h * Vh * delta_e_max)
 
     try:
         cE_ch_val = cE_ch_from_tau(tau_e_req)
@@ -176,8 +185,8 @@ def run(
         raise ValueError(
             f"Elevator sizing failed: the required effectiveness "
             f"tau_e = {tau_e_req:.4f} cannot be achieved within "
-            f"cE/ch ∈ [0.20, 0.40].  Check tail volume, incidence, "
-            f"or deflection limits."
+            f"cE/ch ∈ [0.20, 0.40].  Check tail volume, the pitch "
+            f"disturbance Cm_dist, or the deflection limit."
         )
 
     # ------------------------------------------------------------------
