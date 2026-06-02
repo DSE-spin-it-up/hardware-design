@@ -63,7 +63,12 @@ class ElevatorResult:
     CLh_at_max_up:  float           # tail section CL at maximum elevator-up deflection [–]
     CLh_at_max_down: float           # tail section CL at maximum elevator-down deflection [–]
     Cl_max:         float           # tail airfoil maximum section Cl [–]
-
+    Cm_wing_body: float
+    Cm_tail_base: float
+    Cm_thrust_front: float
+    Cm_thrust_back: float
+    Cm_thrust_total: float
+    y_cg: dict[str, float]
 
 # ---------------------------------------------------------------------------
 # Empirical τ ↔ chord-ratio relationships
@@ -149,11 +154,16 @@ def run(
     T_per_prop = propulsion.thrust_cruise_per_prop
     q          = s.q_cruise
 
-    Cm_thrust = (
+    Cm_thrust_front = -(
         2.0 * T_per_prop * Z_T_front
-        + 1.0 * T_per_prop * Z_T_back
     ) / (q * s.Sw * s.c)
 
+    Cm_thrust_back = -(
+        1.0 * T_per_prop * Z_T_back
+    ) / (q * s.Sw * s.c)
+
+    Cm_thrust = Cm_thrust_front + Cm_thrust_back
+    
     # ------------------------------------------------------------------
     # Solve for ih from moment equilibrium at delta_e = 0
     #
@@ -249,6 +259,12 @@ def run(
         CLh_at_max_up   = CLh_at_max_up,
         CLh_at_max_down = CLh_at_max_down,
         Cl_max          = Cl_max,
+        Cm_wing_body    = Cm_wing_body,
+        Cm_tail_base    = Cm_tail_base,   
+        Cm_thrust_front = Cm_thrust_front,
+        Cm_thrust_back  = Cm_thrust_back,
+        Cm_thrust_total = Cm_thrust,
+        y_cg = y_cg,
     )
 
 
@@ -259,19 +275,47 @@ def run(
 def summary(r: ElevatorResult) -> None:
     i = r.inputs
     g = r.geometry
-    print(f"  Tail incidence angle ih     : {np.degrees(r.ih):+.3f}  °")
-    print(f"  Tail volume coefficient Vh  : {r.Vh:.4f}")
-    print(f"  Tail AoA at cruise          : {np.degrees(r.alpha_h):.2f}  °")
-    print(f"  Tail CL at cruise           : {r.CLh_cruise:.4f}")
-    print(f"  Tail CL at max elevator up  : {r.CLh_at_max_up:.4f}")
-    print(f"  Tail CL at max elevator down: {r.CLh_at_max_down:.4f} "
-          f"(airfoil Cl_max = {r.Cl_max:.4f})")
-    print(f"  Tail stall status           : OK")
-    print(f"  Elevator geometry")
-    print(f"    cE/ch : {g.cE_ch:.4f}  (designer input)")
-    print(f"    tau_e : {r.tau_e:.4f}")
-    print(f"    bE/bh : {g.bE_bh:.4f}  (from disturbance sizing)")
-    print(f"    SE/Sh : {g.SE_Sh:.4f}")
-    print(f"  CM_δe                       : {r.CM_deltaE:.4f}  1/rad")
-    print(f"  CL_δe                       : {r.CL_deltaE:.4f}  1/rad")
-    print(f"  CLh_δe                      : {r.CLh_deltaE:.4f}  1/rad")
+    print("\n================ CG (vertical axis) =================")
+    print("Sign convention: +y upward")
+    print("====================================================")
+
+    print(f"  Front motors y-position : {r.y_cg['motors']:.4f}")
+    print(f"  Back motor y-position   : {r.y_cg['motor_back']:.4f}")
+    print(f"  Aircraft CG (overall)    : {r.y_cg['overall']:.4f}")
+    print("====================================================\n")
+
+    print("\n================ Pitch Moment Sign Convention ================")
+    print("  Cm > 0 : nose-up pitch")
+    print("  Cm < 0 : nose-down pitch")
+    print("  Elevator TE-down (positive deflection) → nose-up moment")
+    print("==============================================================\n")
+
+    print("----- Pitching Moment Breakdown (about CG) -----")
+    print(f"  Wing-body moment (Cm0 + α term) : {r.Cm_wing_body:+.5f}")
+    print(f"  Tail base moment (incidence)    : {r.Cm_tail_base:+.5f}")
+    print(f"  Thrust (front 2 props)          : {r.Cm_thrust_front:+.5f}")
+    print(f"  Thrust (rear prop)              : {r.Cm_thrust_back:+.5f}")
+    print(f"  ----------------------------------------------")
+    print(f"  Total moment (trim condition)   : "
+        f"{(r.Cm_wing_body + r.Cm_tail_base + r.Cm_thrust_total):+.5f}")
+
+    print("\n----- Tail Contribution at cruise (trim) -----")
+    print(f"  Tail AoA α_h             : {np.degrees(r.alpha_h):+.3f} deg")
+    print(f"  Tail CL contribution     : {r.CLh_cruise:+.5f}")
+    print(f"  (implicit Cm from tail balances trim condition)\n")
+
+    print("----- Elevator Sensitivity -----")
+    print(f"  CM_δe                    : {r.CM_deltaE:+.5f}  1/rad")
+    print(f"  CL_δe                    : {r.CL_deltaE:+.5f}  1/rad")
+    print(f"  CLh_δe                   : {r.CLh_deltaE:+.5f}  1/rad")
+
+    print("\n----- Tail Extremes Check -----")
+    print(f"  CLh (elevator up max)    : {r.CLh_at_max_up:+.5f}")
+    print(f"  CLh (elevator down max)  : {r.CLh_at_max_down:+.5f}")
+    print(f"  Airfoil Cl_max           : {r.Cl_max:+.5f}")
+
+    print("\n----- Elevator Geometry -----")
+    print(f"  cE/ch                    : {g.cE_ch:.4f}")
+    print(f"  bE/bh                    : {g.bE_bh:.4f}")
+    print(f"  SE/Sh                    : {g.SE_Sh:.4f}")
+    print(f"  tau_e                    : {r.tau_e:.4f}")

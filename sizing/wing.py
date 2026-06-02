@@ -175,15 +175,10 @@ def run(
     m_tail_h = i.foam_density * Sh * tt_h
     m_tail_v = i.foam_density * Sv * tt_v
 
-    # Physical tail boom length, datum at LEMAC:
-    #   L_boom = lh − (x_aileron_hinge − x_ac_wing) + 0.75·ct
-    # i.e. boom spans from the aileron hinge (its inboard structural anchor)
-    # to the tail TE (its outboard end). lh is wing AC → tail AC, so the
-    # correction subtracts the wing AC → aileron-hinge offset and adds the
-    # tail AC → tail TE offset (0.75·ct, AC at quarter chord).
-    x_ac_wing = 0.25 * c
-    x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
-    L_boom = lh - (x_aileron_hinge - x_ac_wing) + 0.75 * max(ch, cv)
+    # Physical tail boom length: fixed at 1.50 m.
+    # Boom spans from aileron hinge to VT trailing edge.
+    # Positions are derived from boom endpoint and HT/VT spacing constraints.
+    L_boom = 1.50
 
     return SizingResult(
         inputs=inputs,
