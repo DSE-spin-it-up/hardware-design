@@ -71,7 +71,7 @@ sizing:
   # Tail
   Vv: 0.04
   Vh: 0.50                 # used only for the initial Sh estimate; scissor takes over after iteration 0
-  lh: 1.55                 # tail moment arm [m] (wing AC → tail AC); boom length L_boom is derived
+  L_boom: 1.50             # physical boom length [m] (aileron hinge → tail TE); lh is derived
   ARt: 4.5
   lam_t: 1.0
 

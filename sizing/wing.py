@@ -36,15 +36,11 @@ class SizingInputs:
     # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
     Vv: float = 0.04
     Vh: float = 0.50
-    # Tail moment arm lh, wing AC → tail AC (the quantity that goes into the
-    # tail-volume coefficients Vh = Sh·lh/(Sw·c) and Vv = Sv·lh/(Sw·b), and into
-    # the stability/controllability scissor). The physical boom length L_boom
-    # is derived from lh and the wing/aileron/tail geometry; it is strictly
-    # longer than lh because the actual tail extends past its AC to its TE.
-    # When None, run() falls back to deriving lh from the Vh tail-volume estimate.
-    lh: float | None = None
+    # Physical tail-boom length from aileron hinge to vertical-tail trailing edge.
+    # run() derives lh (wing AC -> tail AC) from this and the tail geometry.
+    L_boom: float = 1.50
     # Optional override for the horizontal tail area. When None, run() derives
-    # it from the tail volume coefficient (or bh²/ARt if lh is also None).
+    # it from the tail volume coefficient using the boom-derived lh.
     # The pipeline loop overwrites this with the scissor-plot result each pass.
     Sh: float | None = None
     # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
@@ -159,14 +155,21 @@ def run(
 
     # Tail geometry
     bh = np.sqrt(i.Sh * i.ARt) if i.Sh is not None else (i.b * 0.365445026178)  # [m] Desmos
+    ch = bh / i.ARt
+    L_boom = i.L_boom
+    x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
+    x_wing_ac = 0.25 * c
+    x_tail_ac_from_boom_end = 0.75 * ch
+    lh = L_boom + x_aileron_hinge - x_wing_ac - x_tail_ac_from_boom_end
+    if lh <= 0.0:
+        raise ValueError(
+            f"Tail geometry failed: derived lh = {lh:.3f} m from "
+            f"L_boom = {L_boom:.3f} m. Increase L_boom or reduce tail chord."
+        )
     if i.Sh is not None:
         Sh = i.Sh
-    elif i.lh is None:
-        Sh = bh ** 2 / i.ARt
     else:
-        Sh = i.Vh * Sw * c / i.lh
-    lh = i.lh if i.lh is not None else (i.Vh * Sw * c / Sh)
-    ch = bh / i.ARt
+        Sh = i.Vh * Sw * c / lh
     Sv = i.Vv * Sw * i.b / lh
     bv = np.sqrt(2 * i.ARt * Sv) / 2
     cv = 2 * bv / i.ARt
@@ -174,11 +177,6 @@ def run(
     tt_v = cv * t_over_c_root
     m_tail_h = i.foam_density * Sh * tt_h
     m_tail_v = i.foam_density * Sv * tt_v
-
-    # Physical tail boom length: fixed at 1.50 m.
-    # Boom spans from aileron hinge to VT trailing edge.
-    # Positions are derived from boom endpoint and HT/VT spacing constraints.
-    L_boom = 1.50
 
     return SizingResult(
         inputs=inputs,

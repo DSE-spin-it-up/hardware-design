@@ -252,9 +252,9 @@ def run_pipeline(config) -> PipelineResult:
     sizing_inputs = config.SIZING
 
     # ----- Step 1: initial sizing with guessed Cd0 -----
-    # lh (tail moment arm, wing AC → tail AC) is taken straight from config;
-    # the physical boom length L_boom is derived from lh, c_aileron_to_c_wing,
-    # and the tail chord. Sh is the closure variable, seeded from the Vh
+    # L_boom is taken from config; lh (tail moment arm, wing AC → tail AC) is
+    # derived from the boom length, c_aileron_to_c_wing, and tail chord.
+    # Sh is the closure variable, seeded from the Vh
     # tail-volume estimate on this first pass and overwritten by the scissor
     # result on each subsequent loop iteration.
     sizing = wing.run(
@@ -368,7 +368,7 @@ def run_pipeline(config) -> PipelineResult:
             AR_new = sizing_inputs.AR
 
         # --- Feed CD0, b, Sh, (m_drone) back into sizing inputs and re-run wing sizing ---
-        # L_tail stays at its config value; Sh is driven by the scissor.
+        # L_boom stays at its config value; Sh is driven by the scissor.
         replace_kwargs: dict = {"Cd0": p.drag.CD0, "AR": AR_new, "Sh": Sh_new}
 
         if config.MASS_CLOSURE:

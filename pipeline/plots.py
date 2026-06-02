@@ -147,7 +147,7 @@ def plot_cg_side_view(
     prop_radius = propulsion.D_prop / 2.0 if propulsion is not None else 0.0
     c_v = sizing.cv
     ch = sizing.ch
-    L_boom = 1.50
+    L_boom = sizing.L_boom
     # Boom: aileron hinge to VT trailing edge
     x_vt_te = x_rod_aileron + L_boom
     x_vt_le = x_vt_te - c_v

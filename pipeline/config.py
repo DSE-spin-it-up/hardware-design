@@ -49,6 +49,11 @@ def _resolve_repo_path(value):
 
 _data = _load()
 
+if "sizing" in _data:
+    for _boom_alias in ("lboom", "l_boom"):
+        if _boom_alias in _data["sizing"]:
+            _data["sizing"]["L_boom"] = _data["sizing"].pop(_boom_alias)
+
 _data["airfoil"] = _resolve_repo_path(_data.get("airfoil"))
 _data["tail_airfoil"] = _resolve_repo_path(_data.get("tail_airfoil"))
 _data["propulsion"]["csv_prop"] = _resolve_repo_path(_data["propulsion"]["csv_prop"])

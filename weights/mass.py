@@ -83,23 +83,21 @@ def compute_cg(
     x_mid_rods = 0.5 * (x_rod_spar + x_rod_aileron)
     x_batt = x_mid_rods if battery_x is None else battery_x
     # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
-    # Tail boom: L_boom = 1.50 m, runs from aileron hinge to VT trailing edge.
-    # Boom centroid sits at x_rod_aileron + 0.75.
+    # Tail boom runs from aileron hinge to VT trailing edge.
     x_tail = 0.25 * sizing.c + sizing.lh
     x_pvc = x_mid_rods
-    L_boom_fixed = 1.50
 
     # Tail positions: boom endpoint at aileron hinge + L_boom.
     # VT TE at boom endpoint; VT LE is sizing.cv back from TE.
     # HT TE is prop_radius in front of VT front spar (at 25% VT chord).
     # HT LE is sizing.ch back from HT TE.
     prop_radius = propulsion.D_prop / 2.0
-    x_vt_te = x_rod_aileron + L_boom_fixed
+    x_vt_te = x_rod_aileron + sizing.L_boom
     x_vt_le = x_vt_te - sizing.cv
     x_vt_fs = x_vt_le + 0.25 * sizing.cv
     x_ht_te = x_vt_fs - prop_radius
     x_ht_le = x_ht_te - sizing.ch
-    x_tail_rod = x_rod_aileron + 0.75  # boom centroid
+    x_tail_rod = x_rod_aileron + 0.5 * sizing.L_boom  # boom centroid
     x_spar_ht = x_ht_le + _max_tc_x(tail_airfoil_path) * sizing.ch
     x_control_ht = x_ht_le + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.ch
     x_spar_vt = x_vt_le + _max_tc_x(tail_airfoil_path) * sizing.cv
