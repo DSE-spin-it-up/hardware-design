@@ -73,6 +73,7 @@ class RodInputs:
     Vh_V: float = 0.85                # V_tail/V_cruise — used for tail download
     t_spar: float = 0.00079375        # [m] minimum wall thickness of the spar rod
     t_control: float = 0.0016256      # [m] minimum wall thickness of the aileron rod
+    t_control_ht: float = 0.0014  # [m] same as t_spar, thinner than t_control
     t_t: float = 0.00079375           # [m] minimum wall thickness of the tail rod
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
@@ -451,7 +452,7 @@ def run(
     mass_spar_ht = _tube_mass(L_ht, d_spar_ht, t_spar_ht, rho_mat)
 
     # --- horizontal tail elevator rod sizing
-    t_control_ht = i.t_control
+    t_control_ht = i.t_control_ht  # instead of i.t_control
 
     M_control_ht = F_ht_rod * L_ht / 16
 
