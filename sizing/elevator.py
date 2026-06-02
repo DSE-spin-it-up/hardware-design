@@ -65,6 +65,8 @@ class ElevatorResult:
     Cl_max:         float           # tail airfoil maximum section Cl [–]
     Cm_wing_body: float
     Cm_tail_base: float
+    Cm_tail_incidence: float
+    Cm_tail_total: float
     Cm_thrust_front: float
     Cm_thrust_back: float
     Cm_thrust_total: float
@@ -169,9 +171,12 @@ def run(
     #
     # Cm_total = Cm0 + Cmalpha*(alpha - alpha_L0)          [wing-body]
     #          + Cm_thrust                                  [propellers]
-    #          + CLalphah * eta_h * Vh                      [tail]
+    #          - CLalphah * eta_h * Vh                      [aft tail]
     #            * (alpha - epsilon + ih - alpha_L0_h)
     #          = 0
+    #
+    # Positive tail lift acts aft of the CG and therefore creates a
+    # nose-down pitching moment.
     #
     # alpha_L0_h = 0 for a symmetric tail airfoil.
     # ------------------------------------------------------------------
@@ -179,9 +184,12 @@ def run(
     alpha_L0_h = 0.0   # symmetric tail airfoil assumption
 
     Cm_wing_body = Cm0 + Cmalpha * (alpha - alpha_L0)
-    Cm_tail_base = CLalphah * i.eta_h * Vh * (alpha - epsilon - alpha_L0_h)
+    Cm_tail_per_alpha = -CLalphah * i.eta_h * Vh
+    Cm_tail_base = Cm_tail_per_alpha * (alpha - epsilon - alpha_L0_h)
 
-    ih = -(Cm_wing_body + Cm_thrust + Cm_tail_base) / (CLalphah * i.eta_h * Vh)
+    ih = -(Cm_wing_body + Cm_thrust + Cm_tail_base) / Cm_tail_per_alpha
+    Cm_tail_incidence = Cm_tail_per_alpha * ih
+    Cm_tail_total = Cm_tail_base + Cm_tail_incidence
 
     # Tail angle of attack at cruise with solved ih
     alpha_h = alpha - epsilon + ih - alpha_L0_h
@@ -260,7 +268,9 @@ def run(
         CLh_at_max_down = CLh_at_max_down,
         Cl_max          = Cl_max,
         Cm_wing_body    = Cm_wing_body,
-        Cm_tail_base    = Cm_tail_base,   
+        Cm_tail_base    = Cm_tail_base,
+        Cm_tail_incidence = Cm_tail_incidence,
+        Cm_tail_total   = Cm_tail_total,
         Cm_thrust_front = Cm_thrust_front,
         Cm_thrust_back  = Cm_thrust_back,
         Cm_thrust_total = Cm_thrust,
@@ -287,22 +297,24 @@ def summary(r: ElevatorResult) -> None:
     print("\n================ Pitch Moment Sign Convention ================")
     print("  Cm > 0 : nose-up pitch")
     print("  Cm < 0 : nose-down pitch")
-    print("  Elevator TE-down (positive deflection) → nose-up moment")
+    print("  Elevator TE-down (positive deflection) → nose-down moment")
     print("==============================================================\n")
 
     print("----- Pitching Moment Breakdown (about CG) -----")
     print(f"  Wing-body moment (Cm0 + α term) : {r.Cm_wing_body:+.5f}")
-    print(f"  Tail base moment (incidence)    : {r.Cm_tail_base:+.5f}")
+    print(f"  Tail moment (α - ε - αL0,h)     : {r.Cm_tail_base:+.5f}")
+    print(f"  Tail moment from incidence ih   : {r.Cm_tail_incidence:+.5f}")
+    print(f"  Tail moment total               : {r.Cm_tail_total:+.5f}")
     print(f"  Thrust (front 2 props)          : {r.Cm_thrust_front:+.5f}")
     print(f"  Thrust (rear prop)              : {r.Cm_thrust_back:+.5f}")
     print(f"  ----------------------------------------------")
-    print(f"  Total moment (trim condition)   : "
-        f"{(r.Cm_wing_body + r.Cm_tail_base + r.Cm_thrust_total):+.5f}")
+    print(f"  Cruise moment buildup total     : "
+        f"{(r.Cm_wing_body + r.Cm_tail_total + r.Cm_thrust_total):+.5f}")
 
     print("\n----- Tail Contribution at cruise (trim) -----")
     print(f"  Tail AoA α_h             : {np.degrees(r.alpha_h):+.3f} deg")
     print(f"  Tail CL contribution     : {r.CLh_cruise:+.5f}")
-    print(f"  (implicit Cm from tail balances trim condition)\n")
+    print(f"  Tail Cm contribution     : {r.Cm_tail_total:+.5f}\n")
 
     print("----- Elevator Sensitivity -----")
     print(f"  CM_δe                    : {r.CM_deltaE:+.5f}  1/rad")
