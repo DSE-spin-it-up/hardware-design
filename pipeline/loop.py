@@ -101,6 +101,7 @@ def _run_design_pass(
     *,
     config,
     polar: AirfoilPolar,
+    tail_polar: AirfoilPolar,
     airfoil: str,
 ) -> _DesignPass:
     propulsion = prop_sizing.run(sizing, config.PROPULSION)
@@ -118,7 +119,15 @@ def _run_design_pass(
         wing_airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,
     )
-    struct = rods.run(sizing, control_surface, propulsion, airfoil, config.TAIL_AIRFOIL, config.STRUCTURE)
+    struct = rods.run(
+        sizing,
+        control_surface,
+        propulsion,
+        airfoil,
+        config.TAIL_AIRFOIL,
+        config.STRUCTURE,
+        tail_polar=tail_polar,
+    )
     masses = weights_mass.total_mass(
         sizing=sizing,
         propulsion=propulsion,
@@ -261,9 +270,13 @@ def run_pipeline(config) -> PipelineResult:
     polar = get_airfoil_polar(
         airfoil, Re=Re_ref, M=0.0, alpha_range=(-5.0, 15.0, 0.5), use_cache=True
     )
+    tail_polar = get_airfoil_polar(
+        config.TAIL_AIRFOIL, Re=Re_ref, M=0.0, alpha_range=(-10.0, 10.0, 0.5), use_cache=True
+    )
     Cl_max = float(np.max(polar.Cl))
     print(f"Polar: Cl_alpha = {polar.Cl_alpha:.3f}/rad, "
           f"alpha_L0 = {np.degrees(polar.alpha_L0):.2f}°, Cl_max = {Cl_max:.3f}")
+    print(f"Tail polar: {tail_polar.name}, Cl_max = {float(np.max(tail_polar.Cl)):.3f}")
 
     # 3D wing CL_max: derate the 2D section value with the AR/(AR+2) Prandtl
     # correction (same Cl↔CL relation used in sizing/wing.py).
@@ -301,7 +314,13 @@ def run_pipeline(config) -> PipelineResult:
     converged = False
     it = 0
     for it in range(1, config.N_ITER_MAX + 1):
-        p = _run_design_pass(sizing, config=config, polar=polar, airfoil=airfoil)
+        p = _run_design_pass(
+            sizing,
+            config=config,
+            polar=polar,
+            tail_polar=tail_polar,
+            airfoil=airfoil,
+        )
         m_drone = p.masses["total"]
         x_cg = p.cg["overall"]
 
@@ -392,7 +411,13 @@ def run_pipeline(config) -> PipelineResult:
               f"(last {_last_deltas(config, dCD0, dM, dSw)}).")
 
     # Final pass so every sub-solver result matches the converged sizing.
-    p = _run_design_pass(sizing, config=config, polar=polar, airfoil=airfoil)
+    p = _run_design_pass(
+        sizing,
+        config=config,
+        polar=polar,
+        tail_polar=tail_polar,
+        airfoil=airfoil,
+    )
     if np.isclose(p.fus.height, config.FUSELAGE.casing_factor * p.fus.battery_height):
         print("    WARNING: fuselage height is just casing_factor × battery_height; "
               "airfoil height is not being used for fuselage sizing.")
@@ -452,14 +477,30 @@ def run_pipeline(config) -> PipelineResult:
         llt,
         p.propulsion,
         polar,
-        y_cg,              
-        config.ELEVATOR,   
+        tail_polar,
+        y_cg,
+        config.ELEVATOR,
     )
+
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
     )
 
+    F_tail = (
+        sizing.Sh
+        * abs(-0.35 * sizing.inputs.ARt ** (1.0 / 3.0))
+        * sizing.q_cruise
+        * config.STRUCTURE.Vh_V
+        * config.STRUCTURE.safety_factor
+    )
+    struct = rods.apply_torsion_check(
+        rod=p.struct,
+        rudder_hinge_moment=rudder_result.hinge_moment.H,
+        bending_force=F_tail,
+        boom_length=sizing.L_boom,
+        safety_factor=config.STRUCTURE.safety_factor,
+    )
     return PipelineResult(
         airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,
@@ -470,7 +511,7 @@ def run_pipeline(config) -> PipelineResult:
         propulsion=p.propulsion,
         fus=p.fus,
         drag=p.drag,
-        struct=p.struct,
+        struct=struct,
         control_surface=p.control_surface,
         elevator=elevator_result,
         rudder=rudder_result,

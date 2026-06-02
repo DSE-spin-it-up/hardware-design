@@ -59,6 +59,10 @@ class ElevatorResult:
     CM_deltaE:      float           # dCm/d(delta_e) [1/rad]
     CL_deltaE:      float           # dCL/d(delta_e) [1/rad]
     CLh_deltaE:     float           # dCLh/d(delta_e) [1/rad]
+    CLh_cruise:     float           # tail section CL at cruise [–]
+    CLh_at_max_up:  float           # tail section CL at maximum elevator-up deflection [–]
+    CLh_at_max_down: float           # tail section CL at maximum elevator-down deflection [–]
+    Cl_max:         float           # tail airfoil maximum section Cl [–]
 
 
 # ---------------------------------------------------------------------------
@@ -75,13 +79,14 @@ def tau_from_chord_ratio(cf_c: float) -> float:
 # ---------------------------------------------------------------------------
 
 def run(
-    sizing:     SizingResult,
-    scissor:    ScissorData,
-    llt:        LLTResult,
-    propulsion: PropulsionResult,
-    polar:      AirfoilPolar,
-    y_cg:       dict[str, float],
-    inputs:     ElevatorInputs | None = None,
+    sizing:       SizingResult,
+    scissor:      ScissorData,
+    llt:          LLTResult,
+    propulsion:   PropulsionResult,
+    wing_polar:   AirfoilPolar,
+    tail_polar:   AirfoilPolar,
+    y_cg:         dict[str, float],
+    inputs:       ElevatorInputs | None = None,
 ) -> ElevatorResult:
     """
     Size the elevator by:
@@ -95,7 +100,8 @@ def run(
     scissor     : scissor-plot stability data
     llt         : LLT result carrying the cruise angle of attack
     propulsion  : propulsion result for thrust pitching moment
-    polar       : airfoil polar for zero-lift angle
+    wing_polar  : wing airfoil polar for zero-lift angle
+    tail_polar  : tail airfoil polar for stall coefficient checks
     y_cg        : vertical CG dict from compute_y_cg (keys: 'overall',
                   'motors', 'motor_back')
     inputs      : ElevatorInputs overrides; defaults used when None
@@ -126,7 +132,7 @@ def run(
     # ------------------------------------------------------------------
     # Downwash at cruise
     # ------------------------------------------------------------------
-    CL0      = -CLalpha * polar.alpha_L0
+    CL0      = -CLalpha * wing_polar.alpha_L0
     dedalpha = (2 * CLalpha) / (np.pi * AR)
     epsilon0 = (2 * CL0)    / (np.pi * AR)
     epsilon  = epsilon0 + dedalpha * alpha
@@ -159,7 +165,7 @@ def run(
     #
     # alpha_L0_h = 0 for a symmetric tail airfoil.
     # ------------------------------------------------------------------
-    alpha_L0   = polar.alpha_L0
+    alpha_L0   = wing_polar.alpha_L0
     alpha_L0_h = 0.0   # symmetric tail airfoil assumption
 
     Cm_wing_body = Cm0 + Cmalpha * (alpha - alpha_L0)
@@ -174,11 +180,14 @@ def run(
     # Elevator sizing
     #
     # 1. Fix cE/ch (designer input) → tau_e from empirical polynomial.
-    # 2. Solve for bE/bh from disturbance requirement:
-    #      Cm_dist = CLalphah * eta_h * Vh * tau_e * delta_e_max * bE_bh
-    #      → bE_bh = Cm_dist / (CLalphah * eta_h * Vh * tau_e * delta_e_max)
+    # 2. Solve for bE/bh from disturbance requirement using the magnitude of
+    #    the maximum elevator-up deflection.
+    #      Cm_dist = CLalphah * eta_h * Vh * tau_e * |delta_e_up| * bE_bh
+    #      → bE_bh = Cm_dist / (CLalphah * eta_h * Vh * tau_e * |delta_e_up|)
     # ------------------------------------------------------------------
     delta_e_max = np.radians(i.max_deflection_up_deg)
+    delta_e_up = -delta_e_max
+    delta_e_down = np.radians(i.max_deflection_down_deg)
 
     tau_e = tau_from_chord_ratio(i.cE_ch)
 
@@ -189,6 +198,28 @@ def run(
             f"Elevator sizing failed: required bE/bh = {bE_bh:.3f} > 1.0.\n"
             "The full tail span is insufficient to counteract Cm_dist.\n"
             "Consider increasing cE/ch, increasing tail volume, or reducing Cm_dist."
+        )
+
+    # ------------------------------------------------------------------
+    # Tail stall check: ensure cruise incidence plus maximum elevator deflection
+    # does not demand a tail lift coefficient above the airfoil's Cl_max.
+    # Elevator influence is scaled by the elevator span fraction bE/bh.
+    # ------------------------------------------------------------------
+    CLh_cruise = CLalphah * alpha_h
+    CLh_at_max_up = CLh_cruise + CLalphah * tau_e * delta_e_up * bE_bh
+    CLh_at_max_down = CLh_cruise + CLalphah * tau_e * delta_e_down * bE_bh
+    Cl_max = tail_polar.Cl_max
+    CLh_max_required = max(CLh_at_max_up, CLh_at_max_down)
+
+    if CLh_max_required > Cl_max:
+        raise ValueError(
+            "Tail sizing failed: required tail lift coefficient at one of the "
+            "control extremes exceeds the tail airfoil Cl_max.\n"
+            f"  CLh({i.max_deflection_up_deg:.1f}° elevator up)   = {CLh_at_max_up:.3f}\n"
+            f"  CLh({i.max_deflection_down_deg:.1f}° elevator down) = {CLh_at_max_down:.3f}\n"
+            f"  Cl_max = {Cl_max:.3f}\n"
+            "Reduce trim/elevator demand, choose a higher-Cl tail airfoil, "
+            "or increase tail volume."
         )
 
     # ------------------------------------------------------------------
@@ -205,15 +236,19 @@ def run(
     CLh_deltaE =  CLalphah * tau_e
 
     return ElevatorResult(
-        inputs     = inputs,
-        geometry   = geometry,
-        ih         = ih,
-        Vh         = Vh,
-        alpha_h    = alpha_h,
-        tau_e      = tau_e,
-        CM_deltaE  = CM_deltaE,
-        CL_deltaE  = CL_deltaE,
-        CLh_deltaE = CLh_deltaE,
+        inputs          = inputs,
+        geometry        = geometry,
+        ih              = ih,
+        Vh              = Vh,
+        alpha_h         = alpha_h,
+        tau_e           = tau_e,
+        CM_deltaE       = CM_deltaE,
+        CL_deltaE       = CL_deltaE,
+        CLh_deltaE      = CLh_deltaE,
+        CLh_cruise      = CLh_cruise,
+        CLh_at_max_up   = CLh_at_max_up,
+        CLh_at_max_down = CLh_at_max_down,
+        Cl_max          = Cl_max,
     )
 
 
@@ -227,6 +262,11 @@ def summary(r: ElevatorResult) -> None:
     print(f"  Tail incidence angle ih     : {np.degrees(r.ih):+.3f}  °")
     print(f"  Tail volume coefficient Vh  : {r.Vh:.4f}")
     print(f"  Tail AoA at cruise          : {np.degrees(r.alpha_h):.2f}  °")
+    print(f"  Tail CL at cruise           : {r.CLh_cruise:.4f}")
+    print(f"  Tail CL at max elevator up  : {r.CLh_at_max_up:.4f}")
+    print(f"  Tail CL at max elevator down: {r.CLh_at_max_down:.4f} "
+          f"(airfoil Cl_max = {r.Cl_max:.4f})")
+    print(f"  Tail stall status           : OK")
     print(f"  Elevator geometry")
     print(f"    cE/ch : {g.cE_ch:.4f}  (designer input)")
     print(f"    tau_e : {r.tau_e:.4f}")

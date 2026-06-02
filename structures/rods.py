@@ -24,6 +24,29 @@ Tail rod: cantilever connecting the tail to the aileron-hinge anchor on the
 wing, with the tail download as a point load at the tip. Length = L_boom
 (aileron hinge → tail TE), strictly longer than the aero moment arm lh
 since it extends past the tail AC to its trailing edge.
+
+Tail rod torsion: the rudder hinge moment at cruise speed and maximum
+deflection is transferred into the boom as a torque.  The tail rod is
+checked for combined bending + torsion using the von Mises criterion.
+If the torsion check governs, the diameter is increased accordingly.
+
+References
+----------
+Bending / deflection / compressive stress:
+    Standard Euler-Bernoulli beam theory (any structures textbook).
+
+Torsional shear stress (Bredt-Batho, closed thin-walled section):
+    τ = T / (2 · A_m · t),  A_m = π·(d/2)²
+    Megson, "Aircraft Structures for Engineering Students", Ch. 17.
+
+Polar moment of area for thin-walled tube:
+    J = π·t·d³/4  (= 2·I for a circular section)
+    Megson, Ch. 11.
+
+Combined bending + torsion, von Mises criterion:
+    σ_vm = sqrt(σ_b² + 3·τ²) ≤ σ_allow
+    Megson, Ch. 11; Bruhn, "Analysis and Design of Flight Vehicle
+    Structures", Section C2.
 """
 from __future__ import annotations
 
@@ -33,6 +56,7 @@ import numpy as np
 
 import propulsion
 from aerodynamics.airfoil_geometry import AirfoilGeometry
+from aerodynamics.airfoil_polar import AirfoilPolar
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
@@ -75,7 +99,7 @@ class RodResult:
     t_t: float
     mass_t: float
     defl_t: float
-    fail_mode_t: str
+    fail_mode_t: str        # "deflection" | "compressive" | "torsion (von Mises)"
     Vh_V: float
     d_spar_ht: float
     t_spar_ht: float
@@ -98,6 +122,10 @@ class RodResult:
     defl_control_vt: float
     fail_mode_control_vt: str
     f_n_wing: float = 0.0
+    # Tail rod torsion results (populated by apply_torsion_check)
+    tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
+    sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
+    torsion_checked: bool = False
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -128,6 +156,14 @@ class RodResult:
 def _I_tube(t: float, d: float) -> float:
     """Thin-wall tube second moment of area: I = π·t·d³/8."""
     return np.pi * t * d ** 3 / 8
+
+
+def _J_tube(t: float, d: float) -> float:
+    """Thin-wall tube polar moment of area: J = π·t·d³/4 = 2·I.
+
+    For a circular thin-walled tube J = 2·I (Megson Ch. 11).
+    """
+    return np.pi * t * d ** 3 / 4
 
 
 def _d_for_defl_half_cantilever_udl(
@@ -193,6 +229,115 @@ def _check_wall(t: float, d: float, label: str) -> None:
         return d
 
 
+def _tau_bredt(T: float, d: float, t: float) -> float:
+    """Torsional shear stress via Bredt-Batho for a closed thin-walled tube.
+
+    τ = T / (2 · A_m · t),  A_m = π·(d/2)²
+    Megson, "Aircraft Structures for Engineering Students", Ch. 17.
+    """
+    A_m = np.pi * (d / 2) ** 2
+    return T / (2 * A_m * t)
+
+
+def _sigma_bending(M: float, d: float, t: float) -> float:
+    """Peak bending stress at outer fibre of thin-walled tube.
+
+    σ = M·(d/2) / I,  I = π·t·d³/8
+    """
+    I = _I_tube(t, d)
+    return M * (d / 2) / I
+
+
+def _d_for_von_mises(
+    M: float, T: float, sigma_allow: float, t: float
+) -> float:
+    """Minimum diameter so von Mises stress ≤ sigma_allow under combined
+    bending moment M and torque T for a thin-walled circular tube.
+
+    σ_vm = sqrt(σ_b² + 3·τ²) ≤ σ_allow
+
+    Substituting thin-wall expressions:
+        σ_b = M·(d/2) / I = 4·M / (π·t·d²)
+        τ   = T / (2·A_m·t) = 2·T / (π·t·d²)
+
+    So: σ_vm² = (4M)²/(π·t·d²)² + 3·(2T)²/(π·t·d²)²
+              = [16M² + 12T²] / (π·t·d²)²
+
+    Solving for d:
+        d² = sqrt(16M² + 12T²) / (π·t·σ_allow)
+        d  = [sqrt(16M² + 12T²) / (π·t·σ_allow)]^(1/2)
+
+    References: Megson Ch. 11; Bruhn Section C2.
+    """
+    numerator = np.sqrt(16 * M ** 2 + 12 * T ** 2)
+    return (numerator / (np.pi * t * sigma_allow)) ** 0.5
+
+
+# ---------------------------------------------------------------------------
+# Torsion check — called after rudder sizing is complete
+# ---------------------------------------------------------------------------
+
+def apply_torsion_check(
+    rod: RodResult,
+    rudder_hinge_moment: float,
+    bending_force: float,
+    boom_length: float,
+    safety_factor: float = 1.2,
+) -> RodResult:
+    """Check and if necessary upsize the tail rod for combined bending + torsion.
+
+    The rudder hinge moment is transferred into the boom as a torque T.
+    The existing bending moment M = F_tail · L_boom is retained.
+    The von Mises criterion governs if the required diameter exceeds the
+    bending-only diameter already computed in run().
+
+    Parameters
+    ----------
+    rod                  : RodResult from run() — tail rod already bending-sized
+    rudder_hinge_moment  : |H| from RudderResult.hinge_moment.H  [N·m]
+    bending_force        : F_tail used in the original tail-rod sizing [N]
+    boom_length          : L_boom [m]
+    safety_factor        : applied to both M and T
+
+    Returns
+    -------
+    Updated RodResult with tau_t, sigma_vm_t, torsion_checked=True, and
+    potentially increased d_t / mass_t / fail_mode_t.
+    """
+    import dataclasses
+
+    T   = abs(rudder_hinge_moment) * safety_factor
+    M   = bending_force * boom_length * safety_factor
+    t   = rod.t_t
+    mat = rod.inputs.material
+
+    d_vm = _d_for_von_mises(M, T, mat.s_c, t)
+    d_vm = _check_wall(t, d_vm, "Tail rod (torsion)")
+
+    if d_vm > rod.d_t:
+        # Torsion governs — recompute mass and stresses at new diameter
+        d_final   = d_vm
+        fail_mode = "torsion (von Mises)"
+    else:
+        d_final   = rod.d_t
+        fail_mode = rod.fail_mode_t
+
+    tau     = _tau_bredt(T, d_final, t)
+    sigma_b = _sigma_bending(M, d_final, t)
+    sigma_vm = np.sqrt(sigma_b ** 2 + 3 * tau ** 2)
+    mass_t  = _tube_mass(boom_length, d_final, t, mat.rho)
+
+    return dataclasses.replace(
+        rod,
+        d_t          = d_final,
+        mass_t       = mass_t,
+        fail_mode_t  = fail_mode,
+        tau_t        = tau,
+        sigma_vm_t   = sigma_vm,
+        torsion_checked = True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -204,6 +349,7 @@ def run(
     airfoil_path: str,          # wing airfoil .dat file
     tail_airfoil_path: str,     # tail airfoil .dat file
     inputs: RodInputs | None = None,
+    tail_polar: AirfoilPolar | None = None,
 ) -> RodResult:
     if inputs is None:
         inputs = RodInputs()
@@ -266,7 +412,11 @@ def run(
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
     # ------------------------------------------------------------------ #
-    CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
+    if tail_polar is not None:
+        # Use the tail airfoil max lift coefficient, with a simple 3D AR correction.
+        CL_h = abs(tail_polar.Cl_max * s.inputs.ARt / (s.inputs.ARt + 2.0))
+    else:
+        CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
     F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V * i.safety_factor  # tail download [N]
     L_t = s.L_boom
@@ -284,11 +434,11 @@ def run(
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
 
     # --- horizontal tail spar rod sizing
-    L_ht = s.bh                          
-    F_ht_rod = F_tail / 2                     
+    L_ht = s.bh
+    F_ht_rod = F_tail / 2
     t_spar_ht = i.t_spar
 
-    M_spar_ht = F_ht_rod * L_ht / 16  # half-cantilever UDL max bending moment
+    M_spar_ht = F_ht_rod * L_ht / 16
 
     d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, i.defl_max)
     d_spar_comp_ht = _d_for_stress(M_spar_ht, sigma_lim, t_spar_ht)
@@ -303,7 +453,7 @@ def run(
     # --- horizontal tail elevator rod sizing
     t_control_ht = i.t_control
 
-    M_control_ht = F_ht_rod * L_ht / 16  # half-cantilever UDL max bending moment
+    M_control_ht = F_ht_rod * L_ht / 16
 
     d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, i.defl_max)
     d_control_comp_ht = _d_for_stress(M_control_ht, sigma_lim, t_control_ht)
@@ -320,7 +470,7 @@ def run(
     F_vt_rod = propulsion.thrust_cruise_per_prop
     t_spar_vt = i.t_spar
 
-    M_spar_vt = F_vt_rod * L_vt / 16  # half-cantilever UDL max bending moment
+    M_spar_vt = F_vt_rod * L_vt / 16
 
     d_spar_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_spar_vt, i.defl_max)
     d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
@@ -335,7 +485,7 @@ def run(
     # --- vertical tail rudder rod sizing
     t_control_vt = i.t_control
 
-    M_control_vt = F_vt_rod * L_vt / 16  # half-cantilever UDL max bending moment
+    M_control_vt = F_vt_rod * L_vt / 16
 
     d_control_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_control_vt, i.defl_max)
     d_control_comp_vt = _d_for_stress(M_control_vt, sigma_lim, t_control_vt)
@@ -343,11 +493,9 @@ def run(
         d_control_vt, fail_control_vt = d_control_defl_vt, "deflection"
     else:
         d_control_vt, fail_control_vt = d_control_comp_vt, "compressive"
-    d_control_vt = _check_wall(t_control_vt, d_control_vt, "Rudder rod horizontal tail")
+    d_control_vt = _check_wall(t_control_vt, d_control_vt, "Rudder rod vertical tail")
     defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
     mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
-    
-    
 
     return RodResult(
         inputs=inputs,
@@ -365,7 +513,7 @@ def run(
         d_spar_vt=d_spar_vt, t_spar_vt=t_spar_vt, mass_spar_vt=mass_spar_vt,
         defl_spar_vt=defl_spar_vt, fail_mode_spar_vt=fail_spar_vt,
         d_control_vt=d_control_vt, t_control_vt=t_control_vt, mass_control_vt=mass_control_vt,
-        defl_control_vt=defl_control_vt, fail_mode_control_vt=fail_control_vt
+        defl_control_vt=defl_control_vt, fail_mode_control_vt=fail_control_vt,
     )
 
 
@@ -391,6 +539,9 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection       : {r.defl_t * 1000:.2f}  mm")
     print(f"  Sizing criterion     : {r.fail_mode_t}")
     print(f"  Mass                 : {r.mass_t:.3f}  kg")
+    if r.torsion_checked:
+        print(f"  Torsional shear τ    : {r.tau_t / 1e6:.2f}  MPa")
+        print(f"  Von Mises stress     : {r.sigma_vm_t / 1e6:.2f}  MPa")
 
     print("\n--- Spar rod horizontal tail (one of two) ---")
     print(f"  Outer diameter       : {r.d_spar_ht * 1000:.2f}  mm")
@@ -419,6 +570,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection       : {r.defl_control_vt * 1000:.2f}  mm")
     print(f"  Sizing criterion     : {r.fail_mode_control_vt}")
     print(f"  Mass (each)          : {r.mass_control_vt:.3f}  kg")
+
 
 if __name__ == "__main__":
     from sizing import aileron, wing

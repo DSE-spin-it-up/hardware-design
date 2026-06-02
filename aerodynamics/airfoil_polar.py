@@ -55,6 +55,11 @@ class AirfoilPolar:
         """Linearised Cl(alpha) using the fitted slope. Use raw polar for nonlinear regime."""
         return self.Cl_alpha * (np.asarray(alpha) - self.alpha_L0)
 
+    @property
+    def Cl_max(self) -> float:
+        """Maximum 2D airfoil lift coefficient from the computed polar."""
+        return float(np.max(self.Cl))
+
     def plot(self, ax=None):
         import matplotlib.pyplot as plt
 

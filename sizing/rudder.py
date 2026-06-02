@@ -15,12 +15,19 @@ Procedure
 5.  Active constraint is whichever gives the larger bR/bV.
 6.  Derive SR/SV = (cR/cV) × (bR/bV)  (rectangular-panel assumption).
 7.  Compute all derivatives and return.
+8.  Compute rudder hinge moment at cruise q and max deflection for boom
+    torsion sizing.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.optimize import fsolve
 
+from aerodynamics.hinge_moment import (
+    HingeMomentInputs,
+    HingeMomentResult,
+    compute as compute_hinge_moment,
+)
 from pipeline.helpers import ScissorData
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
@@ -45,6 +52,8 @@ class RudderInputs:
     Ss:                 float | None = None
     # body side area [m²]
     # None → fus.length * fus.height + Sv  (box fuselage + vertical tail)
+    hinge_moment: HingeMomentInputs = field(default_factory=HingeMomentInputs)
+    # hinge-moment coefficients for the rudder surface
 
 
 @dataclass
@@ -53,22 +62,25 @@ class RudderGeometry:
     bR_bV: float   # rudder span  / vertical-tail span  [-]
     cR_cV: float   # rudder chord / vertical-tail chord [-]
     SR_SV: float   # rudder area  / vertical-tail area  [-]
+    S_rudder: float  # rudder planform area [m²]
+    c_rudder: float  # rudder chord [m]
 
 
 @dataclass
 class RudderResult:
-    inputs:          RudderInputs
-    geometry:        RudderGeometry
-    CLalphav:        float   # vertical-tail lift-curve slope        [1/rad]
-    tau_r:           float   # rudder effectiveness τ_r              [-]
-    Cnb:             float   # yaw-stiffness derivative Cn_β         [1/rad]
-    Cyb:             float   # side-force/sideslip derivative Cy_β   [1/rad]
-    Cndr:            float   # yaw-control derivative Cn_δr          [1/rad]
-    Cydr:            float   # side-force control derivative Cy_δr   [1/rad]
-    beta_gust:       float   # geometric gust sideslip β             [rad]
-    sigma:           float   # weathercock sideslip σ                [rad]
-    delta_R:         float   # applied rudder deflection (= limit)   [rad]
-    active_constraint: str   # "gust" or "Cn_dist"
+    inputs:            RudderInputs
+    geometry:          RudderGeometry
+    CLalphav:          float   # vertical-tail lift-curve slope        [1/rad]
+    tau_r:             float   # rudder effectiveness τ_r              [-]
+    Cnb:               float   # yaw-stiffness derivative Cn_β         [1/rad]
+    Cyb:               float   # side-force/sideslip derivative Cy_β   [1/rad]
+    Cndr:              float   # yaw-control derivative Cn_δr          [1/rad]
+    Cydr:              float   # side-force control derivative Cy_δr   [1/rad]
+    beta_gust:         float   # geometric gust sideslip β             [rad]
+    sigma:             float   # weathercock sideslip σ                [rad]
+    delta_R:           float   # applied rudder deflection (= limit)   [rad]
+    active_constraint: str     # "gust" or "Cn_dist"
+    hinge_moment:      HingeMomentResult  # rudder hinge moment at cruise, δ_R_max
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +113,8 @@ def run(
       2. Solving (σ, bR/bV) from the crosswind trim equations at δ_R_max.
       3. Computing bR/bV required to counteract Cn_dist alone.
       4. Taking the larger of the two as the active constraint.
+      5. Computing the rudder hinge moment at cruise q and δ_R_max for
+         boom torsion sizing.
 
     Parameters
     ----------
@@ -109,10 +123,11 @@ def run(
     fus     : fuselage geometry result
     v_stall : stall speed at the sizing condition [m/s]
     inputs  : RudderInputs overrides; defaults used when None
+    x_cg    : aircraft CG position from LEMAC [m]  (from cg['overall'])
 
     Returns
     -------
-    RudderResult with all derivatives and a populated RudderGeometry.
+    RudderResult with all derivatives, geometry, and hinge moment.
     """
     if inputs is None:
         inputs = RudderInputs()
@@ -129,12 +144,12 @@ def run(
     bv  = s.bv
     lv  = s.lh
 
-    A_fus = fus.length * fus.height
-    x_fus  = fus.x_nose + fus.length / 2.0      # fuselage centroid from LEMAC
-    x_vtail = 0.25 * s.c + s.lh                 # v-tail AC from LEMAC
+    A_fus          = fus.length * fus.height
+    x_fus_lemac    = fus.x_nose + fus.length / 2.0   # fuselage centroid from LEMAC
+    x_vtail_lemac  = 0.25 * s.c + s.lh               # v-tail AC from LEMAC
 
     Ss = i.Ss if i.Ss is not None else A_fus + Sv
-    dc = (A_fus * x_fus + Sv * x_vtail) / Ss - x_cg
+    dc = (A_fus * x_fus_lemac + Sv * x_vtail_lemac) / Ss - x_cg
 
     # ------------------------------------------------------------------
     # Vertical-tail aerodynamics (independent of rudder geometry)
@@ -222,9 +237,9 @@ def run(
         bR_bV_final       = bR_bV_dist
         # recompute σ at the larger bR/bV (gust trim with more rudder authority)
         def trim_sigma(sigma_only: list[float]) -> list[float]:
-            sigma    = sigma_only[0]
-            Cndr_t   = -CLalphav * Vv * i.eta_v * tau_r * bR_bV_final
-            eq1      = (
+            sigma  = sigma_only[0]
+            Cndr_t = -CLalphav * Vv * i.eta_v * tau_r * bR_bV_final
+            eq1    = (
                 q_total * S * b * (Cnb * (beta - sigma) + Cndr_t * delta_R_max)
                 + Fw * dc
             )
@@ -244,14 +259,34 @@ def run(
     # ------------------------------------------------------------------
     # Final geometry and derivatives
     # ------------------------------------------------------------------
+    c_v      = Sv / bv                          # mean vertical-tail chord [m]
+    S_rudder = i.cR_cV * bR_bV_final * Sv      # rudder planform area [m²]
+    c_rudder = i.cR_cV * c_v                    # rudder chord [m]
+
     geometry = RudderGeometry(
-        bR_bV = bR_bV_final,
-        cR_cV = i.cR_cV,
-        SR_SV = i.cR_cV * bR_bV_final,
+        bR_bV    = bR_bV_final,
+        cR_cV    = i.cR_cV,
+        SR_SV    = i.cR_cV * bR_bV_final,
+        S_rudder = S_rudder,
+        c_rudder = c_rudder,
     )
 
     Cndr = -CLalphav * Vv      * i.eta_v * tau_r * geometry.bR_bV
     Cydr =  CLalphav * i.eta_v * tau_r   * geometry.SR_SV
+
+    # ------------------------------------------------------------------
+    # Hinge moment at cruise q and max deflection
+    # Critical case for boom torsion: max speed (cruise), max deflection.
+    # alpha used is the gust sideslip β (AoA seen by the vertical tail).
+    # ------------------------------------------------------------------
+    hm = compute_hinge_moment(
+        alpha   = beta,
+        delta   = delta_R_max,
+        q       = s.q_cruise,
+        S_ctrl  = S_rudder,
+        c_ctrl  = c_rudder,
+        inputs  = i.hinge_moment,
+    )
 
     return RudderResult(
         inputs            = inputs,
@@ -266,6 +301,7 @@ def run(
         sigma             = sigma_final,
         delta_R           = delta_R_max,
         active_constraint = active_constraint,
+        hinge_moment      = hm,
     )
 
 
@@ -276,11 +312,14 @@ def run(
 def summary(r: RudderResult) -> None:
     g = r.geometry
     i = r.inputs
+    hm = r.hinge_moment
     print(f"  Rudder geometry")
     print(f"    cR/cV                     : {g.cR_cV:.4f}  (designer input)")
     print(f"    τ_r                       : {r.tau_r:.4f}")
     print(f"    bR/bV                     : {g.bR_bV:.4f}  (from sizing)")
     print(f"    SR/SV                     : {g.SR_SV:.4f}")
+    print(f"    S_rudder                  : {g.S_rudder:.4f}  m²")
+    print(f"    c_rudder                  : {g.c_rudder:.4f}  m")
     print(f"  Vertical-tail CLα           : {r.CLalphav:.3f}  1/rad")
     print(f"  Cn_β                        : {r.Cnb:.4f}  1/rad")
     print(f"  Cy_β                        : {r.Cyb:.4f}  1/rad")
@@ -290,3 +329,6 @@ def summary(r: RudderResult) -> None:
     print(f"  Weathercock sideslip σ      : {np.degrees(r.sigma):.2f}  °")
     print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  °  (= limit)")
     print(f"  Active sizing constraint    : {r.active_constraint}")
+    print(f"  Hinge moment (cruise, δ_max)")
+    print(f"    Chi                       : {hm.Chi:.4f}")
+    print(f"    H                         : {hm.H:.4f}  N·m  (boom torsion input)")
