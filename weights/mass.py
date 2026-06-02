@@ -289,6 +289,7 @@ def compute_y_cg(
         'glass_sheet_wing': y_wing,
         'glass_sheet_tail_h': y_tail_h,
         'glass_sheet_tail_v': y_tail_v,
+        "pvc_tube_bottom": tube_y0,
         'overall':     y_overall,
     }
 

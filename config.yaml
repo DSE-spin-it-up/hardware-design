@@ -141,8 +141,8 @@ control_surface:
 # (= (2·h_wing_prop + h_tail_prop)/3). Limits are the mechanical deflection caps.
 elevator:
   eta_h: 0.85            
-  Cm_dist: 0.1
-  max_deflection_up_deg: 25.0
+  Cm_dist: 0.2
+  max_deflection_up_deg: 20.0
   max_deflection_down_deg: 20.0
 
 # ----- Rudder -----

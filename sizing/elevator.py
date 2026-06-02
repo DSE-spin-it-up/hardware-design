@@ -70,7 +70,11 @@ class ElevatorResult:
     Cm_thrust_front: float
     Cm_thrust_back: float
     Cm_thrust_total: float
+    driving_constraint: str
+    Cm_payload: float
     y_cg: dict[str, float]
+    alpha:   float   # wing cruise AoA [rad]
+    epsilon: float   # downwash at tail [rad]
 
 # ---------------------------------------------------------------------------
 # Empirical τ ↔ chord-ratio relationships
@@ -165,7 +169,20 @@ def run(
     ) / (q * s.Sw * s.c)
 
     Cm_thrust = Cm_thrust_front + Cm_thrust_back
-    
+    # ------------------------------------------------------------------
+# Payload disturbance (from config.yaml sizing.m_payload)
+# ------------------------------------------------------------------
+
+    moment_arm = abs(
+        y_cg["overall"]
+        - y_cg["pvc_tube_bottom"]
+    )
+
+    payload_tension_x = sizing.inputs.m_payload * 9.81  # worst-case horizontal
+
+    Cm_payload = (
+        payload_tension_x * moment_arm
+    ) / (q * s.Sw * s.c)
     # ------------------------------------------------------------------
     # Solve for ih from moment equilibrium at delta_e = 0
     #
@@ -209,7 +226,18 @@ def run(
 
     tau_e = tau_from_chord_ratio(i.cE_ch)
 
-    bE_bh = i.Cm_dist / (CLalphah * i.eta_h * Vh * tau_e * delta_e_max)
+    bE_bh_dist = i.Cm_dist / (
+    CLalphah * i.eta_h * Vh * tau_e * delta_e_max
+    )
+
+    bE_bh_payload = Cm_payload / (
+        CLalphah * i.eta_h * Vh * tau_e * delta_e_max
+    )
+    driving_constraint = "payload" if bE_bh_payload > bE_bh_dist else "disturbance"
+    bE_bh = max(
+        bE_bh_dist,
+        bE_bh_payload,
+    )
 
     if bE_bh > 1.0:
         raise ValueError(
@@ -274,6 +302,10 @@ def run(
         Cm_thrust_front = Cm_thrust_front,
         Cm_thrust_back  = Cm_thrust_back,
         Cm_thrust_total = Cm_thrust,
+        Cm_payload = Cm_payload,
+        driving_constraint = driving_constraint,
+        alpha   = alpha,
+        epsilon = epsilon,
         y_cg = y_cg,
     )
 
@@ -315,7 +347,19 @@ def summary(r: ElevatorResult) -> None:
     print(f"  Tail AoA α_h             : {np.degrees(r.alpha_h):+.3f} deg")
     print(f"  Tail CL contribution     : {r.CLh_cruise:+.5f}")
     print(f"  Tail Cm contribution     : {r.Cm_tail_total:+.5f}\n")
+    print("\n----- Tail AoA Breakdown -----")
+    print(f"  {'Component':<30} {'Value [deg]':>12}")
+    print(f"  {'-'*43}")
+    print(f"  {'Wing AoA (α)':<30} {np.degrees(r.alpha):>+12.3f}")
+    print(f"  {'Downwash (-ε)':<30} {np.degrees(-r.epsilon):>+12.3f}")
+    print(f"  {'Tail incidence (ih)':<30} {np.degrees(r.ih):>+12.3f}")
+    print(f"  {'-'*43}")
+    print(f"  {'Tail AoA (α_h)':<30} {np.degrees(r.alpha_h):>+12.3f}")
+    print("----- Payload Contribution -----")
+    print(f"  Cm_payload (about CG)     : {r.Cm_payload:+.5f}")
 
+    print("\n----- Elevator Sizing Driver -----")
+    print(f"  Active constraint         : {r.driving_constraint}")
     print("----- Elevator Sensitivity -----")
     print(f"  CM_δe                    : {r.CM_deltaE:+.5f}  1/rad")
     print(f"  CL_δe                    : {r.CL_deltaE:+.5f}  1/rad")
