@@ -165,6 +165,8 @@ def _shaft_power_per_prop(Cp: float, rho: float, n_rps: float, D: float) -> floa
 def run(
     sizing: SizingResult,
     inputs: PropulsionInputs | None = None,
+    *,
+    cruise_drag: float | None = None,
 ) -> PropulsionResult:
     """Size propulsion for cruise, climb, and VTOL given the current sizing.
 
@@ -173,6 +175,10 @@ def run(
     Battery energy covers cruise + climb; VTOL is treated as a sizing
     point for thrust/RPM but its energy contribution is left to the
     caller to add if a hover phase is part of the mission.
+
+    `cruise_drag` can override `sizing.D` for final bookkeeping when the
+    pipeline has a higher-fidelity cruise drag estimate than the early sizing
+    drag build-up.
     """
     if inputs is None:
         inputs = PropulsionInputs()
@@ -184,7 +190,8 @@ def run(
     voltage_battery = i.n_cells * i.voltage_cell
 
     # ----- Cruise -----
-    thrust_cruise_per_prop = s.D / i.n_props
+    D_cruise = s.D if cruise_drag is None else cruise_drag
+    thrust_cruise_per_prop = D_cruise / i.n_props
     op_cruise = _solve_quiet(
         i.verbose,
         prop_solver.solve,

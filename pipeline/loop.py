@@ -656,11 +656,12 @@ def run_pipeline(config) -> PipelineResult:
     )
 
     # ----- Step 9: elevator + rudder control-surface sizing on the final state -----
+    final_propulsion = p.propulsion
     elevator_result = elevator.run(
         sizing,
         scissor,
         llt,
-        p.propulsion,
+        final_propulsion,
         polar,
         tail_polar,
         y_cg,
@@ -673,6 +674,39 @@ def run_pipeline(config) -> PipelineResult:
     )
 
     # ----- Step 7b: recompute tail drag at the correctly trimmed CL_tail -----
+    # elevator_result.CLh_cruise is derived from the full trim solve (including
+    # thrust moments and downwash), so it is more accurate than the moment-balance
+    # approximation used in Step 7. Rerun final cruise propulsion with that
+    # drag so E_cruise and battery sizing include the tail induced drag.
+    for _ in range(3):
+        tail_loading = tail_drag_at_cruise(
+            sizing, polar, llt,
+            x_cg=p.cg["overall"],
+            tail_airfoil=config.TAIL_AIRFOIL,
+            CL_tail=elevator_result.CLh_cruise,
+        )
+        cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
+        CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
+        cruise_drag = CD_full_buildup * sizing.q_cruise * sizing.Sw
+        updated_propulsion = prop_sizing.run(
+            sizing,
+            config.PROPULSION,
+            cruise_drag=cruise_drag,
+        )
+        if abs(updated_propulsion.thrust_cruise_per_prop - final_propulsion.thrust_cruise_per_prop) < 1.0e-3:
+            final_propulsion = updated_propulsion
+            break
+        final_propulsion = updated_propulsion
+        elevator_result = elevator.run(
+            sizing,
+            scissor,
+            llt,
+            final_propulsion,
+            polar,
+            tail_polar,
+            y_cg,
+            config.ELEVATOR,
+        )
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
         x_cg=p.cg["overall"],
@@ -681,6 +715,12 @@ def run_pipeline(config) -> PipelineResult:
     )
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
+    cruise_drag = CD_full_buildup * sizing.q_cruise * sizing.Sw
+    final_propulsion = prop_sizing.run(
+        sizing,
+        config.PROPULSION,
+        cruise_drag=cruise_drag,
+    )
 
     # ----- Step 10: torsion check on the boom + physics-based VT rod sizing -----
     F_tail = (
@@ -701,7 +741,7 @@ def run_pipeline(config) -> PipelineResult:
     struct = rods.run(
         sizing,
         p.control_surface,
-        p.propulsion,
+        final_propulsion,
         airfoil,
         config.TAIL_AIRFOIL,
         config.STRUCTURE,
@@ -725,7 +765,7 @@ def run_pipeline(config) -> PipelineResult:
         polar=polar,
         cl_max=Cl_max,
         sizing=sizing,
-        propulsion=p.propulsion,
+        propulsion=final_propulsion,
         fus=p.fus,
         drag=p.drag,
         struct=struct,
