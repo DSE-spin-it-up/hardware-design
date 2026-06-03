@@ -117,15 +117,13 @@ def _run_design_pass(
     battery_x: float | None,
 ) -> _DesignPass:
     propulsion = prop_sizing.run(sizing, config.PROPULSION)
-    fus = fuselage.run(
-        sizing,
-        config.FUSELAGE,
-        battery_volume=propulsion.battery_volume,
-        airfoil_path=airfoil,
-        battery_x=battery_x,
-    )
-    # Aileron must be computed before rods and drag — both need the hinge x/c.
+
+    # Aileron must be computed before rods — rods need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
+
+    # Rods before fuselage: fuselage needs tube OD and tube aft-x to set its
+    # height and length.  Rods only need sizing + control_surface + propulsion,
+    # so there is no circular dependency here.
     struct = rods.run(
         sizing,
         control_surface,
@@ -135,6 +133,24 @@ def _run_design_pass(
         config.STRUCTURE,
         tail_polar=tail_polar,
     )
+
+    # Tube geometry for fuselage sizing.
+    # The tube runs from the spar rod to the aileron hinge, then extends aft
+    # by tube_tail_overlap to grip the tail boom inside the fuselage.
+    tube_outer_diameter = max(struct.d_spar, struct.d_aileron)
+    x_rod_aileron = (1.0 - control_surface.inputs.c_aileron_to_c_wing) * sizing.c_root
+    tube_back_x = x_rod_aileron + config.FUSELAGE.tube_tail_overlap
+
+    fus = fuselage.run(
+        sizing,
+        config.FUSELAGE,
+        battery_volume=propulsion.battery_volume,
+        battery_x=battery_x,
+        battery_mass=propulsion.battery_mass,
+        tube_back_x=tube_back_x,
+        tube_outer_diameter=tube_outer_diameter,
+    )
+
     drag = estimate_cd0(
         sizing, fus, struct,
         wing_airfoil=airfoil,

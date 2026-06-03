@@ -16,15 +16,6 @@ alpha_sweep_deg: [-2.0, 12.0, 30]
 alpha_sweep_loop_deg: [-2.0, 12.0, 140]
 
 # ----- Convergence loop -----
-# Sizing ↔ propulsion ↔ fuselage ↔ drag ↔ mass ↔ wing-area iteration.
-#   mass_closure: false → hold m_drone_empty at sizing.m_drone_empty (requirement).
-#   mass_closure: true  → feed total drone mass back into m_drone_empty each pass.
-#   sw_closure:   false → hold b, AR (and therefore Sw) at the sizing values.
-#   sw_closure:   true  → resize Sw each pass so the operating CL sits at the max
-#                         L/D point of the drone+payload polar; AR is held fixed,
-#                         so b = sqrt(AR · Sw) floats.
-# Convergence requires every active criterion (CD0 always; m_drone if mass_closure;
-# Sw if sw_closure) to be inside its tolerance.
 mass_closure: true
 sw_closure: true
 n_iter_max: 20
@@ -33,101 +24,75 @@ mass_tol: 1.0e-3   # kg
 sw_tol: 1.0e-3     # m²
 
 # ----- Stall constraint -----
-# Maximum acceptable stall speed [m/s]. Used inside the Sw-closure loop to
-# bound the operating CL: CL_cruise_bound = (V_stall / V_cruise)^2 · CL_max.
-# If the max-L/D CL exceeds this bound, the loop sizes Sw to the bound
-# instead — we accept a sub-optimal L/D so the stall requirement is met.
-# Only consulted when sw_closure is true.
 V_stall: 14.0
 
 # ----- CG tuning -----
-# Battery x-position [m] measured from the LEMAC, same convention as the rest
-# of the CG buildup. Set to null to default to the midpoint between the spar
-# and aileron rods (current behaviour). Override to slide the battery fore/aft
-# and trade x_cg.
-battery_x: -0.3 #-0.212
+battery_x: -0.3
 
 # ----- Initial / wing sizing -----
 sizing:
-  # Payload & fleet
-  m_payload: 60          # [kg]
-  m_drone_empty: 8      # [kg]
-  n_drones: 3            # [-]
-  # Geometry
-  b: 3.0                 # wingspan [m]
-  AR: 7.5                # aspect ratio [-]
-  lam: 1.0               # taper ratio [-]
-  # Aerodynamics
-  Cd0: 0.03              # initial guess; refined after fuselage sizing [-]
-  S_payload: 0.25        # payload frontal area [m^2]
-  Cd_payload: 1.05        # payload drag coefficient [-]
-  # Flight conditions
-  h_cruise: 100          # cruise altitude [m]
-  V_cruise: 20           # cruise speed [m/s]
-  # Mission
-  R: 20000               # range [m]
-  # Materials
-  foam_density: 48       # [kg/m^3]
-  # Tail
+  m_payload: 60
+  m_drone_empty: 8
+  n_drones: 3
+  b: 3.0
+  AR: 7.5
+  lam: 1.0
+  Cd0: 0.03
+  S_payload: 0.25
+  Cd_payload: 1.05
+  h_cruise: 100
+  V_cruise: 20
+  R: 20000
+  foam_density: 48
   Vv: 0.04
-  Vh: 0.50                 # used only for the initial Sh estimate; scissor takes over after iteration 0
-  L_boom: 1.5            # physical boom length [m] (aileron hinge → tail TE); lh is derived
+  Vh: 0.50
+  L_boom: 1.5
   ARt: 4.5
   lam_t: 1.0
 
 # ----- Propulsion -----
 propulsion:
-  # Propeller
   csv_prop: data\12x8E_performance.csv
   n_props: 3
-  prop_mass: 0.1         # [kg] mass per propeller
-  # Motor / drivetrain
+  prop_mass: 0.1
   eff_motor: 0.8
-  T_W_to: 2.0            # thrust-to-weight for take-off / VTOL [-]
-  throttle_max: 0.9      # design throttle cap at the sizing RPM [-]
-  # Climb segment
-  climb_rate: 3.333333   # [m/s]  (= 10 / 3)
-  t_climb: 30            # [s]
-  # Battery
+  T_W_to: 2.0
+  throttle_max: 0.9
+  climb_rate: 3.333333
+  t_climb: 30
   n_cells: 6
-  voltage_cell: 3.7      # [V]
-  battery_density: 250   # [Wh/L]
+  voltage_cell: 3.7
+  battery_density: 250
   DoD: 0.8
-  # Propeller solver tuning (shared between cruise & climb)
   cruise_rpm_init: 7000
   climb_rpm_init: 12000
   rpm_tol: 1.0
-  thrust_tol: 1.0        # matched to rpm_step (50 RPM ≈ 1 N thrust step)
+  thrust_tol: 1.0
   max_iter: 200
   rpm_step: 50.0
-  # VTOL/hover solver tuning — looser thrust tol because the table-step
-  # resolution (rpm_step) easily exceeds 0.5 N near hover RPM.
   vtol_rpm_init: 5000
   vtol_thrust_tol: 2.0
   vtol_max_iter: 400
   vtol_rpm_step: 25.0
-  # Verbosity — solver prints per-iteration tables; off by default.
   verbose: false
 
 # ----- Fuselage -----
 # Battery dimensions: off-the-shelf envelope unless both aspect ratios are > 0,
 # in which case dimensions are recomputed from the required battery volume.
-# AR_lw / AR_lh below match the off-the-shelf 0.212 × 0.090 × 0.060 cell so the
-# starting shape is preserved but the cell scales with the propulsion-sized volume.
 fuselage:
   battery_length: 0.212
   battery_width: 0.090
   battery_height: 0.060
   AR_lw: 2.355555555555556   # length / width  (= 0.212 / 0.090)
   AR_lh: 3.533333333333333   # length / height (= 0.212 / 0.060)
-  housing_factor: 1.5
-  casing_factor: 1.1
+  casing_factor: 1.15        # all-around EPP foam wall margin (~7.5% per side)
+  casing_thickness: 0.001    # [m] minimum hard wall thickness
+  tube_tail_overlap: 0.03    # [m] tube extension aft of aileron hinge for boom grip
+  min_foam_floor: 0.005      # [m] minimum EPP floor below battery
 
 # ----- Aileron / control surface -----
-# roll_moment_dist is the max roll-moment disturbance the ailerons must
-# counteract at max_da_deg; the inboard span grows until |Cl_δa·δ_a_max| ≥ it.
 control_surface:
-  cl_alpha: 6.283185307179586   # = 2 * pi [1/rad]
+  cl_alpha: 6.283185307179586
   cd0_section: 0.04
   roll_moment_dist: 0.05
   max_da_deg: 10.0
@@ -135,21 +100,13 @@ control_surface:
   c_aileron_to_c_wing: 0.3
 
 # ----- Elevator -----
-# Pitch-moment-disturbance check: at δ_up_max the elevator moment must
-# counteract Cm_dist. eta_h is the tail dynamic-pressure ratio (V_h/V)²;
-# Z_T is the thrust-line vertical offset from the CG
-# (= (2·h_wing_prop + h_tail_prop)/3). Limits are the mechanical deflection caps.
 elevator:
-  eta_h: 0.85            
+  eta_h: 0.85
   Cm_dist: 0.2
   max_deflection_up_deg: 20.0
   max_deflection_down_deg: 20.0
 
 # ----- Rudder -----
-# Crosswind-gust deflection check. SR_SV/cR_CV/bR_bV are the rudder/vertical-tail
-# area, chord, and span ratios. Ss (body side area) is derived from the fuselage
-# when null. dc is the gust-force line angle in the yaw balance. Cn_dist is the
-# max yaw-moment disturbance the rudder must counteract at δ_R_max (0 → non-binding).
 rudder:
   max_deflection_deg: 30.0
   Cn_dist: 0.0
@@ -157,27 +114,17 @@ rudder:
   CDY: 0.8
   Kf1: 0.85
   Kf2: 1.0
-  eta_v: 0.85          # = 0.85²
+  eta_v: 0.85
   Ss: null
 
 # ----- CFRP rod sizing -----
-# Both rods solved closed-form for the thinnest wall that passes both a
-# tip-deflection (defl_max) and a compressive-stress (s_c / safety_factor)
-# limit. d is fixed by geometry (rod must fit inside the local section
-# thickness). tail_tc must match tail_airfoil.
 structure:
   safety_factor: 1.2
-  defl_max: 0.05             # [m] 50 mm tip deflection budget
-  d_to_section_ratio: 0.8    # rod OD as fraction of section thickness
-  tail_tc: 0.10              # matches NACA0010 tail
+  defl_max: 0.05
+  d_to_section_ratio: 0.8
+  tail_tc: 0.10
 
 # ----- Material selection -----
-# Each part is mapped to a Material subclass defined in
-# structures/materials.py. Available options:
-#   CFRP, EPP, CF_PLA, PLA, Wood
-# Properties (E, rho, Y, s_t, s_c) live in the material class; edit them
-# there if you need to change a value. The rod material must define s_c
-# (compressive yield) — currently only CFRP and Wood do.
 materials:
   fuselage: EPP
   wing: EPP

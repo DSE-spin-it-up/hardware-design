@@ -121,7 +121,7 @@ def plot_cg_side_view(
 ) -> plt.Figure:
     """Side-view sketch of the aircraft with component CGs and overall CG.
 
-    Draws the fuselage box, wing airfoil polygon, battery, PVC tube + rods,
+    Draws the fuselage box, wing airfoil polygon, battery, tube + rods,
     tail rod, and scatter markers for motors / tail / overall CG. The
     overall vertical CG is computed from each component's vertical position
     weighted by its mass.
@@ -139,11 +139,10 @@ def plot_cg_side_view(
     x_motor = cg["motors"]
     x_rod_wing = cg["rod_spar"]
     x_rod_aileron = cg["rod_aileron"]
-    x_pvc = cg["pvc_tubes"]
     x_batt = cg["battery"]
     x_tail = cg["tail"]
     x_overall = cg["overall"]
-    # Tail LE position from LEMAC: tail AC sits at 0.25·c + lh; LE is 0.25·ct ahead.
+
     prop_radius = propulsion.D_prop / 2.0 if propulsion is not None else 0.0
     c_v = sizing.cv
     ch = sizing.ch
@@ -201,15 +200,23 @@ def plot_cg_side_view(
     rod_radius_a = struct.d_aileron / 2.0
     battery_length = fus.battery_length
     battery_height = fus.battery_height
-    rod_span_length = abs(x_rod_aileron - x_rod_wing)
-    tube_height = max(max(struct.d_spar, struct.d_aileron) * 1.1, 0.03)
-    tube_length = max(rod_span_length + 0.1, battery_length * 0.8)
-    tube_x0 = max(x_pvc - tube_length / 2.0, 0.0)
+
+    # Tube: runs from spar rod to aileron hinge + tail overlap.
+    # Use the same geometry that drove the fuselage sizing.
+    tube_height = max(struct.d_spar, struct.d_aileron) * fus.inputs.casing_factor
+    tube_x0 = x_rod_wing  # tube starts at the spar rod (forward anchor)
+    tube_x1 = x_rod_aileron + fus.inputs.tube_tail_overlap  # aft face = fuselage aft wall
+    tube_length = tube_x1 - tube_x0
+
     # Tube centred on the mean rod-centre height so it encloses both rods.
     tube_yc = 0.5 * (y_rod_spar + y_rod_aileron)
     tube_y0 = tube_yc - tube_height / 2.0
+
     batt_x0 = x_batt - battery_length / 2.0
-    batt_y0 = tube_y0 + 0.005
+    if x_batt < 0.0:
+        batt_y0 = fus.battery_y_min
+    else:
+        batt_y0 = tube_y0 + 0.005
     plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
 
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -222,7 +229,7 @@ def plot_cg_side_view(
                            color="orange", alpha=0.5, label="Battery"))
     ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
                            facecolor="lightgreen", alpha=0.4, edgecolor="darkgreen",
-                           label="PVC tube"))
+                           label="Tube"))
     ax.add_patch(Ellipse((tube_x0, tube_y0 + tube_height / 2.0),
                          tube_height, tube_height,
                          facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
@@ -248,7 +255,6 @@ def plot_cg_side_view(
                 label="Rudder hinge")
 
     # Vertical-tail rods shown as rectangular elements.
-    vt_rod_height = b_v_total
     vt_rod_y0 = y_rod_aileron
     vt_spar_width = max(struct.d_spar_vt, 0.01)
     vt_rud_width = max(struct.d_control_vt, 0.01)
@@ -308,7 +314,6 @@ def plot_cg_side_view(
     ax.scatter([x_motor, x_overall], [motor_y, overall_y],
                color=["red", "black"], zorder=5)
     ax.text(x_motor, motor_y + 0.03, "Motor (front)", color="red", ha="center")
-    # Motor mass on top of VT front spar
     ax.scatter([x_vt_fs], [y_rod_aileron + b_v_total],
                color="red", zorder=5, s=100, marker="^")
     ax.text(x_vt_fs, y_rod_aileron + b_v_total + 0.03, "Motor (rear)",
@@ -389,7 +394,6 @@ def plot_scissor(scissor, *, show: bool = True):
     ax.plot([s.x_cg_current], [s.ShS_current], "o", color="orange",
             mec="k", ms=10, zorder=5)
 
-    # Twin top axis showing x_cg as a fraction of MAC.
     ax2 = ax.twiny()
     ax2.set_xlim(s.x_cg[0] / s.c, s.x_cg[-1] / s.c)
     ax2.set_xlabel(r"$x_{cg} / \bar{c}$  [-]")

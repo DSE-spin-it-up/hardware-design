@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
 from sizing.wing import SizingResult
-from aerodynamics.airfoil_geometry import AirfoilGeometry
+from structures.materials import EPP
 
 
 @dataclass
@@ -16,11 +16,19 @@ class FuselageInputs:
     # overriding battery_length/width/height above.
     AR_lw: float = 0.0  # length / width
     AR_lh: float = 0.0  # length / height
-    # Geometric margins
-    housing_factor: float = 1.5  # axial battery housing factor
-    casing_factor: float = 1.1   # all-around casing margin (applied to battery dims only)
-    casing_thickness: float = 0.001  # [m] wall thickness of casing shell
-    height_clearance: float = 0.002  # [m] fixed vertical clearance between airfoil and battery
+    # Geometric margin applied uniformly to all internal components (battery
+    # and tubes).  A single factor keeps the EPP foam walls consistent on
+    # every face: each internal dimension is multiplied by casing_factor so
+    # the wall thickness is roughly (casing_factor - 1) / 2 × dimension.
+    # 1.15 → ~7.5 % wall on each side; 1.25 → ~12.5 %.
+    casing_factor: float = 1.15  # [-] all-around margin for EPP foam walls
+    casing_thickness: float = 0.001  # [m] minimum hard wall thickness
+    # How far the tube extends aft of the aileron hinge to grip the tail boom.
+    tube_tail_overlap: float = 0.03  # [m]
+    # EPP tearout prevention
+    load_factor: float = 3.0        # [-] landing impact load factor
+    g: float = 9.81                 # [m/s²]
+    min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
 
 
 @dataclass
@@ -31,22 +39,47 @@ class FuselageResult:
     height: float       # [m]
     d_eq: float         # equivalent diameter [m]
     fineness: float     # length / d_eq [-]
-    Swet: float         # wetted area [m^2]
+    Swet: float         # wetted area [m²]
     battery_length: float  # [m] battery dimension actually used
     battery_width: float   # [m]
     battery_height: float  # [m]
-    volume_shell: float = 0.0  # [m³] structural material volume
-    x_nose: float = 0.0  # [m] fuselage nose x from LEMAC (negative = ahead of LE)
+    volume_shell: float = 0.0           # [m³] structural material volume
+    x_nose: float = 0.0                 # [m] fuselage nose x from LEMAC (negative = ahead of LE)
+    battery_y_min: float = 0.0          # [m] lowest allowable battery bottom from fuselage floor
+    foam_floor_thickness: float = 0.0   # [m] required foam thickness below battery
 
 
 def run(
     sizing: SizingResult,
     inputs: FuselageInputs | None = None,
     battery_volume: float = 0.0,
-    airfoil_path: str | Path | None = None,
     battery_x: float | None = None,
+    battery_mass: float = 0.0,
+    tube_back_x: float | None = None,
+    tube_outer_diameter: float = 0.0,
 ) -> FuselageResult:
-    
+    """
+    Fuselage geometry is driven entirely by the internal components:
+
+      • Nose  : battery front face (battery_x − b_length / 2) minus one wall
+      • Aft   : aileron hinge + tube_tail_overlap + one wall thickness.
+                tube_back_x should be passed as x_rod_aileron + tube_tail_overlap.
+                Falls back to sizing.c_root if not provided.
+      • Height: max(battery height, tube diameter) × casing_factor + foam floor
+      • Width : battery width × casing_factor
+      • Floor : EPP shear / tearout check sets the minimum foam thickness
+                below the battery; the fuselage floor sits that far below
+                the battery bottom.
+
+    Parameters
+    ----------
+    tube_back_x : x-position (from LEMAC) of the aft face of the tube.
+                  Pass as x_rod_aileron + inputs.tube_tail_overlap from the pipeline.
+                  Falls back to sizing.c_root if not provided.
+    tube_outer_diameter : outer diameter of the largest tube (spar or aileron
+                          rod), used to size fuselage height.
+    """
+
     FILLED = True
 
     if inputs is None:
@@ -64,53 +97,57 @@ def run(
         b_width  = i.battery_width
         b_height = i.battery_height
 
-    # ------------------------------------------------------------------ height
-    # casing_factor is applied only to the battery portion.
-    # The airfoil thickness is a hard geometric constraint — do not scale it.
-    if airfoil_path is not None:
-        airfoil = AirfoilGeometry(airfoil_path)
-        airfoil_height = airfoil.global_thickness * sizing.c_root
-        height = airfoil_height + b_height * i.casing_factor + i.height_clearance
-    else:
-        height = b_height * i.casing_factor
+    # ------------------------------------------------------------------ EPP tearout check
+    # Compute this first — foam_floor_thickness sets the fuselage floor position
+    # which in turn feeds into the overall height.
+    epp = EPP()
+    bearing_area = b_length * b_width
+    stress = (battery_mass * i.g * i.load_factor) / bearing_area if bearing_area > 0 else 0.0
+    foam_floor_thickness = max(stress / epp.s_t, i.min_foam_floor)
 
-    # ------------------------------------------------------------------ length
-    # Battery housing extent: axial housing_factor plus the two end walls.
-    # casing_factor is not applied on top to avoid double-scaling the battery.
-    battery_extent = b_length * i.housing_factor + 2.0 * i.casing_thickness
-
-    # battery_x is the battery centroid measured aft-positive from the LEMAC
-    # (same convention as the CG buildup). A negative value places the battery
-    # ahead of the wing leading edge.
-    if battery_x is not None and battery_x < 0.0:
-        # Battery in front of the wing: the fuselage spans from the battery
-        # housing tip (battery_x - battery_extent/2) to the wing trailing edge
-        # (at c_root from the LE), so the two lengths add.
-        x_nose = battery_x - battery_extent / 2.0
-        length = sizing.c_root - x_nose
+    if stress / epp.s_t > i.min_foam_floor:
+        print(f"  EPP floor: tearout governs        "
+              f"(required {foam_floor_thickness*1e3:.1f} mm)")
     else:
-        # Battery nested inside the chord-length body; take whichever of the
-        # root chord (with casing margin) or the battery housing is longer.
-        # The body starts at the LEMAC and runs aft.
-        x_nose = 0.0
-        length = max(
-            sizing.c_root * i.casing_factor,  # must enclose root chord
-            battery_extent,                   # battery + walls only
-        )
+        print(f"  EPP floor: min thickness governs  "
+              f"(required {foam_floor_thickness*1e3:.1f} mm, "
+              f"tearout would need {stress/epp.s_t*1e3:.1f} mm)")
+
+    battery_y_min = foam_floor_thickness
+
+    # ------------------------------------------------------------------ nose / aft x
+    # Nose: one wall thickness ahead of the battery front face.
+    if battery_x is not None:
+        x_battery_front = battery_x - b_length / 2.0
+    else:
+        # Battery not yet placed — centre it in the root chord as a fallback.
+        x_battery_front = sizing.c_root / 2.0 - b_length / 2.0
+
+    x_nose = x_battery_front - i.casing_thickness
+
+    # Aft: back of the tube (aileron hinge + overlap), plus one wall thickness.
+    _tube_back = tube_back_x if tube_back_x is not None else sizing.c_root
+    x_aft = _tube_back + i.casing_thickness
+
+    length = x_aft - x_nose
 
     # ------------------------------------------------------------------ width
+    # Battery width sets the cross-section; casing_factor gives uniform foam
+    # walls on both sides.
     width = b_width * i.casing_factor
+
+    # ------------------------------------------------------------------ height
+    # The fuselage must clear whichever is taller: the battery or the tube.
+    # casing_factor is applied to that governing dimension for a uniform wall.
+    # The floor is raised by foam_floor_thickness (EPP shear), so the
+    # external height includes that extra material at the bottom.
+    inner_height = max(b_height, tube_outer_diameter) * i.casing_factor
+    height = inner_height + foam_floor_thickness
 
     # ------------------------------------------------------------------ derived
     d_eq     = np.sqrt(width * height)
     fineness = length / d_eq
     Swet     = 2.0 * (length * width + length * height + width * height)
-
-    t    = i.casing_thickness
-    l_in = max(length - 2.0 * t, 0.0)
-    w_in = max(width  - 2.0 * t, 0.0)
-    h_in = max(height - 2.0 * t, 0.0)
-
 
     if FILLED:
         volume_shell = length * width * height
@@ -128,6 +165,8 @@ def run(
         battery_height=b_height,
         volume_shell=volume_shell,
         x_nose=x_nose,
+        battery_y_min=battery_y_min,
+        foam_floor_thickness=foam_floor_thickness,
     )
 
 
@@ -142,6 +181,8 @@ def summary(r: FuselageResult) -> None:
     print(f"  Fineness ratio       : {r.fineness:.3f}")
     print(f"  Wetted area          : {r.Swet:.4f}  m²")
     print(f"  Shell volume         : {r.volume_shell:.6f}  m³")
+    print(f"  Foam floor thickness : {r.foam_floor_thickness*1e3:.1f}  mm")
+    print(f"  Battery y_min        : {r.battery_y_min*1e3:.1f}  mm")
 
 
 if __name__ == "__main__":

@@ -240,7 +240,6 @@ def compute_y_cg(
 
     # Tube centred on the mean rod-centre height; battery sits on top of tube.
     tube_y0 = 0.5 * (y_rod_spar + y_rod_aileron) - tube_height / 2.0
-    batt_y0 = tube_y0 + tube_height + 0.005
 
     le_x = float(np.min(x_coords))
     le_mask = np.isclose(x_coords, le_x, atol=1e-6)
@@ -249,7 +248,10 @@ def compute_y_cg(
 
     y_fus = fus.height / 2.0
     y_wing = 0.5 * airfoil_height
-    y_batt = batt_y0 + fus.battery_height / 2.0
+    if cg["battery"] < 0.0:
+        y_batt = fus.battery_y_min + fus.battery_height / 2.0
+    else:
+        y_batt = batt_y0 + fus.battery_height / 2.0
     y_pvc = tube_y0 + tube_height / 2.0
     y_tail_rod = y_rod_aileron
     y_tail_h = y_rod_aileron
@@ -407,5 +409,5 @@ def total_mass(
         'glass_sheet_tail_h': m_sheet_tail_h,
         'glass_sheet_tail_v': m_sheet_tail_v,
         'glass_sheet':        m_glass_sheet,
-        'total':              m_total,
+        'total':              1.21*m_total,
     }
