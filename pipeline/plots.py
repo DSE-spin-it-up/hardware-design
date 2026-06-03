@@ -304,14 +304,41 @@ def plot_cg_side_view(
     motor_y = y_cg["motors"]
     overall_y = y_cg["overall"]
     plot_height = max(plot_height, y_rod_aileron + b_v_total + 0.05)
+
     ax.scatter([x_motor, x_overall], [motor_y, overall_y],
                color=["red", "black"], zorder=5)
     ax.text(x_motor, motor_y + 0.03, "Motor (front)", color="red", ha="center")
     # Motor mass on top of VT front spar
     ax.scatter([x_vt_fs], [y_rod_aileron + b_v_total],
                color="red", zorder=5, s=100, marker="^")
-    ax.text(x_vt_fs, y_rod_aileron + b_v_total + 0.03, "Motor (rear)", color="red", ha="center", fontsize=8)
+    ax.text(x_vt_fs, y_rod_aileron + b_v_total + 0.03, "Motor (rear)",
+            color="red", ha="center", fontsize=8)
     ax.text(x_overall, overall_y + 0.02, "Overall CG", color="black", ha="center")
+
+    # Servo positions
+    x_servo_front   = cg["motors"]
+    x_servo_aileron = cg["rod_aileron"]
+    x_servo_rear    = cg["tail"]
+    x_servo_ht = cg.get("ht_rud", cg["tail"])
+    x_servo_vt = cg.get("vt_rud", cg["tail"])
+    y_servo_front   = y_cg["servo_front"]
+    y_servo_aileron = y_cg["servo_aileron"]
+    y_servo_rear    = y_cg["servo_rear"]
+    y_servo_ht      = y_cg["servo_ht"]
+    y_servo_vt      = y_cg["servo_vt"]
+    ax.scatter(
+        [x_servo_front,   x_servo_front,
+         x_servo_aileron, x_servo_aileron,
+         x_servo_rear,
+         x_servo_ht,      x_servo_ht,
+         x_servo_vt],
+        [y_servo_front,   y_servo_front,
+         y_servo_aileron, y_servo_aileron,
+         y_servo_rear,
+         y_servo_ht,      y_servo_ht,
+         y_servo_vt],
+        color="teal", zorder=5, s=60, marker="s", label="Servo",
+    )
 
     ax.set_title("Aircraft CG side view")
     ax.set_xlabel("x [m] from LEMAC")
