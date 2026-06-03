@@ -111,7 +111,7 @@ def run(
 
     # ------------------------------------------------------------------ 4. Encompassing Ellipsoid
     # Inflate axes by sqrt(3) so the curved shell clears the rectangular box corners
-    k_clearance = 0
+    k_clearance = np.sqrt(2)
     
     length = box_length * k_clearance
     width  = box_width * k_clearance
