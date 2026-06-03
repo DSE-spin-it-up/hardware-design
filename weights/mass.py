@@ -11,10 +11,12 @@ from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
 from structures.rods import RodResult
 from weights.part_materials import PartMaterials
+from structures.materials import Aluminum_6061_T6
 
 DEFAULT_MATERIALS = PartMaterials()
-
-PVC_TUBES_MASS = 0.37  # [kg]
+outer_d, inner_d = RodResult.d_spar, RodResult.d_spar-RodResult.t_spar
+SF = 1.2
+PVC_TUBES_MASS = 0.35 * 3.1415 * (outer_d**2 - inner_d**2) * Aluminum_6061_T6.rho * SF
 
 
 def wing_mass(
