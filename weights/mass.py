@@ -20,22 +20,22 @@ _PVC_SF = 1.2       # safety factor for PVC tube mass estimate
 
 
 def _fuselage_x_centroid(fus: FuselageResult) -> float:
-    """Centroid of the plotted nose-cylinder-tail fuselage body."""
+    """Side-view x-centroid of the plotted nose-cylinder-tail fuselage body."""
     box_x0 = fus.x_nose + fus.l_nose
     box_x1 = box_x0 + fus.l_cylinder
 
-    nose_volume = fus.l_nose / 3.0
-    cylinder_volume = fus.l_cylinder
-    tail_volume = fus.l_tail / 3.0
-    total_volume = nose_volume + cylinder_volume + tail_volume
-    if total_volume <= 0.0:
+    nose_area = fus.l_nose / 2.0
+    cylinder_area = fus.l_cylinder
+    tail_area = fus.l_tail / 2.0
+    total_area = nose_area + cylinder_area + tail_area
+    if total_area <= 0.0:
         return fus.x_nose + fus.length / 2.0
 
     return (
-        (box_x0 - 0.25 * fus.l_nose) * nose_volume
-        + (0.5 * (box_x0 + box_x1)) * cylinder_volume
-        + (box_x1 + 0.25 * fus.l_tail) * tail_volume
-    ) / total_volume
+        (box_x0 - fus.l_nose / 3.0) * nose_area
+        + (0.5 * (box_x0 + box_x1)) * cylinder_area
+        + (box_x1 + fus.l_tail / 3.0) * tail_area
+    ) / total_area
 
 
 def _pvc_mass(structure: RodResult) -> float:
@@ -114,7 +114,7 @@ def compute_cg(
     # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
     # Tail boom runs from aileron hinge to VT trailing edge.
     x_tail = 0.25 * sizing.c + sizing.lh
-    x_pvc = x_mid_rods
+    x_pvc = 0.5 * (x_rod_spar + x_rod_aileron + fus.inputs.tube_tail_overlap)
 
     # Tail positions: boom endpoint at aileron hinge + L_boom.
     # VT TE at boom endpoint; VT LE is sizing.cv back from TE.

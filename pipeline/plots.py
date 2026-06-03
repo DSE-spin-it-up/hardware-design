@@ -5,7 +5,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle
+from matplotlib.patches import Circle, Polygon, Rectangle
 
 from aerodynamics.airfoil_geometry import AirfoilGeometry
 from sizing.fuselage import FuselageResult
@@ -469,7 +469,10 @@ def plot_cg_side_view(
     battery_length = fus.battery_length
     battery_height = fus.battery_height
     batt_x0 = x_batt - battery_length / 2.0
-    batt_y0 = tube_y0 + 0.005   # battery sits just above tube floor
+    if x_batt < 0.0:
+        batt_y0 = fus.battery_y_min
+    else:
+        batt_y0 = tube_y0 + 0.005   # battery sits just above tube floor
 
     # ------------------------------------------------------------------ structural box vertical placement
     # The foam floor is below the battery; that defines the bottom of the box.
@@ -533,12 +536,6 @@ def plot_cg_side_view(
     ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
                             facecolor="lightgreen", alpha=0.4, edgecolor="darkgreen",
                             label="Tube"))
-    ax.add_patch(Ellipse((tube_x0,              tube_y0 + tube_height / 2.0),
-                         tube_height, tube_height,
-                         facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
-    ax.add_patch(Ellipse((tube_x0 + tube_length, tube_y0 + tube_height / 2.0),
-                         tube_height, tube_height,
-                         facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
 
     # --- Vertical tail ---
     ax.add_patch(Rectangle((x_tail_root_v, y_rod_aileron), c_v, b_v_total,
