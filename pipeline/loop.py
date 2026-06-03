@@ -14,7 +14,7 @@ import numpy as np
 from aerodynamics.airfoil_geometry import airfoil_thickness_to_chord
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.drag_buildup import DragResult
-from aerodynamics.llt import WingGeometry, FlightCondition, solve_llt
+from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from aerodynamics.stability import calculate_Sh_S
 from pipeline.helpers import (
     ScissorData,
@@ -96,6 +96,17 @@ class _DesignPass:
     cg: dict[str, float]
 
 
+@dataclass
+class _ScissorState:
+    """Scissor-related outputs for a design pass."""
+    llt: LLTResult
+    tail_loading: dict
+    y_cg: dict[str, float]
+    scissor: ScissorData
+    x_target: float
+    ShS_target: float
+
+
 def _run_design_pass(
     sizing: SizingResult,
     *,
@@ -103,6 +114,7 @@ def _run_design_pass(
     polar: AirfoilPolar,
     tail_polar: AirfoilPolar,
     airfoil: str,
+    battery_x: float | None,
 ) -> _DesignPass:
     propulsion = prop_sizing.run(sizing, config.PROPULSION)
     fus = fuselage.run(
@@ -110,7 +122,7 @@ def _run_design_pass(
         config.FUSELAGE,
         battery_volume=propulsion.battery_volume,
         airfoil_path=airfoil,
-        battery_x=config.BATTERY_X,
+        battery_x=battery_x,
     )
     # Aileron must be computed before rods and drag — both need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
@@ -145,10 +157,174 @@ def _run_design_pass(
         aileron=control_surface,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
-        battery_x=config.BATTERY_X,
+        battery_x=battery_x,
         materials=config.MATERIALS,
     )
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)
+
+
+def _scissor_intersection(scissor: ScissorData) -> tuple[float, float]:
+    """Return the lowest stability/controllability intersection on the scissor plot."""
+    diff = scissor.ShS_stab - scissor.ShS_ctrl
+    candidates: list[tuple[float, float]] = []
+
+    for k in range(len(diff) - 1):
+        d0 = diff[k]
+        d1 = diff[k + 1]
+        if d0 == 0.0:
+            x = float(scissor.x_cg[k])
+            y = float(scissor.ShS_stab[k])
+            candidates.append((x, y))
+        elif d0 * d1 < 0.0:
+            frac = -d0 / (d1 - d0)
+            x = float(scissor.x_cg[k] + frac * (scissor.x_cg[k + 1] - scissor.x_cg[k]))
+            y = float(scissor.ShS_stab[k] + frac * (scissor.ShS_stab[k + 1] - scissor.ShS_stab[k]))
+            candidates.append((x, y))
+
+    if diff[-1] == 0.0:
+        candidates.append((float(scissor.x_cg[-1]), float(scissor.ShS_stab[-1])))
+
+    if candidates:
+        return min(candidates, key=lambda xy: xy[1])
+
+    k = int(np.argmin(np.abs(diff)))
+    x = float(scissor.x_cg[k])
+    y = float(max(scissor.ShS_stab[k], scissor.ShS_ctrl[k]))
+    return x, y
+
+
+def _scissor_state_for_pass(
+    sizing: SizingResult,
+    p: _DesignPass,
+    *,
+    config,
+    polar: AirfoilPolar,
+    airfoil: str,
+) -> _ScissorState:
+    x_cg = p.cg["overall"]
+    llt = llt_at_cl(sizing, polar, CL_target=sizing.CL)
+    tail_loading = tail_drag_at_cruise(
+        sizing, polar, llt,
+        x_cg=x_cg,
+        tail_airfoil=config.TAIL_AIRFOIL,
+    )
+    y_cg = weights_mass.compute_y_cg(
+        sizing=sizing, fus=p.fus, structure=p.struct,
+        masses=p.masses, airfoil_path=airfoil, cg=p.cg,
+    )
+    scissor = compute_scissor_data(
+        sizing, p.fus,
+        wing_llt=llt,
+        tail_llt=tail_loading["llt_tail"],
+        x_cg_current=x_cg,
+        y_cg=y_cg["overall"],
+        Vh_V=p.struct.Vh_V,
+    )
+    x_target, ShS_target = _scissor_intersection(scissor)
+    return _ScissorState(
+        llt=llt,
+        tail_loading=tail_loading,
+        y_cg=y_cg,
+        scissor=scissor,
+        x_target=x_target,
+        ShS_target=ShS_target,
+    )
+
+
+def _evaluate_battery_x(
+    sizing: SizingResult,
+    *,
+    config,
+    polar: AirfoilPolar,
+    tail_polar: AirfoilPolar,
+    airfoil: str,
+    battery_x: float | None,
+) -> tuple[_DesignPass, _ScissorState, float]:
+    p = _run_design_pass(
+        sizing,
+        config=config,
+        polar=polar,
+        tail_polar=tail_polar,
+        airfoil=airfoil,
+        battery_x=battery_x,
+    )
+    state = _scissor_state_for_pass(sizing, p, config=config, polar=polar, airfoil=airfoil)
+    return p, state, p.cg["overall"] - state.x_target
+
+
+def _optimize_battery_x_for_scissor(
+    sizing: SizingResult,
+    *,
+    config,
+    polar: AirfoilPolar,
+    tail_polar: AirfoilPolar,
+    airfoil: str,
+    battery_x_initial: float | None,
+    tol: float = 1.0e-4,
+    max_iter: int = 8,
+) -> tuple[float, _DesignPass, _ScissorState, float]:
+    """Move the battery until the CG lies at the scissor bottom intersection."""
+    battery_x = battery_x_initial
+    p, state, error = _evaluate_battery_x(
+        sizing,
+        config=config,
+        polar=polar,
+        tail_polar=tail_polar,
+        airfoil=airfoil,
+        battery_x=battery_x,
+    )
+    if battery_x is None:
+        battery_x = p.cg["battery"]
+
+    best = (abs(error), float(battery_x), p, state, error)
+    prev_x: float | None = None
+    prev_error: float | None = None
+    max_step = max(0.25 * sizing.c, 0.05)
+
+    for _ in range(max_iter):
+        if abs(error) < tol:
+            break
+
+        if prev_x is None or prev_error is None:
+            probe_step = max(0.05 * sizing.c, 0.01)
+            probe_x = float(battery_x) + probe_step
+            p_probe, state_probe, probe_error = _evaluate_battery_x(
+                sizing,
+                config=config,
+                polar=polar,
+                tail_polar=tail_polar,
+                airfoil=airfoil,
+                battery_x=probe_x,
+            )
+            if abs(probe_error) < best[0]:
+                best = (abs(probe_error), probe_x, p_probe, state_probe, probe_error)
+            derivative = (probe_error - error) / probe_step
+            prev_x, prev_error = float(battery_x), error
+        else:
+            derivative = (error - prev_error) / (float(battery_x) - prev_x)
+
+        if not np.isfinite(derivative) or abs(derivative) < 1.0e-6:
+            next_x = float(battery_x) - np.sign(error) * max_step
+        else:
+            step = -error / derivative
+            step = float(np.clip(step, -max_step, max_step))
+            next_x = float(battery_x) + step
+
+        prev_x, prev_error = float(battery_x), error
+        battery_x = next_x
+        p, state, error = _evaluate_battery_x(
+            sizing,
+            config=config,
+            polar=polar,
+            tail_polar=tail_polar,
+            airfoil=airfoil,
+            battery_x=battery_x,
+        )
+        if abs(error) < best[0]:
+            best = (abs(error), float(battery_x), p, state, error)
+
+    _, battery_x, p, state, error = best
+    return battery_x, p, state, error
 
 
 def _sw_closure_ar(
@@ -305,6 +481,7 @@ def run_pipeline(config) -> PipelineResult:
     mass_history: list[float] = []
     sw_history: list[float] = []
     cg_history: list[float] = []
+    battery_x = config.BATTERY_X
 
     cd0_prev = cd0_guess
     m_prev = m_drone_guess
@@ -314,35 +491,17 @@ def run_pipeline(config) -> PipelineResult:
     converged = False
     it = 0
     for it in range(1, config.N_ITER_MAX + 1):
-        p = _run_design_pass(
+        battery_x, p, scissor_state, cg_error = _optimize_battery_x_for_scissor(
             sizing,
             config=config,
             polar=polar,
             tail_polar=tail_polar,
             airfoil=airfoil,
+            battery_x_initial=battery_x,
         )
         m_drone = p.masses["total"]
         x_cg = p.cg["overall"]
-
-        # --- LLT at cruise CL + tail trim + stability scissor for this iteration's state ---
-        llt = llt_at_cl(sizing, polar, CL_target=sizing.CL)
-        tail_loading = tail_drag_at_cruise(
-            sizing, polar, llt,
-            x_cg=x_cg,
-            tail_airfoil=config.TAIL_AIRFOIL,
-        )
-        y_cg = weights_mass.compute_y_cg(
-            sizing=sizing, fus=p.fus, structure=p.struct,
-            masses=p.masses, airfoil_path=airfoil, cg=p.cg,
-        )
-        scissor = compute_scissor_data(
-            sizing, p.fus,
-            wing_llt=llt,
-            tail_llt=tail_loading["llt_tail"],
-            x_cg_current=x_cg,
-            y_cg=y_cg["overall"],
-            Vh_V=p.struct.Vh_V,
-        )
+        scissor = scissor_state.scissor
 
         Sh_S_new = calculate_Sh_S(x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, l_h=scissor.l_h,
                           CL_h=scissor.CL_h, CL_A_h=scissor.CL_A_h, Cm_ac=scissor.Cm_ac,
@@ -391,6 +550,8 @@ def run_pipeline(config) -> PipelineResult:
         _print_iter(it, p=p, sizing=sizing, m_drone=m_drone, x_cg=x_cg,
                     CL_target=CL_target, stall_binding=stall_binding,
                     dCD0=dCD0, dM=dM, dSw=dSw)
+        print(f"             battery_x={battery_x:.4f}  scissor_x*={scissor_state.x_target:.4f}  "
+              f"x_cg-x*={cg_error:+.2e}")
 
         mass_ok = (dM < config.MASS_TOL) if config.MASS_CLOSURE else True
         sw_ok = (dSw < config.SW_TOL) if config.SW_CLOSURE else True
@@ -411,13 +572,17 @@ def run_pipeline(config) -> PipelineResult:
               f"(last {_last_deltas(config, dCD0, dM, dSw)}).")
 
     # Final pass so every sub-solver result matches the converged sizing.
-    p = _run_design_pass(
+    battery_x, p, final_scissor_state, final_cg_error = _optimize_battery_x_for_scissor(
         sizing,
         config=config,
         polar=polar,
         tail_polar=tail_polar,
         airfoil=airfoil,
+        battery_x_initial=battery_x,
     )
+    print(f"    Battery CG tuning: battery_x={battery_x:.4f} m, "
+          f"x_cg={p.cg['overall']:.4f} m, scissor_x*={final_scissor_state.x_target:.4f} m, "
+          f"error={final_cg_error:+.2e} m")
     if np.isclose(p.fus.height, config.FUSELAGE.casing_factor * p.fus.battery_height):
         print("    WARNING: fuselage height is just casing_factor × battery_height; "
               "airfoil height is not being used for fuselage sizing.")
