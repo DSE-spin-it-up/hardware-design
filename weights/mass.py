@@ -14,10 +14,16 @@ from weights.part_materials import PartMaterials
 from structures.materials import Aluminum_6061_T6
 
 DEFAULT_MATERIALS = PartMaterials()
-outer_d, inner_d = RodResult.d_spar, RodResult.d_spar-RodResult.t_spar
-SF = 1.2
-PVC_TUBES_MASS = 0.35 * 3.1415 * (outer_d**2 - inner_d**2) * Aluminum_6061_T6.rho * SF
+
 SERVO_MASS = 0.052  # [kg] per servo
+_PVC_SF = 1.2       # safety factor for PVC tube mass estimate
+
+
+def _pvc_mass(structure: RodResult) -> float:
+    """Estimate PVC tube mass from spar rod dimensions."""
+    outer_d = structure.d_spar
+    inner_d = structure.d_spar - structure.t_spar
+    return 0.35 * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6.rho * _PVC_SF
 
 
 def wing_mass(
@@ -120,14 +126,14 @@ def compute_cg(
     m_tail_h = hor_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_v = ver_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod = structure.mass_t
-    m_pvc = PVC_TUBES_MASS if pvc_tubes_mass_override is None else pvc_tubes_mass_override
+    m_pvc = _pvc_mass(structure) if pvc_tubes_mass_override is None else pvc_tubes_mass_override
 
     # Servos: 2 front motors, 2 aileron spar, 1 rear motor, 2 elevator spar, 1 rudder spar
-    x_servo_front   = x_motor       # 2× front motors
+    x_servo_front   = x_motor        # 2× front motors
     x_servo_aileron = x_rod_aileron  # 2× aileron spar
     x_servo_rear    = x_tail         # 1× rear motor
-    x_servo_ht = x_control_ht   # 2× elevator spar
-    x_servo_vt = x_control_vt   # 1× rudder spar
+    x_servo_ht      = x_control_ht   # 2× elevator spar
+    x_servo_vt      = x_control_vt   # 1× rudder spar
     x_servo_avg = (
         2 * x_servo_front
         + 2 * x_servo_aileron
@@ -361,7 +367,7 @@ def total_mass(
     m_rod_aileron = structure.mass_aileron
     m_tail_rod = structure.mass_t
     m_fuselage = materials.fuselage.mass(fus.volume_shell)
-    m_pvc = PVC_TUBES_MASS
+    m_pvc = _pvc_mass(structure)
     m_servos = 8 * SERVO_MASS
 
     # Glass fibre sheet mass (wing + tail, both sides)
