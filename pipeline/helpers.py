@@ -18,11 +18,10 @@ from aerodynamics.stability import (
     lift_slope_from_llt,
     stability_line_ShS,
 )
-from propulsion.sizing import PropulsionResult
-from sizing.aileron import AileronResult
+
 from sizing.fuselage import FuselageResult
 from sizing.wing import SizingResult
-from structures import rods as rods_mod
+from structures.rods import RodResult
 
 
 def resolve_airfoil(airfoil: str | None) -> str:
@@ -34,7 +33,7 @@ def resolve_airfoil(airfoil: str | None) -> str:
 def estimate_cd0(
     sizing: SizingResult,
     fus: FuselageResult,
-    struct: RodResult,               # ← accept instead of recomputing
+    struct: RodResult,
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:

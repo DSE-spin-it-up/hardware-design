@@ -14,7 +14,7 @@ from weights.part_materials import PartMaterials
 
 DEFAULT_MATERIALS = PartMaterials()
 
-PVC_TUBES_MASS = 0.225  # [kg]
+PVC_TUBES_MASS = 0.37  # [kg]
 
 
 def wing_mass(
