@@ -34,16 +34,14 @@ def resolve_airfoil(airfoil: str | None) -> str:
 def estimate_cd0(
     sizing: SizingResult,
     fus: FuselageResult,
-    aileron: AileronResult,
-    propulsion: PropulsionResult,
+    struct: RodResult,               # ← accept instead of recomputing
     wing_airfoil: str,
     tail_airfoil: str = "airfoils/NACA0010.dat",
 ) -> DragResult:
-    rods = rods_mod.run(sizing, aileron, propulsion, wing_airfoil, tail_airfoil)   # ← pass airfoil_path
     return drag_buildup.run(
         sizing,
         fus,
-        rods,
+        struct,
         DragInputs(wing_airfoil=wing_airfoil, tail_airfoil=tail_airfoil),
     )
 
@@ -70,13 +68,8 @@ def tail_drag_at_cruise(
     *,
     x_cg: float,
     tail_airfoil: str,
+    CL_tail: float | None = None,       # ← add this
 ) -> dict:
-    """Tail trim loading + induced drag at cruise.
-
-    Returns the `calculate_tail_loading` dict with one extra key
-    `CD_i_tail_wing_ref` = CD_i_tail · S_t / S_w, ready to add into the
-    aircraft CD (which is referenced to S_w).
-    """
     wing_geom = WingGeometry(b=sizing.inputs.b, S=sizing.Sw, taper=sizing.inputs.lam)
     tail_geom = WingGeometry(b=sizing.bh, S=sizing.Sh, taper=sizing.inputs.lam_t)
 
@@ -90,17 +83,34 @@ def tail_drag_at_cruise(
         V_inf=sizing.inputs.V_cruise, rho=sizing.rho, CL_target=llt.CL,
     )
 
-    result = calculate_tail_loading(
-        wing_polar=polar,
-        wing_geometry=wing_geom,
-        tail_polar=tail_polar,
-        tail_geometry=tail_geom,
-        flight=flight,
-        alpha_cruise=llt.alpha_root,
-        CL_wing_cruise=llt.CL,
-        l_tail=sizing.lh,
-        x_cg=x_cg,
-    )
+    # If a trimmed CL_tail is supplied (from elevator sizing, which includes
+    # thrust and downwash), use it directly instead of the moment-balance
+    # approximation inside calculate_tail_loading.
+    if CL_tail is not None:
+        tail_flight = FlightCondition(
+            V_inf=sizing.inputs.V_cruise, rho=sizing.rho, CL_target=CL_tail,
+        )
+        tail_result = solve_llt(tail_geom, tail_polar, tail_flight)
+        result = {
+            "CL_tail": CL_tail,
+            "CD_i_tail": tail_result.CD_i,
+            "e_tail": tail_result.e,
+            "AR_tail": tail_geom.AR,
+            "llt_tail": tail_result,
+        }
+    else:
+        result = calculate_tail_loading(
+            wing_polar=polar,
+            wing_geometry=wing_geom,
+            tail_polar=tail_polar,
+            tail_geometry=tail_geom,
+            flight=flight,
+            alpha_cruise=llt.alpha_root,
+            CL_wing_cruise=llt.CL,
+            l_tail=sizing.lh,
+            x_cg=x_cg,
+        )
+
     result["CD_i_tail_wing_ref"] = result["CD_i_tail"] * sizing.Sh / sizing.Sw
     return result
 

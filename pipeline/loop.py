@@ -14,7 +14,7 @@ import numpy as np
 from aerodynamics.airfoil_geometry import airfoil_thickness_to_chord
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.drag_buildup import DragResult
-from aerodynamics.llt import LLTResult
+from aerodynamics.llt import WingGeometry, FlightCondition, solve_llt
 from aerodynamics.stability import calculate_Sh_S
 from pipeline.helpers import (
     ScissorData,
@@ -114,11 +114,6 @@ def _run_design_pass(
     )
     # Aileron must be computed before rods and drag — both need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
-    drag = estimate_cd0(
-        sizing, fus, control_surface, propulsion,
-        wing_airfoil=airfoil,
-        tail_airfoil=config.TAIL_AIRFOIL,
-    )
     struct = rods.run(
         sizing,
         control_surface,
@@ -127,6 +122,11 @@ def _run_design_pass(
         config.TAIL_AIRFOIL,
         config.STRUCTURE,
         tail_polar=tail_polar,
+    )
+    drag = estimate_cd0(
+        sizing, fus, struct,
+        wing_airfoil=airfoil,
+        tail_airfoil=config.TAIL_AIRFOIL,
     )
     masses = weights_mass.total_mass(
         sizing=sizing,
@@ -174,7 +174,7 @@ def _sw_closure_ar(
     """
     s = sizing.inputs
     CL_sw, CD_wing_sw = wing_drag_polar(sizing, polar, alpha_range)
-    CD_nonwing = drag.CD0_tail_h + drag.CD0_tail_h + drag.CD0_fus
+    CD_nonwing = drag.CD0_tail_h + drag.CD0_tail_v + drag.CD0_fus
     CD_payload = s.Cd_payload * s.S_payload / (s.n_drones * sizing.Sw)
     LD = CL_sw / (CD_wing_sw + CD_nonwing + CD_payload)
     CL_optLD = float(CL_sw[int(np.argmax(LD))])
@@ -447,7 +447,10 @@ def run_pipeline(config) -> PipelineResult:
     CD_drone_sweep = CD_wing_sweep + CD_nonwing
     CD_full_sweep = CD_drone_sweep + CD_payload
 
-    # ----- Step 7: tail trim loading + induced drag, then full drag estimate -----
+    # ----- Step 7: tail trim loading + induced drag (elevator not yet known) -----
+    # Uses the moment-balance CL_tail from calculate_tail_loading. This result
+    # is used for the scissor in Step 8. cd_i_tail and CD_full_buildup are
+    # recomputed in Step 7b once the trimmed CL_tail is known from elevator sizing.
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
         x_cg=p.cg["overall"],
@@ -487,6 +490,25 @@ def run_pipeline(config) -> PipelineResult:
         x_cg=p.cg["overall"],
     )
 
+    # ----- Step 7b: recompute tail drag at the correctly trimmed CL_tail -----
+    # elevator_result.CLh_cruise is derived from the full trim solve (including
+    # thrust moments and downwash), so it is more accurate than the moment-balance
+    # approximation used in Step 7.
+    tail_loading = tail_drag_at_cruise(
+        sizing, polar, llt,
+        x_cg=p.cg["overall"],
+        tail_airfoil=config.TAIL_AIRFOIL,
+        CL_tail=elevator_result.CLh_cruise,
+    )
+    cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
+    CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
+
+    # ----- Step 10: torsion check on the boom + physics-based VT rod sizing -----
+    # Both require rudder_result, so they are done together after Step 9.
+    # The VT rod is re-run with the full sideslip + rudder loads; the iteration-
+    # loop rods.run used the thrust-only fallback since rudder wasn't available.
+    # CLalphav_vt is taken from the scissor's tail lift slope (CL_alpha_h was
+    # computed on the vertical tail geometry by compute_scissor_data).
     F_tail = (
         sizing.Sh
         * abs(-0.35 * sizing.inputs.ARt ** (1.0 / 3.0))
@@ -494,13 +516,40 @@ def run_pipeline(config) -> PipelineResult:
         * config.STRUCTURE.Vh_V
         * config.STRUCTURE.safety_factor
     )
+    
+    # Vertical tail lift slope — separate LLT on the VT planform.
+    # sizing.bv / sizing.Sv / sizing.cv are already consistent from wing.run().
+    # The tail_polar (symmetric section) is reused since the VT uses the same
+    # airfoil as the horizontal tail.
+
+    vt_geom = WingGeometry(b=sizing.bv, S=sizing.Sv, taper=sizing.inputs.lam_t)
+    vt_flight = FlightCondition(
+        V_inf=sizing.inputs.V_cruise, rho=sizing.rho, CL_target=0.5,
+    )
+    vt_llt = solve_llt(vt_geom, tail_polar, vt_flight)
+    CLalphav_vt = vt_llt.CL / (vt_llt.alpha_root - tail_polar.alpha_L0)
+
+    struct = rods.run(
+        sizing,
+        p.control_surface,
+        p.propulsion,
+        airfoil,
+        config.TAIL_AIRFOIL,
+        config.STRUCTURE,
+        tail_polar=tail_polar,
+        rudder=rudder_result,
+        CLalphav_vt=CLalphav_vt,   # ← now correct VT lift slope
+    )
+
+    # Re-apply torsion check on the freshly sized struct (VT now physics-based).
     struct = rods.apply_torsion_check(
-        rod=p.struct,
+        rod=struct,
         rudder_hinge_moment=rudder_result.hinge_moment.H,
         bending_force=F_tail,
         boom_length=sizing.L_boom,
         safety_factor=config.STRUCTURE.safety_factor,
     )
+
     return PipelineResult(
         airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,

@@ -45,7 +45,7 @@ V_stall: 14.0
 # of the CG buildup. Set to null to default to the midpoint between the spar
 # and aileron rods (current behaviour). Override to slide the battery fore/aft
 # and trade x_cg.
-battery_x: -0.212
+battery_x: -0.3 #-0.212
 
 # ----- Initial / wing sizing -----
 sizing:
@@ -71,7 +71,7 @@ sizing:
   # Tail
   Vv: 0.04
   Vh: 0.50                 # used only for the initial Sh estimate; scissor takes over after iteration 0
-  L_boom: 1.50             # physical boom length [m] (aileron hinge → tail TE); lh is derived
+  L_boom: 2            # physical boom length [m] (aileron hinge → tail TE); lh is derived
   ARt: 4.5
   lam_t: 1.0
 

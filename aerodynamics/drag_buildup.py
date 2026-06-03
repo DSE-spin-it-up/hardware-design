@@ -163,7 +163,7 @@ def run(
     S_ref    = s.Sw
     CD0_wing = Cf_wing * FF_wing * i.Q_wing * Swet_wing / S_ref
     CD0_tail_h = Cf_tail_h * FF_tail_h * i.Q_c_tail * Swet_tail_h / S_ref
-    CD0_tail_v = Cf_tail_v * FF_tail_v * i.Q_c_tail * Swet_tail_h / S_ref
+    CD0_tail_v = Cf_tail_v * FF_tail_v * i.Q_c_tail * Swet_tail_v / S_ref
     CD0_fus  = Cf_fus  * FF_fus  * i.Q_fus  * Swet_fus  / S_ref
     CD0_boom = Cf_boom * FF_boom * i.Q_boom * Swet_boom / S_ref
     CD0      = CD0_wing + CD0_tail_h + CD0_tail_v + CD0_fus + CD0_boom

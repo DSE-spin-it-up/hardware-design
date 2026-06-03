@@ -144,9 +144,7 @@ def run(
     # Downwash at cruise
     # ------------------------------------------------------------------
     CL0      = -CLalpha * wing_polar.alpha_L0
-    dedalpha = (2 * CLalpha) / (np.pi * AR)
-    epsilon0 = (2 * CL0)    / (np.pi * AR)
-    epsilon  = epsilon0 + dedalpha * alpha
+    epsilon = scissor.dep_da * alpha  # epsilon0 ≈ 0 for symmetric tail (alpha_L0_h = 0)
 
     # ------------------------------------------------------------------
     # Thrust pitching moments about CG
