@@ -41,6 +41,15 @@ class CF_PLA(Material):  # https://www.iemai3d.com/wp-content/uploads/2020/12/CF
             s_t=48e6
         )
 
+class Aluminum_6061_T6(Material):
+    def __init__(self):
+        super().__init__(
+            E=69e9,      # Pa
+            rho=2700,    # kg/m^3
+            Y=276e6,     # Pa (yield strength)
+            s_t=310e6    # Pa (ultimate tensile strength)
+        )
+
 class PLA(Material):  # https://www.sciencedirect.com/science/article/pii/S0169409X16302058#s0010
     def __init__(self):
         super().__init__(
