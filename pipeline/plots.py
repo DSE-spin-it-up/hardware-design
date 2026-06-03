@@ -391,6 +391,7 @@ def plot_cg_side_view(
 
     # ------------------------------------------------------------------ CG x-positions
     x_motor       = cg["motors"]
+    x_motor_back  = cg.get("motor_back")
     x_rod_wing    = cg["rod_spar"]
     x_rod_aileron = cg["rod_aileron"]
     x_batt        = cg["battery"]
@@ -406,6 +407,8 @@ def plot_cg_side_view(
     x_vt_te  = x_rod_aileron + L_boom
     x_vt_le  = x_vt_te - c_v
     x_vt_fs  = x_vt_le + 0.25 * c_v
+    if x_motor_back is None:
+        x_motor_back = x_vt_fs
     x_ht_te  = x_vt_fs - prop_radius
     x_ht_le  = x_ht_te - ch
     x_tail_root_v = x_vt_le
@@ -493,7 +496,7 @@ def plot_cg_side_view(
     tail_poly = np.array([
         [box_x1,     box_yc + half_h],
         [box_x1,     box_yc - half_h],
-        [fus_tail_x, box_yc],
+        [fus_tail_x, y_rod_aileron],
     ])
 
     plot_height = max(
@@ -605,15 +608,15 @@ def plot_cg_side_view(
                color=["red", "black"], zorder=5)
     ax.text(x_motor,   motor_y   + 0.03, "Motor (front)", color="red",   ha="center", fontsize=8)
     ax.text(x_overall, overall_y + 0.02, "Overall CG",    color="black", ha="center", fontsize=8)
-    ax.scatter([x_vt_fs], [y_rod_aileron + b_v_total],
+    ax.scatter([x_motor_back], [y_rod_aileron + b_v_total],
                color="red", zorder=5, s=100, marker="^")
-    ax.text(x_vt_fs, y_rod_aileron + b_v_total + 0.03, "Motor (rear)",
+    ax.text(x_motor_back, y_rod_aileron + b_v_total + 0.03, "Motor (rear)",
             color="red", ha="center", fontsize=8)
 
     # --- Servos ---
     x_servo_front   = cg["motors"]
     x_servo_aileron = cg["rod_aileron"]
-    x_servo_rear    = cg["tail"]
+    x_servo_rear    = x_motor_back
     x_servo_ht      = cg.get("ht_rud", cg["tail"])
     x_servo_vt      = cg.get("vt_rud", cg["tail"])
     ax.scatter(

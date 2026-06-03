@@ -19,6 +19,25 @@ SERVO_MASS = 0.052  # [kg] per servo
 _PVC_SF = 1.2       # safety factor for PVC tube mass estimate
 
 
+def _fuselage_x_centroid(fus: FuselageResult) -> float:
+    """Centroid of the plotted nose-cylinder-tail fuselage body."""
+    box_x0 = fus.x_nose + fus.l_nose
+    box_x1 = box_x0 + fus.l_cylinder
+
+    nose_volume = fus.l_nose / 3.0
+    cylinder_volume = fus.l_cylinder
+    tail_volume = fus.l_tail / 3.0
+    total_volume = nose_volume + cylinder_volume + tail_volume
+    if total_volume <= 0.0:
+        return fus.x_nose + fus.length / 2.0
+
+    return (
+        (box_x0 - 0.25 * fus.l_nose) * nose_volume
+        + (0.5 * (box_x0 + box_x1)) * cylinder_volume
+        + (box_x1 + 0.25 * fus.l_tail) * tail_volume
+    ) / total_volume
+
+
 def _pvc_mass(structure: RodResult) -> float:
     """Estimate PVC tube mass from spar rod dimensions."""
     outer_d = structure.d_spar
@@ -82,11 +101,11 @@ def compute_cg(
     All positions are relative to the leading edge of the mean aerodynamic
     chord (LEMAC).
     """
-    # Fuselage centroid: nose (x_nose, negative when the body extends ahead of
-    # the LE for a forward battery) plus half the length.
-    x_fus = fus.x_nose + fus.length / 2.0
+    # Fuselage centroid follows the same nose-cylinder-tail body drawn in the
+    # side-view plot.
+    x_fus = _fuselage_x_centroid(fus)
 
-    x_motor = 0.0
+    x_motor_front = 0.0
     x_wing = 0.25 * sizing.c_root
     x_rod_spar = _max_tc_x(airfoil_path) * sizing.c_root
     x_rod_aileron = (1.0 - aileron.inputs.c_aileron_to_c_wing) * sizing.c_root
@@ -105,6 +124,7 @@ def compute_cg(
     x_vt_te = x_rod_aileron + sizing.L_boom
     x_vt_le = x_vt_te - sizing.cv
     x_vt_fs = x_vt_le + 0.25 * sizing.cv
+    x_motor_back = x_vt_fs
     x_ht_te = x_vt_fs - prop_radius
     x_ht_le = x_ht_te - sizing.ch
     x_tail_rod = x_rod_aileron + 0.5 * sizing.L_boom  # boom centroid
@@ -129,9 +149,9 @@ def compute_cg(
     m_pvc = _pvc_mass(structure) if pvc_tubes_mass_override is None else pvc_tubes_mass_override
 
     # Servos: 2 front motors, 2 aileron spar, 1 rear motor, 2 elevator spar, 1 rudder spar
-    x_servo_front   = x_motor        # 2× front motors
+    x_servo_front   = x_motor_front  # 2× front motors
     x_servo_aileron = x_rod_aileron  # 2× aileron spar
-    x_servo_rear    = x_tail         # 1× rear motor
+    x_servo_rear    = x_motor_back   # 1× rear motor
     x_servo_ht      = x_control_ht   # 2× elevator spar
     x_servo_vt      = x_control_vt   # 1× rudder spar
     x_servo_avg = (
@@ -166,11 +186,12 @@ def compute_cg(
         x_cg = (
             x_fus           * m_fus
             + x_batt        * m_batt
-            + x_motor       * m_motor * 2 / 3
+            + x_motor_front * m_motor * 2 / 3
+            + x_motor_back  * m_motor * 1 / 3
             + x_wing        * m_wing
             + x_rod_spar    * m_rod_spar
             + x_rod_aileron * m_rod_aileron
-            + x_tail        * (m_tail_h + m_tail_v + 1 / 3 * m_motor)
+            + x_tail        * (m_tail_h + m_tail_v)
             + x_tail_rod    * m_tail_rod
             + x_spar_ht     * m_spar_ht
             + x_control_ht  * m_control_ht
@@ -188,7 +209,8 @@ def compute_cg(
     return {
         'fuselage':     x_fus,
         'battery':      x_batt,
-        'motors':       x_motor,
+        'motors':       x_motor_front,
+        'motor_back':   x_motor_back,
         'wing':         x_wing,
         'rod_spar':     x_rod_spar,
         'rod_aileron':  x_rod_aileron,
@@ -230,7 +252,7 @@ def compute_y_cg(
     y_coords = y_coords + airfoil_y_offset
     airfoil_height = float(np.max(y_coords))
 
-    tube_height = max(max(structure.d_spar, structure.d_aileron) * 1.1, 0.03)
+    tube_height = max(structure.d_spar, structure.d_aileron) * fus.inputs.casing_factor
 
     # Rods sit on the airfoil mid-thickness line at their respective x/c.
     _, y_up_s, y_lo_s = airfoil.compute_thickness(cg["rod_spar"] / root_chord)
@@ -246,12 +268,16 @@ def compute_y_cg(
     y_motor = (float(np.mean(y_coords[le_mask]))
                if np.any(le_mask) else 0.5 * airfoil_height)
 
-    y_fus = fus.height / 2.0
-    y_wing = 0.5 * airfoil_height
     if cg["battery"] < 0.0:
-        y_batt = fus.battery_y_min + fus.battery_height / 2.0
+        batt_y0 = fus.battery_y_min
     else:
-        y_batt = batt_y0 + fus.battery_height / 2.0
+        batt_y0 = tube_y0 + 0.005
+    box_y0 = batt_y0 - fus.foam_floor_thickness
+    box_yc = box_y0 + fus.box_height / 2.0
+
+    y_fus = box_yc
+    y_wing = 0.5 * airfoil_height
+    y_batt = batt_y0 + fus.battery_height / 2.0
     y_pvc = tube_y0 + tube_height / 2.0
     y_tail_rod = y_rod_aileron
     y_tail_h = y_rod_aileron
@@ -286,9 +312,12 @@ def compute_y_cg(
         masses["fuselage"] + masses["battery"] + masses["motors"]
         + masses["wing"] + masses["rod_spar"] + masses["rod_aileron"]
         + masses["hor_tail"] + masses["ver_tail"] + masses["tail_rod"] + masses["pvc_tubes"]
-        + 2.0 * m_vt_spar + 2.0 * m_vt_rud
+        + m_ht_spar + m_ht_rud
+        + m_vt_spar + m_vt_rud
         + m_servos
-        + masses.get("glass_sheet_wing", 0.0) + masses.get("glass_sheet_tail", 0.0)
+        + masses.get("glass_sheet_wing", 0.0)
+        + masses.get("glass_sheet_tail_h", 0.0)
+        + masses.get("glass_sheet_tail_v", 0.0)
     )
     if m_total > 0:
         y_overall = (
