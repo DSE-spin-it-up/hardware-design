@@ -46,7 +46,7 @@ sizing:
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 1.5
+  L_boom: 1
   ARt: 4.5
   lam_t: 1.0
 
