@@ -18,6 +18,7 @@ from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from aerodynamics.stability import calculate_Sh_S
 from pipeline.helpers import (
     ScissorData,
+    compute_cm_thrust,
     compute_scissor_data,
     estimate_cd0,
     full_drag_estimate,
@@ -228,12 +229,25 @@ def _scissor_state_for_pass(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
     )
+
+    # Thrust pitching moments about the CG — included in the controllability
+    # trim balance so the scissor sizes Sh large enough to handle them,
+    # rather than leaving the entire burden to the elevator incidence angle.
+    Z_T_front = y_cg["motors"]     - y_cg["overall"]
+    Z_T_back  = y_cg["motor_back"] - y_cg["overall"]
+    Cm_front, Cm_back = compute_cm_thrust(
+        p.propulsion.thrust_cruise_per_prop,
+        Z_T_front, Z_T_back,
+        sizing.q_cruise, sizing.Sw, sizing.c,
+    )
+
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
         tail_llt=tail_loading["llt_tail"],
         x_cg_current=x_cg,
         y_cg=y_cg["overall"],
+        Cm_thrust=Cm_front + Cm_back,
         Vh_V=p.struct.Vh_V,
     )
     x_target, ShS_target = _scissor_intersection(scissor)
@@ -516,10 +530,13 @@ def run_pipeline(config) -> PipelineResult:
         x_cg = p.cg["overall"]
         scissor = scissor_state.scissor
 
-        Sh_S_new = calculate_Sh_S(x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, l_h=scissor.l_h,
-                          CL_h=scissor.CL_h, CL_A_h=scissor.CL_A_h, Cm_ac=scissor.Cm_ac,
-                          Vh_V=scissor.Vh_V, CL_alpha_h=scissor.CL_alpha_h,
-                          CL_alpha_A_h=scissor.CL_alpha_A_h, dep_da=scissor.dep_da, SM=scissor.SM)
+        Sh_S_new = calculate_Sh_S(
+            x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, l_h=scissor.l_h,
+            CL_h=scissor.CL_h, CL_A_h=scissor.CL_A_h, Cm_ac=scissor.Cm_ac,
+            Cm_thrust=scissor.Cm_thrust,
+            Vh_V=scissor.Vh_V, CL_alpha_h=scissor.CL_alpha_h,
+            CL_alpha_A_h=scissor.CL_alpha_A_h, dep_da=scissor.dep_da, SM=scissor.SM,
+        )
         Sh_new = Sh_S_new * sizing.Sw
 
         # --- Wing-area closure ---
@@ -540,9 +557,6 @@ def run_pipeline(config) -> PipelineResult:
 
         # --- Feed CD0 + tail induced drag back into sizing so propulsion sees
         #     the full cruise drag, not just the parasite contribution. ---
-        # cd_i_tail_prev is the tail induced drag (wing-area referenced) from
-        # the previous iteration's scissor state. One-iteration lag is
-        # acceptable and converges in the same number of passes as before.
         replace_kwargs: dict = {
             "Cd0": p.drag.CD0 + cd_i_tail_prev,
             "AR": AR_new,
@@ -641,17 +655,29 @@ def run_pipeline(config) -> PipelineResult:
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
-    # ----- Step 8: stability scissor line on the final consistent state -----
+    # ----- Step 8: stability scissor on the final consistent state -----
     y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
     )
+
+    # Thrust moments for the final scissor (matches the convention used in the
+    # convergence loop via _scissor_state_for_pass).
+    Z_T_front_final = y_cg["motors"]     - y_cg["overall"]
+    Z_T_back_final  = y_cg["motor_back"] - y_cg["overall"]
+    Cm_front_final, Cm_back_final = compute_cm_thrust(
+        p.propulsion.thrust_cruise_per_prop,
+        Z_T_front_final, Z_T_back_final,
+        sizing.q_cruise, sizing.Sw, sizing.c,
+    )
+
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
         tail_llt=tail_loading["llt_tail"],
         x_cg_current=p.cg["overall"],
         y_cg=y_cg["overall"],
+        Cm_thrust=Cm_front_final + Cm_back_final,
         Vh_V=p.struct.inputs.Vh_V,
     )
 

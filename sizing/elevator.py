@@ -14,6 +14,14 @@ Procedure
         bE/bh = Cm_dist / (CLalphah * eta_h * Vh * tau_e * delta_e_max)
 3.  Derive SE/Sh = (cE/ch) * (bE/bh)  (rectangular-panel assumption).
 4.  Compute all control derivatives and return.
+
+Note on thrust moments
+----------------------
+Thrust pitching moments (Cm_thrust_front, Cm_thrust_back) are now also
+included in the upstream scissor-plot trim balance via `compute_cm_thrust`
+in pipeline/helpers.py.  The scissor loop therefore sizes Sh to account for
+thrust, so the elevator here is only responsible for disturbance and payload
+authority rather than compensating for an under-sized tail.
 """
 from dataclasses import dataclass
 
@@ -61,20 +69,21 @@ class ElevatorResult:
     CLh_deltaE:     float           # dCLh/d(delta_e) [1/rad]
     CLh_cruise:     float           # tail section CL at cruise [–]
     CLh_at_max_up:  float           # tail section CL at maximum elevator-up deflection [–]
-    CLh_at_max_down: float           # tail section CL at maximum elevator-down deflection [–]
+    CLh_at_max_down: float          # tail section CL at maximum elevator-down deflection [–]
     Cl_max:         float           # tail airfoil maximum section Cl [–]
-    Cm_wing_body: float
-    Cm_tail_base: float
+    Cm_wing_body:   float
+    Cm_tail_base:   float
     Cm_tail_incidence: float
-    Cm_tail_total: float
+    Cm_tail_total:  float
     Cm_thrust_front: float
-    Cm_thrust_back: float
+    Cm_thrust_back:  float
     Cm_thrust_total: float
     driving_constraint: str
-    Cm_payload: float
-    y_cg: dict[str, float]
-    alpha:   float   # wing cruise AoA [rad]
-    epsilon: float   # downwash at tail [rad]
+    Cm_payload:     float
+    y_cg:           dict[str, float]
+    alpha:          float   # wing cruise AoA [rad]
+    epsilon:        float   # downwash at tail [rad]
+
 
 # ---------------------------------------------------------------------------
 # Empirical τ ↔ chord-ratio relationships
@@ -108,13 +117,14 @@ def run(
     Parameters
     ----------
     sizing      : converged wing/tail sizing result
-    scissor     : scissor-plot stability data
+    scissor     : scissor-plot stability data (Sh already accounts for thrust
+                  moments via compute_scissor_data)
     llt         : LLT result carrying the cruise angle of attack
     propulsion  : propulsion result for thrust pitching moment
     wing_polar  : wing airfoil polar for zero-lift angle
     tail_polar  : tail airfoil polar for stall coefficient checks
     y_cg        : vertical CG dict from compute_y_cg (keys: 'overall',
-                  'motors', 'motor_back')
+                  'motors', 'motor_back', 'pvc_tube_bottom')
     inputs      : ElevatorInputs overrides; defaults used when None
 
     Returns
@@ -167,10 +177,10 @@ def run(
     ) / (q * s.Sw * s.c)
 
     Cm_thrust = Cm_thrust_front + Cm_thrust_back
-    # ------------------------------------------------------------------
-# Payload disturbance (from config.yaml sizing.m_payload)
-# ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Payload disturbance (from config.yaml sizing.m_payload)
+    # ------------------------------------------------------------------
     moment_arm = abs(
         y_cg["overall"]
         - y_cg["pvc_tube_bottom"]
@@ -181,6 +191,7 @@ def run(
     Cm_payload = (
         payload_tension_x * moment_arm
     ) / (q * s.Sw * s.c)
+
     # ------------------------------------------------------------------
     # Solve for ih from moment equilibrium at delta_e = 0
     #
@@ -225,7 +236,7 @@ def run(
     tau_e = tau_from_chord_ratio(i.cE_ch)
 
     bE_bh_dist = i.Cm_dist / (
-    CLalphah * i.eta_h * Vh * tau_e * delta_e_max
+        CLalphah * i.eta_h * Vh * tau_e * delta_e_max
     )
 
     bE_bh_payload = Cm_payload / (
@@ -300,11 +311,11 @@ def run(
         Cm_thrust_front = Cm_thrust_front,
         Cm_thrust_back  = Cm_thrust_back,
         Cm_thrust_total = Cm_thrust,
-        Cm_payload = Cm_payload,
+        Cm_payload      = Cm_payload,
         driving_constraint = driving_constraint,
-        alpha   = alpha,
-        epsilon = epsilon,
-        y_cg = y_cg,
+        alpha           = alpha,
+        epsilon         = epsilon,
+        y_cg            = y_cg,
     )
 
 

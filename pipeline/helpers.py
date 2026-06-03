@@ -1,7 +1,7 @@
 """Small pipeline helpers: airfoil resolution, drag wrappers, LLT at CL, polar sweep."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -67,7 +67,7 @@ def tail_drag_at_cruise(
     *,
     x_cg: float,
     tail_airfoil: str,
-    CL_tail: float | None = None,       # ← add this
+    CL_tail: float | None = None,
 ) -> dict:
     wing_geom = WingGeometry(b=sizing.inputs.b, S=sizing.Sw, taper=sizing.inputs.lam)
     tail_geom = WingGeometry(b=sizing.bh, S=sizing.Sh, taper=sizing.inputs.lam_t)
@@ -133,7 +133,8 @@ class ScissorData:
     # Derived aero — trim point CLs (controllability)
     CL_h: float              # tail CL at controllability condition
     CL_A_h: float            # aircraft-less-tail CL at controllability condition
-    Cm_ac: float             # 3D-corrected wing CM about wing AC
+    Cm_ac: float             # 3D-corrected wing CM about wing AC (excl. thrust)
+    Cm_thrust: float         # total thrust pitching moment included in trim balance
     # Knobs
     SM: float
     Vh_V: float
@@ -146,6 +147,34 @@ class ScissorData:
     ShS_current: float
 
 
+def compute_cm_thrust(
+    T_per_prop: float,
+    Z_T_front: float,
+    Z_T_back: float,
+    q: float,
+    Sw: float,
+    c: float,
+) -> tuple[float, float]:
+    """Non-dimensionalise thrust pitching moments about the CG.
+
+    Parameters
+    ----------
+    T_per_prop : thrust per propeller [N]
+    Z_T_front  : vertical distance from front motor to CG, +ve upward [m]
+    Z_T_back   : vertical distance from rear  motor to CG, +ve upward [m]
+    q          : dynamic pressure [Pa]
+    Sw         : wing reference area [m²]
+    c          : mean aerodynamic chord [m]
+
+    Returns
+    -------
+    (Cm_thrust_front, Cm_thrust_back) — nose-up positive, referenced to q·Sw·c.
+    """
+    Cm_front = -(2.0 * T_per_prop * Z_T_front) / (q * Sw * c)
+    Cm_back  = -(1.0 * T_per_prop * Z_T_back)  / (q * Sw * c)
+    return Cm_front, Cm_back
+
+
 def compute_scissor_data(
     sizing: SizingResult,
     fus: FuselageResult,
@@ -154,6 +183,7 @@ def compute_scissor_data(
     *,
     x_cg_current: float,
     y_cg: float = 0.0,
+    Cm_thrust: float = 0.0,
     SM: float = 0.05,
     Vh_V: float = 0.85,
     x_cg_range: tuple[float, float] | None = None,
@@ -162,12 +192,19 @@ def compute_scissor_data(
     CL_A_h: float | None = None,
     Cm_ac: float | None = None,
 ) -> ScissorData:
-    """Build the scissor (stability) line and bundle all derived parameters.
+    """Build the scissor (stability + controllability) lines and bundle all derived parameters.
 
     Lift slopes are taken analytically from the existing wing/tail LLT solves
     (CL is exactly linear in α_root in classical LLT). Downwash dε/dα is
     Slingerland with Λ=0 and m_tv=0. x_ac is the wing MAC quarter chord.
     All x positions are measured from LEMAC.
+
+    Parameters
+    ----------
+    Cm_thrust : total thrust pitching moment Cm_thrust_front + Cm_thrust_back,
+                nose-up positive, referenced to q·Sw·c. Use `compute_cm_thrust`
+                to obtain this from propulsion results before calling here.
+                Defaults to 0.0 so existing callers remain unaffected.
     """
     s = sizing
 
@@ -202,22 +239,25 @@ def compute_scissor_data(
         dep_da=dep_da, Vh_V=Vh_V, SM=SM,
     )
 
-    # --- Controllability line: uses trim-point CL values + wing Cm_ac ---
-    # Defaults: cruise condition reuses existing LLT outputs. Override for
-    # the conservative landing case.
+    # --- Wing + payload Cm_ac (thrust excluded here, added separately below) ---
     if CL_h is None:
         AR_tail = s.ARt
         CL_h = -0.35 * AR_tail ** (1.0 / 3.0)
     if CL_A_h is None:
-        CL_A_h = wing_llt.CL  # wing-only proxy, ignoring fuselage lift contribution
+        CL_A_h = wing_llt.CL
     if Cm_ac is None:
         Cm_ac = calculate_CM_wing(wing_llt.polar, wing_llt.wing, wing_llt.alpha_root)
         payload_per_drone = sizing.inputs.m_payload / sizing.inputs.n_drones
         Cm_ac -= payload_per_drone * 9.81 * y_cg / (sizing.q_cruise * sizing.Sw * sizing.c)
 
+    # --- Controllability line: include thrust moment in the trim balance ---
+    # Cm_thrust shifts the trim demand on the tail (nose-up thrust → more
+    # tail-down force required) without affecting the stability gradient.
+    Cm_ac_total = Cm_ac + Cm_thrust
+
     ShS_ctrl = controllability_line_ShS(
         x_cg, x_ac=x_ac, c=s.c, l_h=s.lh,
-        CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac, Vh_V=Vh_V,
+        CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac_total, Vh_V=Vh_V,
     )
 
     return ScissorData(
@@ -226,6 +266,7 @@ def compute_scissor_data(
         CL_alpha_w=CL_alpha_w, CL_alpha_h=CL_alpha_h,
         CL_alpha_A_h=CL_alpha_A_h, dep_da=dep_da,
         CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac,
+        Cm_thrust=Cm_thrust,
         SM=SM, Vh_V=Vh_V, x_ac=x_ac,
         c=s.c, l_h=s.lh,
         x_cg_current=x_cg_current,

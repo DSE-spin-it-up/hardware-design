@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from aerodynamics.airfoil_polar import AirfoilPolar
@@ -64,6 +63,7 @@ def controllability_line_ShS(
     CL_h: float,
     CL_A_h: float,
     Cm_ac: float,
+    Cm_thrust: float = 0.0,
     Vh_V: float,
 ) -> np.ndarray:
     """Required S_h/S as a function of x_cg for trim (controllability).
@@ -74,12 +74,16 @@ def controllability_line_ShS(
     (downforce), so the line slopes opposite to the stability line — together
     they form the classical scissor and bound the allowable CG range.
 
+    `Cm_thrust` is the total thrust pitching moment coefficient (front + rear
+    propellers) about the CG. It is nose-up positive and is added to Cm_ac
+    since both are non-tail, non-CG-position contributions to the trim balance.
+
     `CL_h`, `CL_A_h`, `Cm_ac` are evaluated at the controllability condition
     (cruise as default; switch to landing/max-CL values for the conservative
     case).
     """
     factor = (CL_h / CL_A_h) * (l_h / c) * Vh_V**2
-    return ((x_cg - x_ac) / c + Cm_ac / CL_A_h) / factor
+    return ((x_cg - x_ac) / c + (Cm_ac + Cm_thrust) / CL_A_h) / factor
 
 
 def stability_line_ShS(
@@ -99,6 +103,9 @@ def stability_line_ShS(
     Inverts the trim/stability equation
         x̄_cg = x̄_ac + (CL_α,h/CL_α,A-h)(1 − dε/dα)(S_h/S)(l_h/c̄)(V_h/V)² − SM
     for S_h/S. `x_cg`, `x_ac` and `c` must share a datum (LEMAC, in metres).
+
+    Thrust does not appear here: it shifts the trim point (controllability)
+    but does not change the rate at which stability margin varies with CG.
     """
     factor = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * (l_h / c) * Vh_V**2
     return ((x_cg - x_ac) / c + SM) / factor
@@ -158,6 +165,7 @@ def calculate_tail_loading(
         "llt_tail": tail_result,
     }
 
+
 def calculate_Sh_S(
     x_cg: float,
     *,
@@ -167,6 +175,7 @@ def calculate_Sh_S(
     CL_h: float,
     CL_A_h: float,
     Cm_ac: float,
+    Cm_thrust: float = 0.0,
     Vh_V: float,
     CL_alpha_h: float,
     CL_alpha_A_h: float,
@@ -178,11 +187,15 @@ def calculate_Sh_S(
     Mirror of `stability_line_ShS` / `controllability_line_ShS`, solving the
     scissor inversions for S_h/S at a fixed tail length l_h instead of solving
     for l_h at a fixed S_h/S. Returns the binding (larger) of the two.
+
+    `Cm_thrust` is the total thrust pitching moment (front + rear props) about
+    the CG, nose-up positive. It enters the controllability balance only —
+    thrust shifts the trim point but not the stability-margin gradient.
     """
     factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * (l_h / c) * Vh_V**2
     factor_cont = (CL_h / CL_A_h) * (l_h / c) * Vh_V**2
 
     ShS_stab = ((x_cg - x_ac) / c + SM) / factor_stab
-    ShS_cont = ((x_cg - x_ac) / c + Cm_ac / CL_A_h) / factor_cont
+    ShS_cont = ((x_cg - x_ac) / c + (Cm_ac + Cm_thrust) / CL_A_h) / factor_cont
 
     return max(ShS_stab, ShS_cont)
