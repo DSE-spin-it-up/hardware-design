@@ -7,20 +7,14 @@ from structures.materials import EPP
 
 @dataclass
 class FuselageInputs:
-    # Off-the-shelf battery cell envelope [m] — used when AR_lw == 0 or AR_lh == 0.
+    # Off-the-shelf battery cell envelope [m]
     battery_length: float = 0.212
     battery_width: float = 0.090
     battery_height: float = 0.060
-    # Battery aspect ratios. If both > 0, dimensions are recomputed from the
-    # required battery volume (from propulsion sizing) and these ratios,
-    # overriding battery_length/width/height above.
+    # Battery aspect ratios.
     AR_lw: float = 0.0  # length / width
     AR_lh: float = 0.0  # length / height
-    # Geometric margin applied uniformly to all internal components (battery
-    # and tubes).  A single factor keeps the EPP foam walls consistent on
-    # every face: each internal dimension is multiplied by casing_factor so
-    # the wall thickness is roughly (casing_factor - 1) / 2 × dimension.
-    # 1.15 → ~7.5 % wall on each side; 1.25 → ~12.5 %.
+    # Geometric margin applied uniformly to all internal components.
     casing_factor: float = 1.15  # [-] all-around margin for EPP foam walls
     casing_thickness: float = 0.001  # [m] minimum hard wall thickness
     # How far the tube extends aft of the aileron hinge to grip the tail boom.
@@ -34,17 +28,23 @@ class FuselageInputs:
 @dataclass
 class FuselageResult:
     inputs: FuselageInputs
+    # Outer Aerodynamic Ellipsoid Dimensions
     length: float       # [m]
     width: float        # [m]
     height: float       # [m]
     d_eq: float         # equivalent diameter [m]
     fineness: float     # length / d_eq [-]
     Swet: float         # wetted area [m²]
+    # Internal Structural Box Dimensions
+    box_length: float   # [m]
+    box_width: float    # [m]
+    box_height: float   # [m]
+    # Battery dimensions
     battery_length: float  # [m] battery dimension actually used
     battery_width: float   # [m]
     battery_height: float  # [m]
-    volume_shell: float = 0.0           # [m³] structural material volume
-    x_nose: float = 0.0                 # [m] fuselage nose x from LEMAC (negative = ahead of LE)
+    volume_shell: float = 0.0           # [m³] structural material volume of ellipsoid
+    x_nose: float = 0.0                 # [m] aero fuselage nose x from LEMAC
     battery_y_min: float = 0.0          # [m] lowest allowable battery bottom from fuselage floor
     foam_floor_thickness: float = 0.0   # [m] required foam thickness below battery
 
@@ -58,37 +58,15 @@ def run(
     tube_back_x: float | None = None,
     tube_outer_diameter: float = 0.0,
 ) -> FuselageResult:
-    """
-    Fuselage geometry is driven entirely by the internal components:
-
-      • Nose  : battery front face (battery_x − b_length / 2) minus one wall
-      • Aft   : aileron hinge + tube_tail_overlap + one wall thickness.
-                tube_back_x should be passed as x_rod_aileron + tube_tail_overlap.
-                Falls back to sizing.c_root if not provided.
-      • Height: max(battery height, tube diameter) × casing_factor + foam floor
-      • Width : battery width × casing_factor
-      • Floor : EPP shear / tearout check sets the minimum foam thickness
-                below the battery; the fuselage floor sits that far below
-                the battery bottom.
-
-    Parameters
-    ----------
-    tube_back_x : x-position (from LEMAC) of the aft face of the tube.
-                  Pass as x_rod_aileron + inputs.tube_tail_overlap from the pipeline.
-                  Falls back to sizing.c_root if not provided.
-    tube_outer_diameter : outer diameter of the largest tube (spar or aileron
-                          rod), used to size fuselage height.
-    """
-
+    
     FILLED = True
 
     if inputs is None:
         inputs = FuselageInputs()
     i = inputs
 
-    # ------------------------------------------------------------------ battery dims
+    # ------------------------------------------------------------------ 1. Battery dims
     if i.AR_lw > 0 and i.AR_lh > 0:
-        # L * (L/AR_lw) * (L/AR_lh) = V  =>  L = (V * AR_lw * AR_lh)^(1/3)
         b_length = (battery_volume * i.AR_lw * i.AR_lh) ** (1 / 3)
         b_width  = b_length / i.AR_lw
         b_height = b_length / i.AR_lh
@@ -97,9 +75,7 @@ def run(
         b_width  = i.battery_width
         b_height = i.battery_height
 
-    # ------------------------------------------------------------------ EPP tearout check
-    # Compute this first — foam_floor_thickness sets the fuselage floor position
-    # which in turn feeds into the overall height.
+    # ------------------------------------------------------------------ 2. EPP tearout check
     epp = EPP()
     bearing_area = b_length * b_width
     stress = (battery_mass * i.g * i.load_factor) / bearing_area if bearing_area > 0 else 0.0
@@ -115,42 +91,49 @@ def run(
 
     battery_y_min = foam_floor_thickness
 
-    # ------------------------------------------------------------------ nose / aft x
-    # Nose: one wall thickness ahead of the battery front face.
+    # ------------------------------------------------------------------ 3. Internal Box Bounds
     if battery_x is not None:
         x_battery_front = battery_x - b_length / 2.0
     else:
-        # Battery not yet placed — centre it in the root chord as a fallback.
         x_battery_front = sizing.c_root / 2.0 - b_length / 2.0
 
-    x_nose = x_battery_front - i.casing_thickness
-
-    # Aft: back of the tube (aileron hinge + overlap), plus one wall thickness.
+    x_nose_box = x_battery_front - i.casing_thickness
     _tube_back = tube_back_x if tube_back_x is not None else sizing.c_root
-    x_aft = _tube_back + i.casing_thickness
+    x_aft_box = _tube_back + i.casing_thickness
 
-    length = x_aft - x_nose
-
-    # ------------------------------------------------------------------ width
-    # Battery width sets the cross-section; casing_factor gives uniform foam
-    # walls on both sides.
-    width = b_width * i.casing_factor
-
-    # ------------------------------------------------------------------ height
-    # The fuselage must clear whichever is taller: the battery or the tube.
-    # casing_factor is applied to that governing dimension for a uniform wall.
-    # The floor is raised by foam_floor_thickness (EPP shear), so the
-    # external height includes that extra material at the bottom.
+    box_length = x_aft_box - x_nose_box
+    box_width = b_width * i.casing_factor
     inner_height = max(b_height, tube_outer_diameter) * i.casing_factor
-    height = inner_height + foam_floor_thickness
+    box_height = inner_height + foam_floor_thickness
 
-    # ------------------------------------------------------------------ derived
+    # ------------------------------------------------------------------ 4. Encompassing Ellipsoid
+    # Inflate axes by sqrt(3) so the curved shell clears the rectangular box corners
+    k_clearance = np.sqrt(3.0)
+    
+    length = box_length * k_clearance
+    width  = box_width * k_clearance
+    height = box_height * k_clearance
+
+    # Shift aerodynamic nose forward by the expansion delta to keep the box centered
+    delta_l = (length - box_length) / 2.0
+    x_nose = x_nose_box - delta_l
+
+    # ------------------------------------------------------------------ 5. Derived Aero Data
     d_eq     = np.sqrt(width * height)
     fineness = length / d_eq
-    Swet     = 2.0 * (length * width + length * height + width * height)
+    
+    # Knud Thomsen's formula for exact wetted area of an ellipsoid
+    a, b, c = length / 2.0, width / 2.0, height / 2.0
+    p = 1.6075
+    Swet_ellipsoid = 4.0 * np.pi * (((a*b)**p + (a*c)**p + (b*c)**p) / 3.0) ** (1.0 / p)
+    
+    # Apply structural modifier (tail boom taper cuts off the back half of the ellipsoid)
+    Swet = Swet_ellipsoid * 0.85
 
     if FILLED:
-        volume_shell = length * width * height
+        volume_shell = (4.0 / 3.0) * np.pi * a * b * c
+    else:
+        volume_shell = 0.0
 
     return FuselageResult(
         inputs=inputs,
@@ -160,6 +143,9 @@ def run(
         d_eq=d_eq,
         fineness=fineness,
         Swet=Swet,
+        box_length=box_length,
+        box_width=box_width,
+        box_height=box_height,
         battery_length=b_length,
         battery_width=b_width,
         battery_height=b_height,
@@ -171,18 +157,16 @@ def run(
 
 
 def summary(r: FuselageResult) -> None:
-    print("\n--- Fuselage ---")
-    print(f"  Battery L × W × H    : "
-          f"{r.battery_length:.4f} × {r.battery_width:.4f} × {r.battery_height:.4f}  m")
-    print(f"  Length               : {r.length:.4f}  m")
+    print("\n--- Fuselage (Ellipsoid Model) ---")
+    print(f"  Battery L × W × H    : {r.battery_length:.4f} × {r.battery_width:.4f} × {r.battery_height:.4f}  m")
+    print(f"  Internal Box Bounds  : {r.box_length:.4f} × {r.box_width:.4f} × {r.box_height:.4f}  m")
+    print(f"  Outer Ellipsoid Shell: {r.length:.4f} × {r.width:.4f} × {r.height:.4f}  m")
     print(f"  Nose x (from LEMAC)  : {r.x_nose:.4f}  m")
-    print(f"  Width                : {r.width:.4f}  m")
-    print(f"  Height               : {r.height:.4f}  m")
-    print(f"  Fineness ratio       : {r.fineness:.3f}")
-    print(f"  Wetted area          : {r.Swet:.4f}  m²")
-    print(f"  Shell volume         : {r.volume_shell:.6f}  m³")
+    print(f"  Equivalent Diameter  : {r.d_eq:.4f}  m")
+    print(f"  Fineness ratio (L/D) : {r.fineness:.3f}")
+    print(f"  Ellipsoid Wetted Area: {r.Swet:.4f}  m²")
+    print(f"  Shell internal volume: {r.volume_shell:.6f}  m³")
     print(f"  Foam floor thickness : {r.foam_floor_thickness*1e3:.1f}  mm")
-    print(f"  Battery y_min        : {r.battery_y_min*1e3:.1f}  mm")
 
 
 if __name__ == "__main__":

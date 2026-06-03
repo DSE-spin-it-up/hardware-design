@@ -4,11 +4,10 @@ Uses Raymer-style component buildup:
     CD0 = sum_i (Cf_i * FF_i * Q_i * Swet_i) / S_ref
 
 where Q_i is the per-component interference factor and S_ref = wing area.
-Tail-boom geometry (diameter, length) is taken directly from structures.rods.RodResult
-so there is no duplication of sizing data.
+Fuselage parameters (Swet, fineness, length) are natively ingested as 
+ellipsoid values from the fuselage sizing module.
 """
 from dataclasses import dataclass
-
 import numpy as np
 
 from aerodynamics.airfoil_geometry import AirfoilGeometry, airfoil_thickness_to_chord
@@ -18,14 +17,7 @@ from structures.rods import RodResult
 
 
 def _max_tc_with_location(airfoil: str) -> tuple[float, float]:
-    """Return (max t/c, x/c at max thickness) for either a .dat path or NACA digits.
-
-    The 0.30 below is exact for NACA 4-/5-digit airfoils: both series share
-    the same thickness polynomial, which peaks at x/c = 0.30. It is NOT a
-    generic fallback — NACA 6-series (and other modern laminar-flow sections)
-    have max thickness at 0.40-0.50 and would be silently mis-sized here.
-    Pass a .dat file for anything outside the 4-/5-digit family.
-    """
+    """Return (max t/c, x/c at max thickness) for either a .dat path or NACA digits."""
     if str(airfoil).endswith(".dat"):
         return AirfoilGeometry(airfoil).compute_maximum_thickness()
     return airfoil_thickness_to_chord(airfoil), 0.30
@@ -41,7 +33,6 @@ class DragInputs:
     tail_airfoil: str = "airfoils/NACA0010.dat"
     sweep_wing: float = 0.0       # quarter-chord sweep [rad]
     sweep_tail: float = 0.0       # [rad]
-    # Raymer interference factors (Q_i in CD0 buildup)
     Q_wing: float = 1.0
     Q_v_tail: float = 1.03          # conventional aft tail
     Q_fus: float = 1.0
@@ -52,7 +43,6 @@ class DragInputs:
 @dataclass
 class DragResult:
     inputs: DragInputs
-    # Reynolds & Mach
     Re_wing: float
     Re_tail_h: float
     Re_tail_v: float
@@ -60,7 +50,6 @@ class DragResult:
     Re_boom: float
     M_cruise: float
     M_tail: float
-    # Per-component contributions
     Cf_wing: float
     FF_wing: float
     Swet_wing: float
@@ -76,7 +65,6 @@ class DragResult:
     Cf_boom: float
     FF_boom: float
     Swet_boom: float
-    # Aggregate
     CD0_wing: float
     CD0_tail_h: float
     CD0_tail_v: float
@@ -120,46 +108,39 @@ def run(
     M_tail = rods.Vh_V * M_cruise
     V_tail = rods.Vh_V * V
 
-    # Airfoil thicknesses
     tc_w, xtc_w = _max_tc_with_location(i.wing_airfoil)
     tc_t, xtc_t = _max_tc_with_location(i.tail_airfoil)
 
-    # Reynolds numbers
     Re_wing = rho * V * s.c / MU_AIR
     Re_tail_h = rho * V_tail * s.ch / MU_AIR
     Re_tail_v = rho * V_tail * s.cv / MU_AIR
+    # Uses outer ellipsoid aerodynamic length
     Re_fus  = rho * V * f.length / MU_AIR
 
-    # Tail boom geometry from structural sizing — no duplication of data.
-    # rods.d_t is the outer diameter [m]; s.L_boom is the physical boom length
-    # (aileron hinge → tail TE) used in rods.py, so both modules share the same
-    # source of truth. Note: this is the boom length, not the aero moment arm lh.
     boom_diameter = rods.d_t
     boom_length   = s.L_boom
     Re_boom = rho * V * boom_length / MU_AIR
 
-    # Skin friction
     Cf_wing = _skin_friction_turbulent(Re_wing, M_cruise)
     Cf_tail_h = _skin_friction_turbulent(Re_tail_h, M_cruise)
     Cf_tail_v = _skin_friction_turbulent(Re_tail_v, M_cruise)
     Cf_fus  = _skin_friction_turbulent(Re_fus,  M_cruise)
     Cf_boom = _skin_friction_turbulent(Re_boom, M_cruise)
 
-    # Form factors
     FF_wing = _form_factor_lifting(tc_w, xtc_w, M_cruise, i.sweep_wing)
     FF_tail_h = _form_factor_lifting(tc_t, xtc_t, M_tail, i.sweep_tail)
     FF_tail_v = _form_factor_lifting(tc_t, xtc_t, M_cruise, i.sweep_tail)
+    # Uses equivalent ellipsoid fineness
     FF_fus  = _form_factor_fuselage(f.fineness)
     FF_boom = _form_factor_fuselage(boom_length / boom_diameter)
 
-    # Wetted areas
-    Swet_wing = 2.0 * s.Sw                          # lifting surface ≈ 2 × planform
+    Swet_wing = 2.0 * s.Sw
     Swet_tail_h = 2.0 * s.Sh
     Swet_tail_v = 2.0 * s.Sv
+    # Uses exact Knud Thomsen ellipsoid Swet
     Swet_fus  = f.Swet
-    Swet_boom = np.pi * boom_diameter * boom_length  # lateral surface of cylinder
+    Swet_boom = np.pi * boom_diameter * boom_length
 
-    # Per-component CD0 referenced to wing area.
     S_ref    = s.Sw
     CD0_wing = Cf_wing * FF_wing * i.Q_wing * Swet_wing / S_ref
     CD0_tail_h = Cf_tail_h * FF_tail_h * i.Q_c_tail * Swet_tail_h / S_ref
@@ -190,10 +171,10 @@ def summary(r: DragResult) -> None:
     print(f"  Swet wing / hor. tail / ver. tail / fus / boom: {r.Swet_wing:.3f} / {r.Swet_tail_h:.3f} / {r.Swet_tail_v:.3f} / {r.Swet_fus:.3f} / {r.Swet_boom:.3f}  m²")
 
     total = r.CD0 if r.CD0 > 0 else 1.0
-    pct = lambda x: 100 * x / total  # noqa: E731
+    pct = lambda x: 100 * x / total  
     print(f"  CD0 wing     : {r.CD0_wing:.5f}  ({pct(r.CD0_wing):5.1f}%)")
-    print(f"  CD0 hor. tail     : {r.CD0_tail_h:.5f}  ({pct(r.CD0_tail_h):5.1f}%)")
-    print(f"  CD0 ver. tail     : {r.CD0_tail_v:.5f}  ({pct(r.CD0_tail_v):5.1f}%)")
+    print(f"  CD0 hor. tail: {r.CD0_tail_h:.5f}  ({pct(r.CD0_tail_h):5.1f}%)")
+    print(f"  CD0 ver. tail: {r.CD0_tail_v:.5f}  ({pct(r.CD0_tail_v):5.1f}%)")
     print(f"  CD0 fuselage : {r.CD0_fus:.5f}  ({pct(r.CD0_fus):5.1f}%)")
     print(f"  CD0 boom     : {r.CD0_boom:.5f}  ({pct(r.CD0_boom):5.1f}%)")
     print(f"  CD0 total    : {r.CD0:.5f}")
