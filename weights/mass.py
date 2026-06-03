@@ -38,11 +38,30 @@ def _fuselage_x_centroid(fus: FuselageResult) -> float:
     ) / total_area
 
 
-def _pvc_mass(structure: RodResult) -> float:
+def _tube_y_bounds(
+    structure: RodResult,
+    fus: FuselageResult,
+    y_rod_spar: float,
+    y_rod_aileron: float,
+) -> tuple[float, float]:
+    max_d = max(structure.d_spar, structure.d_aileron)
+    margin = 0.5 * max(fus.inputs.casing_factor - 1.0, 0.0) * max_d
+    y0 = min(
+        y_rod_spar - structure.d_spar / 2.0,
+        y_rod_aileron - structure.d_aileron / 2.0,
+    ) - margin
+    y1 = max(
+        y_rod_spar + structure.d_spar / 2.0,
+        y_rod_aileron + structure.d_aileron / 2.0,
+    ) + margin
+    return y0, y1
+
+
+def _pvc_mass(structure: RodResult, tube_length: float) -> float:
     """Estimate PVC tube mass from spar rod dimensions."""
     outer_d = structure.d_spar
     inner_d = structure.d_spar - structure.t_spar
-    return 0.35 * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6().rho * _PVC_SF
+    return tube_length * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6().rho * _PVC_SF
 
 
 def wing_mass(
@@ -114,7 +133,10 @@ def compute_cg(
     # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
     # Tail boom runs from aileron hinge to VT trailing edge.
     x_tail = 0.25 * sizing.c + sizing.lh
-    x_pvc = 0.5 * (x_rod_spar + x_rod_aileron + fus.inputs.tube_tail_overlap)
+    tube_x0 = x_rod_spar - fus.inputs.tube_tail_overlap
+    tube_x1 = x_rod_aileron + fus.inputs.tube_tail_overlap
+    tube_length = tube_x1 - tube_x0
+    x_pvc = 0.5 * (tube_x0 + tube_x1)
 
     # Tail positions: boom endpoint at aileron hinge + L_boom.
     # VT TE at boom endpoint; VT LE is sizing.cv back from TE.
@@ -146,7 +168,7 @@ def compute_cg(
     m_tail_h = hor_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_v = ver_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod = structure.mass_t
-    m_pvc = _pvc_mass(structure) if pvc_tubes_mass_override is None else pvc_tubes_mass_override
+    m_pvc = _pvc_mass(structure, tube_length) if pvc_tubes_mass_override is None else pvc_tubes_mass_override
 
     # Servos: 2 front motors, 2 aileron spar, 1 rear motor, 2 elevator spar, 1 rudder spar
     x_servo_front   = x_motor_front  # 2× front motors
@@ -252,16 +274,15 @@ def compute_y_cg(
     y_coords = y_coords + airfoil_y_offset
     airfoil_height = float(np.max(y_coords))
 
-    tube_height = max(structure.d_spar, structure.d_aileron) * fus.inputs.casing_factor
-
     # Rods sit on the airfoil mid-thickness line at their respective x/c.
     _, y_up_s, y_lo_s = airfoil.compute_thickness(cg["rod_spar"] / root_chord)
     _, y_up_a, y_lo_a = airfoil.compute_thickness(cg["rod_aileron"] / root_chord)
     y_rod_spar = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
     y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
 
-    # Tube centred on the mean rod-centre height; battery sits on top of tube.
-    tube_y0 = 0.5 * (y_rod_spar + y_rod_aileron) - tube_height / 2.0
+    # Tube wraps both wing rods with the configured casing margin.
+    tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
+    tube_height = tube_y1 - tube_y0
 
     le_x = float(np.min(x_coords))
     le_mask = np.isclose(x_coords, le_x, atol=1e-6)
@@ -398,7 +419,10 @@ def total_mass(
     m_rod_aileron = structure.mass_aileron
     m_tail_rod = structure.mass_t
     m_fuselage = materials.fuselage.mass(fus.volume_shell)
-    m_pvc = _pvc_mass(structure)
+    x_rod_spar = _max_tc_x(airfoil_path) * sizing.c_root
+    tube_x0 = x_rod_spar - fus.inputs.tube_tail_overlap
+    tube_x1 = fus.x_nose + fus.l_nose + fus.box_length - fus.inputs.casing_thickness
+    m_pvc = _pvc_mass(structure, tube_x1 - tube_x0)
     m_servos = 8 * SERVO_MASS
 
     # Glass fibre sheet mass (wing + tail, both sides)

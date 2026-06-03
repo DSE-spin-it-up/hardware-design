@@ -13,7 +13,7 @@ from sizing.rudder import RudderResult
 from sizing.wing import SizingResult
 from structures.rods import RodResult
 from propulsion.sizing import PropulsionResult
-from weights.mass import compute_y_cg
+from weights.mass import compute_y_cg, _tube_y_bounds
 
 
 def plot_convergence(
@@ -459,12 +459,11 @@ def plot_cg_side_view(
     rod_radius_a = struct.d_aileron / 2.0
 
     # ------------------------------------------------------------------ tube / battery
-    tube_height = max(struct.d_spar, struct.d_aileron) * fus.inputs.casing_factor
-    tube_x0     = x_rod_wing
+    tube_x0     = x_rod_wing - fus.inputs.tube_tail_overlap
     tube_x1     = x_rod_aileron + fus.inputs.tube_tail_overlap
     tube_length = tube_x1 - tube_x0
-    tube_yc     = 0.5 * (y_rod_spar + y_rod_aileron)
-    tube_y0     = tube_yc - tube_height / 2.0
+    tube_y0, tube_y1 = _tube_y_bounds(struct, fus, y_rod_spar, y_rod_aileron)
+    tube_height = tube_y1 - tube_y0
 
     battery_length = fus.battery_length
     battery_height = fus.battery_height
