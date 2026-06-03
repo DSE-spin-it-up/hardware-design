@@ -186,7 +186,7 @@ def run(
         - y_cg["pvc_tube_bottom"]
     )
 
-    payload_tension_x = sizing.inputs.m_payload * 9.81  # worst-case horizontal
+    payload_tension_x = sizing.inputs.m_payload * 9.81 /2
 
     Cm_payload = (
         payload_tension_x * moment_arm

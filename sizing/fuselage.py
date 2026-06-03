@@ -149,9 +149,9 @@ def run(
         box_length=box_length,
         box_width=box_width,
         box_height=box_height,
-        a=ellip_len: float
-        b=ellip_hig: float
-        c=ellip_wid: float
+        ellip_len=a,
+        ellip_hig=b,
+        ellip_wid=c,
         battery_length=b_length,
         battery_width=b_width,
         battery_height=b_height,

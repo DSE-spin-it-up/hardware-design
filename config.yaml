@@ -38,7 +38,7 @@ sizing:
   AR: 7.5
   lam: 1.0
   Cd0: 0.03
-  S_payload: 0.25
+  S_payload: 0.31
   Cd_payload: 1.05
   h_cruise: 100
   V_cruise: 20
