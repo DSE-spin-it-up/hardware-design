@@ -23,7 +23,7 @@ def _pvc_mass(structure: RodResult) -> float:
     """Estimate PVC tube mass from spar rod dimensions."""
     outer_d = structure.d_spar
     inner_d = structure.d_spar - structure.t_spar
-    return 0.35 * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6.rho * _PVC_SF
+    return 0.35 * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6().rho * _PVC_SF
 
 
 def wing_mass(
@@ -407,5 +407,5 @@ def total_mass(
         'glass_sheet_tail_h': m_sheet_tail_h,
         'glass_sheet_tail_v': m_sheet_tail_v,
         'glass_sheet':        m_glass_sheet,
-        'total':              m_total * 1.21,
+        'total':              m_total,
     }
