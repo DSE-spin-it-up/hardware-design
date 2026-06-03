@@ -39,6 +39,9 @@ class FuselageResult:
     box_length: float   # [m]
     box_width: float    # [m]
     box_height: float   # [m]
+    ellip_len: float
+    ellip_hig: float
+    ellip_wid: float
     # Battery dimensions
     battery_length: float  # [m] battery dimension actually used
     battery_width: float   # [m]
@@ -108,7 +111,7 @@ def run(
 
     # ------------------------------------------------------------------ 4. Encompassing Ellipsoid
     # Inflate axes by sqrt(3) so the curved shell clears the rectangular box corners
-    k_clearance = np.sqrt(3.0)
+    k_clearance = 0
     
     length = box_length * k_clearance
     width  = box_width * k_clearance
@@ -146,6 +149,9 @@ def run(
         box_length=box_length,
         box_width=box_width,
         box_height=box_height,
+        a=ellip_len: float
+        b=ellip_hig: float
+        c=ellip_wid: float
         battery_length=b_length,
         battery_width=b_width,
         battery_height=b_height,
@@ -163,6 +169,7 @@ def summary(r: FuselageResult) -> None:
     print(f"  Outer Ellipsoid Shell: {r.length:.4f} × {r.width:.4f} × {r.height:.4f}  m")
     print(f"  Nose x (from LEMAC)  : {r.x_nose:.4f}  m")
     print(f"  Equivalent Diameter  : {r.d_eq:.4f}  m")
+    print(f"  ellipsoid dimensions  :{r.ellip_len:.4f} × {r.ellip_hig:.4f} × {r.ellip_wid:.4f} m")
     print(f"  Fineness ratio (L/D) : {r.fineness:.3f}")
     print(f"  Ellipsoid Wetted Area: {r.Swet:.4f}  m²")
     print(f"  Shell internal volume: {r.volume_shell:.6f}  m³")

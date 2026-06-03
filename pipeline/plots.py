@@ -107,6 +107,258 @@ def plot_drone_ld(
     plt.show()
 
 
+# def plot_cg_side_view(
+#     sizing: SizingResult,
+#     fus: FuselageResult,
+#     struct: RodResult,
+#     cg: dict[str, float],
+#     masses: dict[str, float],
+#     airfoil_path: str | Path,
+#     tail_airfoil_path: str | Path | None = None,
+#     propulsion: PropulsionResult | None = None,
+#     rudder: RudderResult | None = None,
+#     show: bool = True,
+# ) -> plt.Figure:
+#     """Side-view sketch of the aircraft with component CGs and overall CG.
+
+#     Draws the fuselage box, wing airfoil polygon, battery, tube + rods,
+#     tail rod, and scatter markers for motors / tail / overall CG. The
+#     overall vertical CG is computed from each component's vertical position
+#     weighted by its mass.
+#     """
+#     airfoil = AirfoilGeometry(airfoil_path)
+#     root_chord = sizing.c_root
+#     airfoil_coords = np.column_stack((
+#         airfoil.polygon[:, 0] * root_chord,
+#         airfoil.polygon[:, 1] * root_chord,
+#     ))
+#     airfoil_y_offset = -float(np.min(airfoil_coords[:, 1]))
+#     airfoil_coords[:, 1] += airfoil_y_offset
+#     airfoil_height = float(np.max(airfoil_coords[:, 1]))
+
+#     x_motor = cg["motors"]
+#     x_rod_wing = cg["rod_spar"]
+#     x_rod_aileron = cg["rod_aileron"]
+#     x_batt = cg["battery"]
+#     x_tail = cg["tail"]
+#     x_overall = cg["overall"]
+
+#     prop_radius = propulsion.D_prop / 2.0 if propulsion is not None else 0.0
+#     c_v = sizing.cv
+#     ch = sizing.ch
+#     L_boom = sizing.L_boom
+#     # Boom: aileron hinge to VT trailing edge
+#     x_vt_te = x_rod_aileron + L_boom
+#     x_vt_le = x_vt_te - c_v
+#     x_vt_fs = x_vt_le + 0.25 * c_v  # VT front spar at 25% chord
+#     x_ht_te = x_vt_fs - prop_radius  # HT TE is prop_radius in front of VT FS
+#     x_ht_le = x_ht_te - ch
+#     x_tail_root_v = x_vt_le
+#     x_tail_root_h = x_ht_le
+#     x_tail_end = x_vt_te
+#     b_v_total = sizing.bv
+
+#     tail_airfoil_coords = None
+#     x_ht_spar = None
+#     x_ht_control = None
+#     x_vt_hinge = None
+#     rudder_chord = None
+#     rudder_span = None
+#     if tail_airfoil_path is not None:
+#         tail_airfoil = AirfoilGeometry(tail_airfoil_path)
+#         tail_airfoil_coords = np.column_stack((
+#             tail_airfoil.polygon[:, 0] * sizing.ch,
+#             tail_airfoil.polygon[:, 1] * sizing.ch,
+#         ))
+#         _, x_mt = tail_airfoil.compute_maximum_thickness()
+#         x_ht_spar = x_tail_root_h + x_mt * sizing.ch
+#         x_ht_control = x_tail_root_h + (1.0 - struct.inputs.c_ruddervator_to_c_tail) * sizing.ch
+#     if rudder is not None:
+#         x_vt_hinge = x_tail_root_v + (1.0 - rudder.geometry.cR_cV) * c_v
+#         rudder_chord = rudder.geometry.cR_cV * c_v
+#         rudder_span = rudder.geometry.bR_bV * b_v_total
+#     elif tail_airfoil_path is not None:
+#         x_vt_hinge = x_tail_root_v + (1.0 - struct.inputs.c_ruddervator_to_c_tail) * c_v
+
+#     # Rod centres sit on the airfoil mid-thickness line at their own x/c.
+#     _, y_up_s, y_lo_s = airfoil.compute_thickness(x_rod_wing / root_chord)
+#     _, y_up_a, y_lo_a = airfoil.compute_thickness(x_rod_aileron / root_chord)
+#     y_rod_spar = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
+#     y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
+#     y_ht_spar = y_rod_aileron
+#     y_ht_control = y_rod_aileron
+#     if tail_airfoil_path is not None and x_ht_spar is not None:
+#         x_ht_spar_norm = (x_ht_spar - x_tail_root_h) / sizing.ch
+#         _, y_up_ht_s, y_lo_ht_s = tail_airfoil.compute_thickness(x_ht_spar_norm)
+#         y_ht_spar = y_rod_aileron + 0.5 * (y_up_ht_s + y_lo_ht_s) * sizing.ch
+#     if tail_airfoil_path is not None and x_ht_control is not None:
+#         x_ht_control_norm = (x_ht_control - x_tail_root_h) / sizing.ch
+#         _, y_up_ht_c, y_lo_ht_c = tail_airfoil.compute_thickness(x_ht_control_norm)
+#         y_ht_control = y_rod_aileron + 0.5 * (y_up_ht_c + y_lo_ht_c) * sizing.ch
+
+#     rod_radius_w = struct.d_w / 2.0
+#     rod_radius_a = struct.d_aileron / 2.0
+#     battery_length = fus.battery_length
+#     battery_height = fus.battery_height
+
+#     # Tube: runs from spar rod to aileron hinge + tail overlap.
+#     # Use the same geometry that drove the fuselage sizing.
+#     tube_height = max(struct.d_spar, struct.d_aileron) * fus.inputs.casing_factor
+#     tube_x0 = x_rod_wing  # tube starts at the spar rod (forward anchor)
+#     tube_x1 = x_rod_aileron + fus.inputs.tube_tail_overlap  # aft face = fuselage aft wall
+#     tube_length = tube_x1 - tube_x0
+
+#     # Tube centred on the mean rod-centre height so it encloses both rods.
+#     tube_yc = 0.5 * (y_rod_spar + y_rod_aileron)
+#     tube_y0 = tube_yc - tube_height / 2.0
+
+#     batt_x0 = x_batt - battery_length / 2.0
+#     if x_batt < 0.0:
+#         batt_y0 = fus.battery_y_min
+#     else:
+#         batt_y0 = tube_y0 + 0.005
+#     plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
+
+#     fig, ax = plt.subplots(figsize=(10, 4))
+#     ax.add_patch(Rectangle((fus.x_nose, 0.0), fus.length, fus.height,
+#                            fill=False, linewidth=2, label="Fuselage"))
+#     ax.add_patch(Polygon(airfoil_coords, closed=True,
+#                          facecolor="lightblue", edgecolor="navy", alpha=0.6,
+#                          label="Wing profile"))
+#     ax.add_patch(Rectangle((batt_x0, batt_y0), battery_length, battery_height,
+#                            color="orange", alpha=0.5, label="Battery"))
+#     ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
+#                            facecolor="lightgreen", alpha=0.4, edgecolor="darkgreen",
+#                            label="Tube"))
+#     ax.add_patch(Ellipse((tube_x0, tube_y0 + tube_height / 2.0),
+#                          tube_height, tube_height,
+#                          facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
+#     ax.add_patch(Ellipse((tube_x0 + tube_length, tube_y0 + tube_height / 2.0),
+#                          tube_height, tube_height,
+#                          facecolor="lightgreen", edgecolor="darkgreen", alpha=0.4))
+
+#     # Vertical-tail side profile attached at the tail boom height.
+#     ax.add_patch(Rectangle((x_tail_root_v, y_rod_aileron), c_v, b_v_total,
+#                            facecolor="lightsteelblue", edgecolor="navy",
+#                            alpha=0.2, label="Vertical tail"))
+
+#     # Vertical-tail rudder surface and hinge.
+#     if x_vt_hinge is not None:
+#         rudder_surface_width = rudder_chord if rudder_chord is not None else (x_tail_root_v + c_v - x_vt_hinge)
+#         rudder_surface_height = rudder_span if rudder_span is not None else b_v_total
+#         ax.add_patch(Rectangle((x_vt_hinge, y_rod_aileron),
+#                                rudder_surface_width, rudder_surface_height,
+#                                facecolor="lightcoral", alpha=0.2,
+#                                label="Rudder surface"))
+#         ax.plot([x_vt_hinge, x_vt_hinge], [y_rod_aileron, y_rod_aileron + rudder_surface_height],
+#                 color="darkred", linewidth=2, linestyle="--",
+#                 label="Rudder hinge")
+
+#     # Vertical-tail rods shown as rectangular elements.
+#     vt_rod_y0 = y_rod_aileron
+#     vt_spar_width = max(struct.d_spar_vt, 0.01)
+#     vt_rud_width = max(struct.d_control_vt, 0.01)
+#     ax.add_patch(Rectangle(
+#         (x_tail_root_v + c_v * 0.25 - vt_spar_width / 2.0, vt_rod_y0),
+#         vt_spar_width, b_v_total,
+#         facecolor="purple", alpha=0.7, label="VT spar rod",
+#     ))
+#     if x_vt_hinge is not None:
+#         ax.add_patch(Rectangle(
+#             (x_vt_hinge - vt_rud_width / 2.0, vt_rod_y0),
+#             vt_rud_width, b_v_total,
+#             facecolor="magenta", alpha=0.7, label="VT rudder rod",
+#         ))
+
+#     if tail_airfoil_coords is not None:
+#         tail_airfoil_x_offset = x_tail_root_h
+#         tail_airfoil_y_mid = 0.5 * (float(np.max(tail_airfoil_coords[:, 1])) +
+#                                     float(np.min(tail_airfoil_coords[:, 1])))
+#         tail_airfoil_y_offset = y_rod_aileron - tail_airfoil_y_mid
+#         tail_airfoil_coords[:, 0] += tail_airfoil_x_offset
+#         tail_airfoil_coords[:, 1] += tail_airfoil_y_offset
+#         ax.add_patch(Polygon(tail_airfoil_coords, closed=True,
+#                              facecolor="lightgray", edgecolor="darkslategray",
+#                              alpha=0.6, label="Tail airfoil"))
+#     else:
+#         approx_tail_thickness = max(0.05 * sizing.ch, 0.02)
+#         ax.add_patch(Rectangle(
+#             (x_tail_root_h, y_rod_aileron - approx_tail_thickness / 2.0),
+#             sizing.ch, approx_tail_thickness,
+#             facecolor="lightgray", edgecolor="darkslategray", alpha=0.6,
+#             label="Tail airfoil",
+#         ))
+
+#     # Horizontal tail rods on the tail airfoil.
+#     if x_ht_spar is not None and x_ht_control is not None:
+#         ht_rod_radius = max(max(struct.d_spar_ht, struct.d_control_ht) * 0.5, 0.01)
+#         ax.add_patch(Circle((x_ht_spar, y_ht_spar), ht_rod_radius,
+#                             color="indigo", alpha=0.8, label="HT spar rod"))
+#         ax.add_patch(Circle((x_ht_control, y_ht_control), ht_rod_radius,
+#                             color="darkorange", alpha=0.8, label="HT elevator rod"))
+
+#     ax.add_patch(Circle((x_rod_wing, y_rod_spar), rod_radius_w,
+#                         color="brown", alpha=0.8, label="Wing rod"))
+#     ax.add_patch(Circle((x_rod_aileron, y_rod_aileron), rod_radius_a,
+#                         color="sienna", alpha=0.8, label="Aileron rod"))
+
+#     tail_start = x_rod_aileron + rod_radius_a + 0.001
+#     ax.plot([tail_start, x_tail_end], [y_rod_aileron, y_rod_aileron],
+#             color="gray", linewidth=3, solid_capstyle="butt", label="Tail rod")
+
+#     y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
+#     motor_y = y_cg["motors"]
+#     overall_y = y_cg["overall"]
+#     plot_height = max(plot_height, y_rod_aileron + b_v_total + 0.05)
+
+#     ax.scatter([x_motor, x_overall], [motor_y, overall_y],
+#                color=["red", "black"], zorder=5)
+#     ax.text(x_motor, motor_y + 0.03, "Motor (front)", color="red", ha="center")
+#     ax.scatter([x_vt_fs], [y_rod_aileron + b_v_total],
+#                color="red", zorder=5, s=100, marker="^")
+#     ax.text(x_vt_fs, y_rod_aileron + b_v_total + 0.03, "Motor (rear)",
+#             color="red", ha="center", fontsize=8)
+#     ax.text(x_overall, overall_y + 0.02, "Overall CG", color="black", ha="center")
+
+#     # Servo positions
+#     x_servo_front   = cg["motors"]
+#     x_servo_aileron = cg["rod_aileron"]
+#     x_servo_rear    = cg["tail"]
+#     x_servo_ht = cg.get("ht_rud", cg["tail"])
+#     x_servo_vt = cg.get("vt_rud", cg["tail"])
+#     y_servo_front   = y_cg["servo_front"]
+#     y_servo_aileron = y_cg["servo_aileron"]
+#     y_servo_rear    = y_cg["servo_rear"]
+#     y_servo_ht      = y_cg["servo_ht"]
+#     y_servo_vt      = y_cg["servo_vt"]
+#     ax.scatter(
+#         [x_servo_front,   x_servo_front,
+#          x_servo_aileron, x_servo_aileron,
+#          x_servo_rear,
+#          x_servo_ht,      x_servo_ht,
+#          x_servo_vt],
+#         [y_servo_front,   y_servo_front,
+#          y_servo_aileron, y_servo_aileron,
+#          y_servo_rear,
+#          y_servo_ht,      y_servo_ht,
+#          y_servo_vt],
+#         color="teal", zorder=5, s=60, marker="s", label="Servo",
+#     )
+
+#     ax.set_title("Aircraft CG side view")
+#     ax.set_xlabel("x [m] from LEMAC")
+#     ax.set_ylabel("vertical position [m]")
+#     ax.set_xlim(min(-0.05, fus.x_nose - 0.05),
+#                 max(fus.x_nose + fus.length, x_tail, x_overall) + 0.2)
+#     ax.set_ylim(-0.05, plot_height + 0.05)
+#     ax.set_aspect("equal", adjustable="box")
+#     ax.grid(True, linestyle="--", alpha=0.3)
+#     ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.2)
+
+#     if show:
+#         plt.show()
+#     return fig
+
 def plot_cg_side_view(
     sizing: SizingResult,
     fus: FuselageResult,
@@ -121,10 +373,9 @@ def plot_cg_side_view(
 ) -> plt.Figure:
     """Side-view sketch of the aircraft with component CGs and overall CG.
 
-    Draws the fuselage box, wing airfoil polygon, battery, tube + rods,
-    tail rod, and scatter markers for motors / tail / overall CG. The
-    overall vertical CG is computed from each component's vertical position
-    weighted by its mass.
+    Draws the outer fuselage aerodynamic ellipsoid, internal structural box, 
+    wing airfoil polygon, battery, tube + rods, tail rod, and scatter markers 
+    for motors / tail / overall CG.
     """
     airfoil = AirfoilGeometry(airfoil_path)
     root_chord = sizing.c_root
@@ -202,10 +453,9 @@ def plot_cg_side_view(
     battery_height = fus.battery_height
 
     # Tube: runs from spar rod to aileron hinge + tail overlap.
-    # Use the same geometry that drove the fuselage sizing.
     tube_height = max(struct.d_spar, struct.d_aileron) * fus.inputs.casing_factor
-    tube_x0 = x_rod_wing  # tube starts at the spar rod (forward anchor)
-    tube_x1 = x_rod_aileron + fus.inputs.tube_tail_overlap  # aft face = fuselage aft wall
+    tube_x0 = x_rod_wing
+    tube_x1 = x_rod_aileron + fus.inputs.tube_tail_overlap
     tube_length = tube_x1 - tube_x0
 
     # Tube centred on the mean rod-centre height so it encloses both rods.
@@ -217,14 +467,35 @@ def plot_cg_side_view(
         batt_y0 = fus.battery_y_min
     else:
         batt_y0 = tube_y0 + 0.005
-    plot_height = max(fus.height, batt_y0 + battery_height + 0.01)
+        
+    # --- FUSELAGE ELLIPSOID & INTERNAL BOX ALIGNMENT ---
+    # The EPP foam floor sits below the battery. This defines the bottom of the internal box.
+    box_y0 = batt_y0 - fus.foam_floor_thickness
+    # Center the box inside the expanded ellipsoid length
+    box_x0 = fus.x_nose + (fus.ellip_len - fus.box_length) / 2.0
+    
+    # The ellipsoid center shares the exact center of the internal structural box
+    ellipse_xc = fus.x_nose + fus.ellip_len / 2.0
+    ellipse_yc = box_y0 + fus.box_height / 2.0
+
+    plot_height = max(fus.ellip_hig, batt_y0 + battery_height + 0.01)
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.add_patch(Rectangle((fus.x_nose, 0.0), fus.length, fus.height,
-                           fill=False, linewidth=2, label="Fuselage"))
+    
+    # 1. Draw Internal Box (Dashed)
+    ax.add_patch(Rectangle((box_x0, box_y0), fus.box_length, fus.box_height,
+                           fill=False, linestyle="--", edgecolor="gray", linewidth=1.5, label="Internal Box"))
+                           
+    # 2. Draw Outer Ellipsoid Shell
+    ax.add_patch(Ellipse((ellipse_xc, ellipse_yc), fus.ellip_len, fus.ellip_hig,
+                         fill=False, edgecolor="navy", linewidth=2.5, label="Fuselage Shell"))
+
+    # 3. Draw Wing
     ax.add_patch(Polygon(airfoil_coords, closed=True,
                          facecolor="lightblue", edgecolor="navy", alpha=0.6,
                          label="Wing profile"))
+                         
+    # 4. Draw Internals
     ax.add_patch(Rectangle((batt_x0, batt_y0), battery_length, battery_height,
                            color="orange", alpha=0.5, label="Battery"))
     ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
@@ -349,8 +620,8 @@ def plot_cg_side_view(
     ax.set_xlabel("x [m] from LEMAC")
     ax.set_ylabel("vertical position [m]")
     ax.set_xlim(min(-0.05, fus.x_nose - 0.05),
-                max(fus.x_nose + fus.length, x_tail, x_overall) + 0.2)
-    ax.set_ylim(-0.05, plot_height + 0.05)
+                max(fus.x_nose + fus.ellip_len, x_tail, x_overall) + 0.2)
+    ax.set_ylim(min(-0.05, box_y0 - 0.05), plot_height + 0.05)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, linestyle="--", alpha=0.3)
     ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.2)
@@ -358,7 +629,6 @@ def plot_cg_side_view(
     if show:
         plt.show()
     return fig
-
 
 def plot_scissor(scissor, *, show: bool = True):
     """Scissor plot: required S_h/S vs x_cg from LEMAC (stability + controllability).
