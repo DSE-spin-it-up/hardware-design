@@ -57,6 +57,24 @@ class ElevatorGeometry:
 
 
 @dataclass
+class PayloadCableResult:
+    """Shared-payload cable equilibrium and pitch-moment envelope."""
+    payload_mass_per_drone: float
+    payload_weight_per_drone: float
+    payload_drag_per_drone: float
+    cable_angle_rad: float
+    horizontal_tension: float
+    vertical_load: float
+    attachment_y: float
+    vertical_drop: float
+    attachment_dx: float
+    Cm_horizontal: float
+    Cm_vertical: float
+    Cm_pitch_up: float
+    Cm_pitch_down: float
+
+
+@dataclass
 class ElevatorResult:
     inputs:         ElevatorInputs
     geometry:       ElevatorGeometry
@@ -80,6 +98,7 @@ class ElevatorResult:
     Cm_thrust_total: float
     driving_constraint: str
     Cm_payload:     float
+    payload_cable:  PayloadCableResult
     y_cg:           dict[str, float]
     alpha:          float   # wing cruise AoA [rad]
     epsilon:        float   # downwash at tail [rad]
@@ -92,6 +111,43 @@ class ElevatorResult:
 def tau_from_chord_ratio(cf_c: float) -> float:
     """Control-surface effectiveness τ from chord ratio cf/c (empirical fit)."""
     return float(np.polyval([-6.624, 12.07, -8.292, 3.295, 0.004942], cf_c))
+
+
+def compute_payload_cable(
+    sizing: SizingResult,
+    y_cg: dict[str, float],
+) -> PayloadCableResult:
+    """Compute the per-drone payload cable angle and pitch moments."""
+    s = sizing
+    n_drones = max(float(s.inputs.n_drones), 1.0)
+    payload_mass = s.inputs.m_payload / n_drones
+    payload_weight = payload_mass * 9.80665
+    payload_drag = s.q_cruise * s.inputs.Cd_payload * s.inputs.S_payload / n_drones
+    cable_angle = float(np.arctan2(payload_drag, payload_weight))
+
+    attachment_y = y_cg["pvc_tubes"]
+    vertical_drop = max(y_cg["overall"] - attachment_y, 0.0)
+    attachment_dx = vertical_drop * np.tan(cable_angle)
+
+    denom = s.q_cruise * s.Sw * s.c
+    Cm_horizontal = payload_drag * vertical_drop / denom if denom > 0.0 else 0.0
+    Cm_vertical = payload_weight * attachment_dx / denom if denom > 0.0 else 0.0
+
+    return PayloadCableResult(
+        payload_mass_per_drone=payload_mass,
+        payload_weight_per_drone=payload_weight,
+        payload_drag_per_drone=payload_drag,
+        cable_angle_rad=cable_angle,
+        horizontal_tension=payload_drag,
+        vertical_load=payload_weight,
+        attachment_y=attachment_y,
+        vertical_drop=vertical_drop,
+        attachment_dx=attachment_dx,
+        Cm_horizontal=Cm_horizontal,
+        Cm_vertical=Cm_vertical,
+        Cm_pitch_up=Cm_horizontal + Cm_vertical,
+        Cm_pitch_down=Cm_horizontal - Cm_vertical,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,16 +237,11 @@ def run(
     # ------------------------------------------------------------------
     # Payload disturbance (from config.yaml sizing.m_payload)
     # ------------------------------------------------------------------
-    moment_arm = abs(
-        y_cg["overall"]
-        - y_cg["pvc_tube_bottom"]
+    payload_cable = compute_payload_cable(sizing, y_cg)
+    Cm_payload = max(
+        abs(payload_cable.Cm_pitch_up),
+        abs(payload_cable.Cm_pitch_down),
     )
-
-    payload_tension_x = sizing.inputs.m_payload * 9.81 
-
-    Cm_payload = (
-        payload_tension_x * moment_arm
-    ) / (q * s.Sw * s.c)
 
     # ------------------------------------------------------------------
     # Solve for ih from moment equilibrium at delta_e = 0
@@ -235,13 +286,15 @@ def run(
 
     tau_e = tau_from_chord_ratio(i.cE_ch)
 
-    bE_bh_dist = i.Cm_dist / (
-        CLalphah * i.eta_h * Vh * tau_e * delta_e_max
+    control_power = CLalphah * i.eta_h * Vh * tau_e
+    bE_bh_dist = i.Cm_dist / (control_power * delta_e_max)
+    bE_bh_payload_up = max(payload_cable.Cm_pitch_up, 0.0) / (
+        control_power * delta_e_down
     )
-
-    bE_bh_payload = Cm_payload / (
-        CLalphah * i.eta_h * Vh * tau_e * delta_e_max
+    bE_bh_payload_down = max(-payload_cable.Cm_pitch_down, 0.0) / (
+        control_power * delta_e_max
     )
+    bE_bh_payload = max(bE_bh_payload_up, bE_bh_payload_down)
     driving_constraint = "payload" if bE_bh_payload > bE_bh_dist else "disturbance"
     bE_bh = max(
         bE_bh_dist,
@@ -312,6 +365,7 @@ def run(
         Cm_thrust_back  = Cm_thrust_back,
         Cm_thrust_total = Cm_thrust,
         Cm_payload      = Cm_payload,
+        payload_cable   = payload_cable,
         driving_constraint = driving_constraint,
         alpha           = alpha,
         epsilon         = epsilon,
@@ -365,7 +419,19 @@ def summary(r: ElevatorResult) -> None:
     print(f"  {'-'*43}")
     print(f"  {'Tail AoA (α_h)':<30} {np.degrees(r.alpha_h):>+12.3f}")
     print("----- Payload Contribution -----")
-    print(f"  Cm_payload (about CG)     : {r.Cm_payload:+.5f}")
+    pc = r.payload_cable
+    print(f"  Payload mass / drone     : {pc.payload_mass_per_drone:.3f} kg")
+    print(f"  Payload drag / drone     : {pc.payload_drag_per_drone:.3f} N")
+    print(f"  Payload weight / drone   : {pc.payload_weight_per_drone:.3f} N")
+    print(f"  Cable angle from vertical: {np.degrees(pc.cable_angle_rad):+.3f} deg")
+    print(f"  Tube centerline y        : {pc.attachment_y:.4f} m")
+    print(f"  CG-to-attach vertical    : {pc.vertical_drop:.4f} m")
+    print(f"  CG-to-attach |x|         : {pc.attachment_dx:.4f} m")
+    print(f"  Horizontal-tension Cm    : {pc.Cm_horizontal:+.5f}")
+    print(f"  Vertical-load Cm         : +/-{pc.Cm_vertical:.5f}")
+    print(f"  Worst pitch-up Cm        : {pc.Cm_pitch_up:+.5f}")
+    print(f"  Worst pitch-down Cm      : {pc.Cm_pitch_down:+.5f}")
+    print(f"  Cm_payload envelope      : {r.Cm_payload:+.5f}")
 
     print("\n----- Elevator Sizing Driver -----")
     print(f"  Active constraint         : {r.driving_constraint}")
