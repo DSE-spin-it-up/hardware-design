@@ -340,6 +340,7 @@ def compute_y_cg(
     masses: dict[str, float],
     airfoil_path: str | Path,
     cg: dict[str, float],
+    battery_y0: float | None = None,
     sensor_mass: float = 0.282,
     wiring_inputs: WiringInputs | None = None,
 ) -> dict[str, float]:
@@ -382,7 +383,9 @@ def compute_y_cg(
     y_motor = (float(np.mean(y_coords[le_mask]))
                if np.any(le_mask) else 0.5 * airfoil_height)
 
-    if cg["battery"] < 0.0:
+    if battery_y0 is not None:
+        batt_y0 = battery_y0
+    elif cg["battery"] < 0.0:
         batt_y0 = fus.battery_y_min
     else:
         batt_y0 = tube_y0 + 0.005
@@ -480,6 +483,7 @@ def compute_y_cg(
     return {
         'fuselage':           y_fus,
         'battery':            y_batt,
+        'battery_bottom':     batt_y0,
         'motors':             y_motor,
         'motor_back':         y_motor_back,
         'wing':               y_wing,

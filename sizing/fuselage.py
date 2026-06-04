@@ -23,7 +23,7 @@ class FuselageInputs:
     load_factor: float    = 1.5     # [-] battery tearout safety factor
     g: float              = 9.81    # [m/s²]
     min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
-    pvc_snap_force: float = 372.8   # [N] dynamic peak snap force reacted by PVC support
+    pvc_snap_force: float = 372.8/2   # [N] dynamic peak snap force reacted by PVC support
     pvc_snap_safety_factor: float = 1.5  # [-] safety factor on PVC snap force
     pvc_gust_safety_factor: float = 1.5  # [-] safety factor on upward gust lift
     min_pvc_foam_floor: float = 0.005  # [m] minimum EPP floor below PVC support
