@@ -157,7 +157,15 @@ def _run_design_pass(
         tube_back_x=tube_back_x,
         tube_outer_diameter=tube_outer_diameter,
         tube_length=tube_length,
+        spar_rod_diameter=struct.d_spar,
+        aileron_rod_diameter=struct.d_aileron,
         pvc_lift_force=sizing.lift_gust_increment,
+        x_front_spar=x_rod_spar,                          
+        n_active_drones=sizing.inputs.n_drones - 1,        
+        m_total_failure=(                                   
+            sizing.inputs.n_drones * sizing.inputs.m_drone_empty
+            + sizing.inputs.m_payload
+        ),
     )
 
     drag = estimate_cd0(

@@ -90,6 +90,7 @@ fuselage:
   casing_thickness: 0.001    # [m] minimum hard wall thickness
   tube_tail_overlap: 0.03    # [m] tube extension aft of aileron hinge for boom grip
   min_foam_floor: 0.005      # [m] minimum EPP floor below battery
+  pvc_gust_safety_factor: 1.5 # [-] safety factor on upward gust roof load
 
 # ----- Aileron / control surface -----
 control_surface:
@@ -103,8 +104,8 @@ control_surface:
 # ----- Elevator -----
 elevator:
   eta_h: 0.85
-  Cm_dist: 0.2
-  max_deflection_up_deg: 20.0
+  Cm_dist: 0.0
+  max_deflection_up_deg: 25.0
   max_deflection_down_deg: 20.0
 
 # ----- Rudder -----
