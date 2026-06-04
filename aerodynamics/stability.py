@@ -14,7 +14,11 @@ def lift_slope_from_llt(llt: LLTResult) -> float:
     Assumes untwisted planform with uniform section α_L0 (the default
     `WingGeometry`/`AirfoilPolar` case in this codebase).
     """
-    return llt.CL / (llt.alpha_root - llt.polar.alpha_L0)
+    denom = llt.alpha_root - llt.polar.alpha_L0
+    slope = llt.CL / denom if abs(denom) > 1.0e-9 else np.nan
+    if not np.isfinite(slope) or abs(slope) < 1.0e-6:
+        return llt.polar.Cl_alpha * llt.wing.AR / (llt.wing.AR + 2.0)
+    return slope
 
 
 def lift_slope_A_minus_h(
@@ -64,6 +68,7 @@ def controllability_line_ShS(
     CL_A_h: float,
     Cm_ac: float,
     Cm_thrust: float = 0.0,
+    Cm_payload: float = 0.0,
     Vh_V: float,
 ) -> np.ndarray:
     """Required S_h/S as a function of x_cg for trim (controllability).
@@ -176,6 +181,7 @@ def calculate_Sh_S(
     CL_A_h: float,
     Cm_ac: float,
     Cm_thrust: float = 0.0,
+    Cm_payload: float = 0.0,
     Vh_V: float,
     CL_alpha_h: float,
     CL_alpha_A_h: float,
@@ -196,6 +202,9 @@ def calculate_Sh_S(
     factor_cont = (CL_h / CL_A_h) * (l_h / c) * Vh_V**2
 
     ShS_stab = ((x_cg - x_ac) / c + SM) / factor_stab
-    ShS_cont = ((x_cg - x_ac) / c + (Cm_ac + Cm_thrust) / CL_A_h) / factor_cont
+    ShS_cont = (
+        (x_cg - x_ac) / c
+        + (Cm_ac + Cm_thrust + Cm_payload) / CL_A_h
+    ) / factor_cont
 
     return max(ShS_stab, ShS_cont)

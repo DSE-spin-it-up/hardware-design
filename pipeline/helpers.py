@@ -135,6 +135,7 @@ class ScissorData:
     CL_A_h: float            # aircraft-less-tail CL at controllability condition
     Cm_ac: float             # 3D-corrected wing CM about wing AC (excl. thrust)
     Cm_thrust: float         # total thrust pitching moment included in trim balance
+    Cm_payload: float        # payload trim pitching moment included in trim balance
     # Knobs
     SM: float
     Vh_V: float
@@ -184,6 +185,7 @@ def compute_scissor_data(
     x_cg_current: float,
     y_cg: float = 0.0,
     Cm_thrust: float = 0.0,
+    Cm_payload: float = 0.0,
     SM: float = 0.05,
     Vh_V: float = 0.85,
     x_cg_range: tuple[float, float] | None = None,
@@ -253,7 +255,7 @@ def compute_scissor_data(
     # --- Controllability line: include thrust moment in the trim balance ---
     # Cm_thrust shifts the trim demand on the tail (nose-up thrust → more
     # tail-down force required) without affecting the stability gradient.
-    Cm_ac_total = Cm_ac + Cm_thrust
+    Cm_ac_total = Cm_ac + Cm_thrust + Cm_payload
 
     ShS_ctrl = controllability_line_ShS(
         x_cg, x_ac=x_ac, c=s.c, l_h=s.lh,
@@ -266,7 +268,7 @@ def compute_scissor_data(
         CL_alpha_w=CL_alpha_w, CL_alpha_h=CL_alpha_h,
         CL_alpha_A_h=CL_alpha_A_h, dep_da=dep_da,
         CL_h=CL_h, CL_A_h=CL_A_h, Cm_ac=Cm_ac,
-        Cm_thrust=Cm_thrust,
+        Cm_thrust=Cm_thrust, Cm_payload=Cm_payload,
         SM=SM, Vh_V=Vh_V, x_ac=x_ac,
         c=s.c, l_h=s.lh,
         x_cg_current=x_cg_current,

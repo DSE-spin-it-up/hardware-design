@@ -226,6 +226,17 @@ def _scissor_intersection(scissor: ScissorData) -> tuple[float, float]:
     return x, y
 
 
+def _payload_trim_moment_for_scissor(config, scissor: ScissorData) -> float:
+    """Payload moment used by the scissor controllability line."""
+    if config.ELEVATOR.trim_mode.lower() != "payload_attachment":
+        return 0.0
+    return -(
+        scissor.CL_A_h * (scissor.x_cg_current - scissor.x_ac) / scissor.c
+        + scissor.Cm_ac
+        + scissor.Cm_thrust
+    )
+
+
 def _scissor_state_for_pass(
     sizing: SizingResult,
     p: _DesignPass,
@@ -236,11 +247,24 @@ def _scissor_state_for_pass(
 ) -> _ScissorState:
     x_cg = p.cg["overall"]
     llt = llt_at_cl(sizing, polar, CL_target=sizing.CL)
+    # A tiny nonzero tail CL keeps the LLT-derived lift slope finite for the
+    # scissor plot while remaining negligible for drag feedback.
+    payload_trim_mode = config.ELEVATOR.trim_mode.lower() == "payload_attachment"
+    CL_tail_trim = 1.0e-3 if payload_trim_mode else None
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
         x_cg=x_cg,
         tail_airfoil=config.TAIL_AIRFOIL,
+        CL_tail=CL_tail_trim,
     )
+    tail_loading_scissor = tail_loading
+    if payload_trim_mode:
+        tail_loading_scissor = tail_drag_at_cruise(
+            sizing, polar, llt,
+            x_cg=x_cg,
+            tail_airfoil=config.TAIL_AIRFOIL,
+            CL_tail=0.5,
+        )
     y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
@@ -260,13 +284,32 @@ def _scissor_state_for_pass(
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
-        tail_llt=tail_loading["llt_tail"],
+        tail_llt=tail_loading_scissor["llt_tail"],
         x_cg_current=x_cg,
         y_cg=y_cg["overall"],
         Cm_thrust=Cm_front + Cm_back,
         Vh_V=p.struct.Vh_V,
     )
-    x_target, ShS_target = _scissor_intersection(scissor)
+    Cm_payload = _payload_trim_moment_for_scissor(config, scissor)
+    if Cm_payload != 0.0:
+        scissor = compute_scissor_data(
+            sizing, p.fus,
+            wing_llt=llt,
+            tail_llt=tail_loading_scissor["llt_tail"],
+            x_cg_current=x_cg,
+            y_cg=y_cg["overall"],
+            Cm_thrust=Cm_front + Cm_back,
+            Cm_payload=Cm_payload,
+            Vh_V=p.struct.Vh_V,
+        )
+    if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
+        x_target = x_cg
+        ShS_target = float(max(
+            np.interp(x_cg, scissor.x_cg, scissor.ShS_stab),
+            np.interp(x_cg, scissor.x_cg, scissor.ShS_ctrl),
+        ))
+    else:
+        x_target, ShS_target = _scissor_intersection(scissor)
     return _ScissorState(
         llt=llt,
         tail_loading=tail_loading,
@@ -391,7 +434,7 @@ def _final_scissor_for_y_cg(
         sizing.q_cruise, sizing.Sw, sizing.c,
     )
 
-    return compute_scissor_data(
+    scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
         tail_llt=tail_loading["llt_tail"],
@@ -400,6 +443,19 @@ def _final_scissor_for_y_cg(
         Cm_thrust=Cm_front + Cm_back,
         Vh_V=p.struct.inputs.Vh_V,
     )
+    Cm_payload = _payload_trim_moment_for_scissor(config, scissor)
+    if Cm_payload != 0.0:
+        scissor = compute_scissor_data(
+            sizing, p.fus,
+            wing_llt=llt,
+            tail_llt=tail_loading["llt_tail"],
+            x_cg_current=p.cg["overall"],
+            y_cg=y_cg["overall"],
+            Cm_thrust=Cm_front + Cm_back,
+            Cm_payload=Cm_payload,
+            Vh_V=p.struct.inputs.Vh_V,
+        )
+    return scissor
 
 
 def _optimize_battery_y_for_elevator(
@@ -682,7 +738,7 @@ def run_pipeline(config) -> PipelineResult:
         Sh_S_new = calculate_Sh_S(
             x_cg=x_cg, x_ac=scissor.x_ac, c=scissor.c, l_h=scissor.l_h,
             CL_h=scissor.CL_h, CL_A_h=scissor.CL_A_h, Cm_ac=scissor.Cm_ac,
-            Cm_thrust=scissor.Cm_thrust,
+            Cm_thrust=scissor.Cm_thrust, Cm_payload=scissor.Cm_payload,
             Vh_V=scissor.Vh_V, CL_alpha_h=scissor.CL_alpha_h,
             CL_alpha_A_h=scissor.CL_alpha_A_h, dep_da=scissor.dep_da, SM=scissor.SM,
         )
@@ -802,11 +858,25 @@ def run_pipeline(config) -> PipelineResult:
     CD_full_sweep = CD_drone_sweep + CD_payload
 
     # ----- Step 7: tail trim loading + induced drag (elevator not yet known) -----
+    # A tiny nonzero tail CL keeps the LLT-derived lift slope finite for the
+    # scissor plot while remaining negligible for drag feedback.
+    CL_tail_trim = (
+        1.0e-3 if config.ELEVATOR.trim_mode.lower() == "payload_attachment" else None
+    )
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
         x_cg=p.cg["overall"],
         tail_airfoil=config.TAIL_AIRFOIL,
+        CL_tail=CL_tail_trim,
     )
+    tail_loading_for_scissor = tail_loading
+    if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
+        tail_loading_for_scissor = tail_drag_at_cruise(
+            sizing, polar, llt,
+            x_cg=p.cg["overall"],
+            tail_airfoil=config.TAIL_AIRFOIL,
+            CL_tail=0.5,
+        )
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
@@ -820,7 +890,7 @@ def run_pipeline(config) -> PipelineResult:
             tail_polar=tail_polar,
             airfoil=airfoil,
             llt=llt,
-            tail_loading=tail_loading,
+            tail_loading=tail_loading_for_scissor,
             propulsion=final_propulsion,
         )
     )
@@ -846,6 +916,14 @@ def run_pipeline(config) -> PipelineResult:
             tail_airfoil=config.TAIL_AIRFOIL,
             CL_tail=elevator_result.CLh_cruise,
         )
+        tail_loading_for_scissor = tail_loading
+        if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
+            tail_loading_for_scissor = tail_drag_at_cruise(
+                sizing, polar, llt,
+                x_cg=p.cg["overall"],
+                tail_airfoil=config.TAIL_AIRFOIL,
+                CL_tail=0.5,
+            )
         cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
         CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
         cruise_drag = CD_full_buildup * sizing.q_cruise * sizing.Sw
@@ -866,7 +944,7 @@ def run_pipeline(config) -> PipelineResult:
                 tail_polar=tail_polar,
                 airfoil=airfoil,
                 llt=llt,
-                tail_loading=tail_loading,
+                tail_loading=tail_loading_for_scissor,
                 propulsion=final_propulsion,
             )
         )

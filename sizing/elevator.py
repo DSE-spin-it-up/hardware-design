@@ -40,6 +40,7 @@ from sizing.wing import SizingResult
 
 @dataclass
 class ElevatorInputs:
+    trim_mode:                str = "tail_incidence"  # tail_incidence | payload_attachment
     cE_ch:                   float = 0.40   # elevator chord / tail chord [-] (designer choice)
     eta_h:                   float = 0.85   # dynamic-pressure ratio at the tail (Vh/V)²
     Cm_dist:                 float = 0.10   # pitch-moment disturbance the elevator must
@@ -71,6 +72,7 @@ class PayloadCableResult:
     attachment_y: float
     vertical_drop: float
     attachment_dx: float
+    attachment_angle_rad: float
     Cm_at_equilibrium: float
     sweep_min_angle_rad: float
     sweep_max_angle_rad: float
@@ -123,6 +125,8 @@ def compute_payload_cable(
     sizing: SizingResult,
     y_cg: dict[str, float],
     inputs: ElevatorInputs,
+    *,
+    Cm_trim: float = 0.0,
 ) -> PayloadCableResult:
     """Compute the per-drone payload cable angle and pitch moment envelope.
 
@@ -140,9 +144,21 @@ def compute_payload_cable(
 
     attachment_y = y_cg["pvc_tubes"]
     vertical_drop = max(y_cg["overall"] - attachment_y, 0.0)
-    attachment_dx = vertical_drop * np.tan(cable_angle)
-
     denom = s.q_cruise * s.Sw * s.c
+    if vertical_drop > 0.0 and payload_weight > 0.0 and denom > 0.0:
+        tan_attachment = np.tan(cable_angle) - (
+            Cm_trim * denom / (payload_weight * vertical_drop)
+        )
+    elif abs(Cm_trim) > 1.0e-12:
+        raise ValueError(
+            "Payload attachment trim is impossible because the cable attachment "
+            "has no vertical arm below the CG."
+        )
+    else:
+        tan_attachment = np.tan(cable_angle)
+    attachment_angle = float(np.arctan(tan_attachment))
+    attachment_dx = vertical_drop * tan_attachment
+
     sweep_min_angle = np.radians(inputs.payload_cable_min_angle_deg)
     if inputs.payload_cable_max_angle_deg is None:
         sweep_max_angle = 2.0 * cable_angle
@@ -158,18 +174,25 @@ def compute_payload_cable(
     cable_angles = np.linspace(sweep_min_angle, sweep_max_angle, 401)
 
     if denom > 0.0:
-        Cm_sweep = (
+        Cm_absolute = (
             payload_weight
             * vertical_drop
-            * (np.tan(cable_angles) - np.tan(cable_angle))
+            * (np.tan(cable_angles) - tan_attachment)
             / denom
         )
     else:
-        Cm_sweep = np.zeros_like(cable_angles)
+        Cm_absolute = np.zeros_like(cable_angles)
+    Cm_at_equilibrium = (
+        payload_weight
+        * vertical_drop
+        * (np.tan(cable_angle) - tan_attachment)
+        / denom
+        if denom > 0.0 else 0.0
+    )
+    Cm_sweep = Cm_absolute - Cm_at_equilibrium
 
     i_up = int(np.argmax(Cm_sweep))
     i_down = int(np.argmin(Cm_sweep))
-    Cm_at_equilibrium = 0.0
 
     return PayloadCableResult(
         payload_mass_per_drone=payload_mass,
@@ -181,6 +204,7 @@ def compute_payload_cable(
         attachment_y=attachment_y,
         vertical_drop=vertical_drop,
         attachment_dx=attachment_dx,
+        attachment_angle_rad=attachment_angle,
         Cm_at_equilibrium=Cm_at_equilibrium,
         sweep_min_angle_rad=sweep_min_angle,
         sweep_max_angle_rad=sweep_max_angle,
@@ -233,6 +257,12 @@ def run(
         inputs = ElevatorInputs()
     i = inputs
     s = sizing
+    trim_mode = i.trim_mode.lower()
+    if trim_mode not in {"tail_incidence", "payload_attachment"}:
+        raise ValueError(
+            "elevator.trim_mode must be 'tail_incidence' or "
+            "'payload_attachment'."
+        )
 
     # ------------------------------------------------------------------
     # Aero state from the converged design
@@ -276,15 +306,6 @@ def run(
     Cm_thrust = Cm_thrust_front + Cm_thrust_back
 
     # ------------------------------------------------------------------
-    # Payload disturbance (from config.yaml sizing.m_payload)
-    # ------------------------------------------------------------------
-    payload_cable = compute_payload_cable(sizing, y_cg, i)
-    Cm_payload = max(
-        abs(payload_cable.Cm_pitch_up),
-        abs(payload_cable.Cm_pitch_down),
-    )
-
-    # ------------------------------------------------------------------
     # Solve for ih from moment equilibrium at delta_e = 0
     #
     # Cm_total = Cm0 + Cmalpha*(alpha - alpha_L0)          [wing-body]
@@ -305,12 +326,28 @@ def run(
     Cm_tail_per_alpha = -CLalphah * i.eta_h * Vh
     Cm_tail_base = Cm_tail_per_alpha * (alpha - epsilon - alpha_L0_h)
 
-    ih = -(Cm_wing_body + Cm_thrust + Cm_tail_base) / Cm_tail_per_alpha
+    if trim_mode == "payload_attachment":
+        ih = -(alpha - epsilon - alpha_L0_h)
+    else:
+        ih = -(Cm_wing_body + Cm_thrust + Cm_tail_base) / Cm_tail_per_alpha
     Cm_tail_incidence = Cm_tail_per_alpha * ih
     Cm_tail_total = Cm_tail_base + Cm_tail_incidence
+    Cm_payload_trim = (
+        -(Cm_wing_body + Cm_thrust + Cm_tail_total)
+        if trim_mode == "payload_attachment" else 0.0
+    )
 
     # Tail angle of attack at cruise with solved ih
     alpha_h = alpha - epsilon + ih - alpha_L0_h
+
+    # ------------------------------------------------------------------
+    # Payload disturbance (from config.yaml sizing.m_payload)
+    # ------------------------------------------------------------------
+    payload_cable = compute_payload_cable(sizing, y_cg, i, Cm_trim=Cm_payload_trim)
+    Cm_payload = max(
+        abs(payload_cable.Cm_pitch_up),
+        abs(payload_cable.Cm_pitch_down),
+    )
 
     # ------------------------------------------------------------------
     # Elevator sizing
@@ -437,15 +474,17 @@ def summary(r: ElevatorResult) -> None:
     print("==============================================================\n")
 
     print("----- Pitching Moment Breakdown (about CG) -----")
+    print(f"  Trim mode                         : {r.inputs.trim_mode}")
     print(f"  Wing-body moment (Cm0 + α term) : {r.Cm_wing_body:+.5f}")
     print(f"  Tail moment (α - ε - αL0,h)     : {r.Cm_tail_base:+.5f}")
     print(f"  Tail moment from incidence ih   : {r.Cm_tail_incidence:+.5f}")
     print(f"  Tail moment total               : {r.Cm_tail_total:+.5f}")
     print(f"  Thrust (front 2 props)          : {r.Cm_thrust_front:+.5f}")
     print(f"  Thrust (rear prop)              : {r.Cm_thrust_back:+.5f}")
+    print(f"  Payload trim moment             : {r.payload_cable.Cm_at_equilibrium:+.5f}")
     print(f"  ----------------------------------------------")
     print(f"  Cruise moment buildup total     : "
-        f"{(r.Cm_wing_body + r.Cm_tail_total + r.Cm_thrust_total):+.5f}")
+        f"{(r.Cm_wing_body + r.Cm_tail_total + r.Cm_thrust_total + r.payload_cable.Cm_at_equilibrium):+.5f}")
 
     print("\n----- Tail Contribution at cruise (trim) -----")
     print(f"  Tail AoA α_h             : {np.degrees(r.alpha_h):+.3f} deg")
@@ -468,6 +507,7 @@ def summary(r: ElevatorResult) -> None:
     print(f"  Tube centerline y        : {pc.attachment_y:.4f} m")
     print(f"  CG-to-attach vertical    : {pc.vertical_drop:.4f} m")
     print(f"  CG-to-attach x offset    : {pc.attachment_dx:.4f} m")
+    print(f"  Attachment angle from vertical: {np.degrees(pc.attachment_angle_rad):+.3f} deg")
     print(f"  Cm at equilibrium angle  : {pc.Cm_at_equilibrium:+.5f}")
     print(f"  Cable sweep              : "
           f"{np.degrees(pc.sweep_min_angle_rad):.3f} to "

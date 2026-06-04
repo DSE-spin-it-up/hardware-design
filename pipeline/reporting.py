@@ -146,6 +146,7 @@ def print_final_drag(result: PipelineResult) -> None:
     print(f"  CL_h    (controllability)           : {sc.CL_h:+.4f}")
     print(f"  CL_A-h  (controllability)           : {sc.CL_A_h:.4f}")
     print(f"  Cm_ac   (3D wing, at cruise α)      : {sc.Cm_ac:+.4f}")
+    print(f"  Cm_payload trim                     : {sc.Cm_payload:+.4f}")
     print(f"  SM target                           : {sc.SM:.3f}  ({sc.SM:.1%} MAC)")
     print(f"  V_h/V                               : {sc.Vh_V:.3f}")
     print(f"  Required S_h/S — stability          : {ShS_stab_now:.4f}")
