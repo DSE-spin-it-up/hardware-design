@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from structures.materials import CFRP, CF_PLA, EPP, PLA, Material, Wood, Glass_Fiber
+from structures.materials import CFRP, CF_PLA, EPP, PLA, Material, Wood, Glass_Fiber, Aluminum_6061_T6
 
 MATERIAL_REGISTRY: dict[str, type[Material]] = {
     "CFRP": CFRP,
@@ -9,6 +9,7 @@ MATERIAL_REGISTRY: dict[str, type[Material]] = {
     "PLA": PLA,
     "Wood": Wood,
     "Glass_Fiber": Glass_Fiber,
+    "Aluminum": Aluminum_6061_T6
 }
 
 
