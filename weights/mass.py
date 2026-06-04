@@ -369,6 +369,12 @@ def compute_y_cg(
 
     # Tube wraps both wing rods with the configured casing margin.
     tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
+    wing_y_shift = fus.pvc_floor_thickness - tube_y0
+    y_coords += wing_y_shift
+    y_rod_spar += wing_y_shift
+    y_rod_aileron += wing_y_shift
+    tube_y0 += wing_y_shift
+    tube_y1 += wing_y_shift
     tube_height = tube_y1 - tube_y0
 
     le_x    = float(np.min(x_coords))
@@ -380,12 +386,15 @@ def compute_y_cg(
         batt_y0 = fus.battery_y_min
     else:
         batt_y0 = tube_y0 + 0.005
-    box_y0 = batt_y0 - fus.foam_floor_thickness
+    box_y0 = min(
+        batt_y0 - fus.foam_floor_thickness,
+        tube_y0 - fus.pvc_floor_thickness,
+    )
     box_yc = box_y0 + fus.box_height / 2.0
 
     y_fus      = box_yc
     y_sensor   = box_yc   # sensors sit at the fuselage structural box centre
-    y_wing     = 0.5 * airfoil_height
+    y_wing     = wing_y_shift + 0.5 * airfoil_height
     y_batt     = batt_y0 + fus.battery_height / 2.0
     y_pvc      = tube_y0 + tube_height / 2.0
     y_tail_rod = y_rod_aileron

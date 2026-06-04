@@ -212,6 +212,14 @@ def plot_cg_side_view(
     tube_x1     = x_rod_aileron + fus.inputs.tube_tail_overlap
     tube_length = tube_x1 - tube_x0
     tube_y0, tube_y1 = _tube_y_bounds(struct, fus, y_rod_spar, y_rod_aileron)
+    wing_y_shift = fus.pvc_floor_thickness - tube_y0
+    airfoil_coords[:, 1] += wing_y_shift
+    y_rod_spar += wing_y_shift
+    y_rod_aileron += wing_y_shift
+    y_ht_spar += wing_y_shift
+    y_ht_control += wing_y_shift
+    tube_y0 += wing_y_shift
+    tube_y1 += wing_y_shift
     tube_height = tube_y1 - tube_y0
     tube_yc     = tube_y0 + tube_height / 2.0
 
@@ -224,7 +232,10 @@ def plot_cg_side_view(
         batt_y0 = tube_y0 + 0.005   # battery sits just above tube floor
 
     # ------------------------------------------------------------------ structural box vertical placement
-    box_y0 = batt_y0 - fus.foam_floor_thickness
+    box_y0 = min(
+        batt_y0 - fus.foam_floor_thickness,
+        tube_y0 - fus.pvc_floor_thickness,
+    )
     box_yc = box_y0 + fus.box_height / 2.0
 
     # ------------------------------------------------------------------ Raymer fuselage x-coordinates

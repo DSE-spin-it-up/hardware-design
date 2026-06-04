@@ -40,7 +40,7 @@ from sizing.wing import SizingResult
 
 @dataclass
 class ElevatorInputs:
-    cE_ch:                   float = 0.30   # elevator chord / tail chord [-] (designer choice)
+    cE_ch:                   float = 0.40   # elevator chord / tail chord [-] (designer choice)
     eta_h:                   float = 0.85   # dynamic-pressure ratio at the tail (Vh/V)²
     Cm_dist:                 float = 0.10   # pitch-moment disturbance the elevator must
                                             # counteract at delta_e_max [-]

@@ -66,7 +66,7 @@ def calculate_dynamic_snap_force(
 
 if __name__ == "__main__":
     inputs = {
-        "m_dead": 6.755,
+        "m_dead": 10,
         "m_swarm_empty": 13.51,
         "m_payload": 50.0,
         "v_cruise": 20.0,

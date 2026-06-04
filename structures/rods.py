@@ -57,6 +57,7 @@ import numpy as np
 import propulsion
 from aerodynamics.airfoil_geometry import AirfoilGeometry
 from aerodynamics.airfoil_polar import AirfoilPolar
+from aerodynamics.llt import FlightCondition, WingGeometry, solve_llt
 from sizing.aileron import AileronResult
 from sizing.wing import SizingResult
 from structures.materials import CFRP
@@ -124,6 +125,8 @@ class RodResult:
     defl_control_vt: float
     fail_mode_control_vt: str
     f_n_wing: float = 0.0
+    CL_h_structural: float = 0.0
+    F_tail_structural: float = 0.0
     # Tail rod torsion results (populated by apply_torsion_check)
     tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
     sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
@@ -215,6 +218,82 @@ def _wing_natural_frequency(E: float, I: float, L: float, mass: float) -> float:
     beta1 = 1.875104068711961
     m_per_length = mass / L
     return beta1 ** 2 / (2 * np.pi) * np.sqrt(E * I / (m_per_length * L ** 4))
+
+
+def _finite_tail_cl_limit_llt(sizing: SizingResult, tail_polar: AirfoilPolar) -> float:
+    """Finite-tail CL limit from LLT at the first section Cl limit.
+
+    This mirrors the wing LLT path: the 3D coefficient comes from the LLT
+    spanload, while the limiting condition is a local 2D section Cl from the
+    polar. Both positive and negative tail loading are checked, and the larger
+    absolute finite-tail CL is returned for structural sizing.
+    """
+    geom = WingGeometry(
+        b=sizing.bh,
+        S=sizing.Sh,
+        taper=sizing.inputs.lam_t,
+    )
+    flight0 = FlightCondition(
+        V_inf=sizing.inputs.V_cruise,
+        rho=sizing.rho,
+        alpha_root=0.0,
+    )
+    flight1 = FlightCondition(
+        V_inf=sizing.inputs.V_cruise,
+        rho=sizing.rho,
+        alpha_root=1.0,
+    )
+    llt0 = solve_llt(geom, tail_polar, flight0)
+    llt1 = solve_llt(geom, tail_polar, flight1)
+
+    cl0 = llt0.Cl_local
+    cl_slope = llt1.Cl_local - cl0
+    cl_section_max = float(np.max(tail_polar.Cl))
+    cl_section_min = float(np.min(tail_polar.Cl))
+
+    positive_alpha = np.divide(
+        cl_section_max - cl0,
+        cl_slope,
+        out=np.full_like(cl0, np.inf),
+        where=cl_slope > 1.0e-12,
+    )
+    positive_alpha = positive_alpha[positive_alpha > 0.0]
+
+    negative_alpha = np.divide(
+        cl_section_min - cl0,
+        cl_slope,
+        out=np.full_like(cl0, -np.inf),
+        where=cl_slope > 1.0e-12,
+    )
+    negative_alpha = negative_alpha[negative_alpha < 0.0]
+
+    candidates: list[float] = []
+    if positive_alpha.size:
+        llt_pos = solve_llt(
+            geom,
+            tail_polar,
+            FlightCondition(
+                V_inf=sizing.inputs.V_cruise,
+                rho=sizing.rho,
+                alpha_root=float(np.min(positive_alpha)),
+            ),
+        )
+        candidates.append(abs(llt_pos.CL))
+    if negative_alpha.size:
+        llt_neg = solve_llt(
+            geom,
+            tail_polar,
+            FlightCondition(
+                V_inf=sizing.inputs.V_cruise,
+                rho=sizing.rho,
+                alpha_root=float(np.max(negative_alpha)),
+            ),
+        )
+        candidates.append(abs(llt_neg.CL))
+
+    if not candidates:
+        raise RuntimeError("Could not derive finite-tail CL limit from LLT.")
+    return max(candidates)
 
 
 def _tube_mass(length: float, d: float, t: float, rho: float) -> float:
@@ -416,7 +495,7 @@ def run(
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
     # ------------------------------------------------------------------ #
     if tail_polar is not None:
-        CL_h = abs(tail_polar.Cl_max * s.inputs.ARt / (s.inputs.ARt + 2.0))
+        CL_h = _finite_tail_cl_limit_llt(s, tail_polar)
     else:
         CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
@@ -569,6 +648,8 @@ def run(
         defl_aileron=defl_aileron, fail_mode_aileron=fail_aileron,
         d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
         f_n_wing=f_n_wing,
+        CL_h_structural=CL_h,
+        F_tail_structural=F_tail,
         Vh_V=i.Vh_V,
         d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
         defl_spar_ht=defl_spar_ht, fail_mode_spar_ht=fail_spar_ht,
@@ -598,6 +679,8 @@ def summary(r: RodResult) -> None:
     print(f"  Mass (each)            : {r.mass_aileron:.3f}  kg")
 
     print("\n--- Tail rod (aileron hinge → tail TE) ---")
+    print(f"  Structural CL_h       : {r.CL_h_structural:.3f}")
+    print(f"  Structural tail force : {r.F_tail_structural:.2f}  N")
     print(f"  Outer diameter         : {r.d_t * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_t * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_t * 1000:.2f}  mm")

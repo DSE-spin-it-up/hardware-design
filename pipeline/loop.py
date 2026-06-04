@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from aerodynamics.airfoil_geometry import airfoil_thickness_to_chord
+from aerodynamics.airfoil_geometry import AirfoilGeometry, airfoil_thickness_to_chord
 from aerodynamics.airfoil_polar import AirfoilPolar, get_airfoil_polar
 from aerodynamics.drag_buildup import DragResult
 from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
@@ -140,7 +140,11 @@ def _run_design_pass(
     # by tube_tail_overlap to grip the tail boom inside the fuselage.
     tube_outer_diameter = max(struct.d_spar, struct.d_aileron)
     x_rod_aileron = (1.0 - control_surface.inputs.c_aileron_to_c_wing) * sizing.c_root
+    _, x_max_tc = AirfoilGeometry(airfoil).compute_maximum_thickness()
+    x_rod_spar = x_max_tc * sizing.c_root
+    tube_front_x = x_rod_spar - config.FUSELAGE.tube_tail_overlap
     tube_back_x = x_rod_aileron + config.FUSELAGE.tube_tail_overlap
+    tube_length = tube_back_x - tube_front_x
 
     fus = fuselage.run(
         sizing,
@@ -150,6 +154,7 @@ def _run_design_pass(
         battery_mass=propulsion.battery_mass,
         tube_back_x=tube_back_x,
         tube_outer_diameter=tube_outer_diameter,
+        tube_length=tube_length,
     )
 
     drag = estimate_cd0(
@@ -749,14 +754,6 @@ def run_pipeline(config) -> PipelineResult:
     )
 
     # ----- Step 10: torsion check on the boom + physics-based VT rod sizing -----
-    F_tail = (
-        sizing.Sh
-        * abs(-0.35 * sizing.inputs.ARt ** (1.0 / 3.0))
-        * sizing.q_cruise
-        * config.STRUCTURE.Vh_V
-        * config.STRUCTURE.safety_factor
-    )
-
     vt_geom = WingGeometry(b=sizing.bv, S=sizing.Sv, taper=sizing.inputs.lam_t)
     vt_flight = FlightCondition(
         V_inf=sizing.inputs.V_cruise, rho=sizing.rho, CL_target=0.5,
@@ -779,7 +776,7 @@ def run_pipeline(config) -> PipelineResult:
     struct = rods.apply_torsion_check(
         rod=struct,
         rudder_hinge_moment=rudder_result.hinge_moment.H,
-        bending_force=F_tail,
+        bending_force=struct.F_tail_structural,
         boom_length=sizing.L_boom,
         safety_factor=config.STRUCTURE.safety_factor,
     )

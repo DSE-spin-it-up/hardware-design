@@ -20,9 +20,12 @@ class FuselageInputs:
     # How far the tube extends aft of the aileron hinge to grip the tail boom.
     tube_tail_overlap: float = 0.03  # [m]
     # EPP tearout prevention
-    load_factor: float    = 3.0     # [-] landing impact load factor
+    load_factor: float    = 1.5     # [-] battery tearout safety factor
     g: float              = 9.81    # [m/s²]
     min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
+    pvc_snap_force: float = 372.8   # [N] dynamic peak snap force reacted by PVC support
+    pvc_snap_safety_factor: float = 1.5  # [-] safety factor on PVC snap force
+    min_pvc_foam_floor: float = 0.005  # [m] minimum EPP floor below PVC support
     # Raymer nose / tail fineness fractions of total aero length
     nose_fraction: float = 0.20     # [-] nose cone length / total aero length
     tail_fraction: float = 0.30     # [-] tail taper length / total aero length
@@ -55,6 +58,7 @@ class FuselageResult:
     x_nose: float              = 0.0  # [m]  aero nose x from LEMAC
     battery_y_min: float       = 0.0  # [m]  lowest allowable battery bottom
     foam_floor_thickness: float = 0.0  # [m]  required foam below battery
+    pvc_floor_thickness: float = 0.0  # [m]  required foam below PVC/wing tube
 
 
 def run(
@@ -65,6 +69,7 @@ def run(
     battery_mass: float = 0.0,
     tube_back_x: float | None = None,
     tube_outer_diameter: float = 0.0,
+    tube_length: float = 0.0,
 ) -> FuselageResult:
 
     if inputs is None:
@@ -81,7 +86,7 @@ def run(
         b_width  = i.battery_width
         b_height = i.battery_height
 
-    # ------------------------------------------------------------------ 2. EPP tearout check
+    # ------------------------------------------------------------------ 2. EPP tearout checks
     epp = EPP()
     bearing_area = b_length * b_width
     stress = (battery_mass * i.g * i.load_factor) / bearing_area if bearing_area > 0 else 0.0
@@ -97,6 +102,21 @@ def run(
 
     battery_y_min = foam_floor_thickness
 
+    box_width_prelim = b_width * i.casing_factor
+    pvc_bearing_area = tube_length * box_width_prelim
+    pvc_design_force = i.pvc_snap_force * i.pvc_snap_safety_factor
+    pvc_stress = pvc_design_force / pvc_bearing_area if pvc_bearing_area > 0 else 0.0
+    pvc_floor_thickness = max(pvc_stress / epp.s_t, i.min_pvc_foam_floor)
+
+    if pvc_stress / epp.s_t > i.min_pvc_foam_floor:
+        print(f"  PVC floor: tearout governs        "
+              f"(required {pvc_floor_thickness*1e3:.1f} mm for "
+              f"{pvc_design_force:.1f} N design load)")
+    else:
+        print(f"  PVC floor: min thickness governs  "
+              f"(required {pvc_floor_thickness*1e3:.1f} mm, "
+              f"tearout would need {pvc_stress/epp.s_t*1e3:.1f} mm)")
+
     # ------------------------------------------------------------------ 3. Structural Box
     # Front wall: forward face of battery minus the end-cap thickness.
     if battery_x is not None:
@@ -111,9 +131,17 @@ def run(
     x_aft_box   = _tube_back + i.casing_thickness
 
     box_length = x_aft_box - x_nose_box
-    box_width  = b_width  * i.casing_factor
-    inner_height = max(b_height, tube_outer_diameter) * i.casing_factor
-    box_height = inner_height + foam_floor_thickness
+    box_width  = box_width_prelim
+    tube_height = tube_outer_diameter * i.casing_factor
+    battery_floor_for_height = (
+        pvc_floor_thickness + 0.005
+        if battery_x is not None and battery_x >= 0.0
+        else foam_floor_thickness
+    )
+    box_height = max(
+        battery_floor_for_height + b_height,
+        pvc_floor_thickness + tube_height,
+    )
 
     # ------------------------------------------------------------------ 4. Raymer-style Aero Body
     # The cylindrical midsection wraps the structural box with a 1:1 mapping —
@@ -179,6 +207,7 @@ def run(
         x_nose=x_nose,
         battery_y_min=battery_y_min,
         foam_floor_thickness=foam_floor_thickness,
+        pvc_floor_thickness=pvc_floor_thickness,
     )
 
 
@@ -195,6 +224,7 @@ def summary(r: FuselageResult) -> None:
     print(f"  Wetted Area (Raymer)   : {r.Swet:.4f}  m²")
     print(f"  Cylinder internal vol  : {r.volume_shell:.6f}  m³")
     print(f"  Foam floor thickness   : {r.foam_floor_thickness*1e3:.1f}  mm")
+    print(f"  PVC floor thickness    : {r.pvc_floor_thickness*1e3:.1f}  mm")
 
 
 if __name__ == "__main__":
