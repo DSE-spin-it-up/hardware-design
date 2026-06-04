@@ -447,8 +447,9 @@ def run(
     airfoil      = AirfoilGeometry(airfoil_path)
     tail_airfoil = AirfoilGeometry(tail_airfoil_path)
 
-    # Total wing lift and span (shared by both wing rods).
-    L_lift = ((si.m_drone_empty + si.m_payload) / (si.n_drones - 1) + si.m_drone_empty) * 9.81
+    # Total wing lift and span (shared by both wing rods). The structural
+    # case is one-drone failure at cruise speed plus the configured gust speed.
+    L_lift = s.CL_one_drone_failure * s.q_structural * s.Sw
     b_w = si.b
 
     # ------------------------------------------------------------------ #

@@ -48,6 +48,7 @@ class PipelineResult:
     tc: float
     polar: AirfoilPolar
     cl_max: float
+    cl_max_wing: float
 
     # ----- Converged design state -----
     sizing: SizingResult
@@ -75,6 +76,7 @@ class PipelineResult:
     cl_req: float
     max_cl_local: float
     lift_achievable: bool
+    failure_lift_achievable: bool
     cl_sweep: np.ndarray
     cd_drone_sweep: np.ndarray
     cd_full_sweep: np.ndarray
@@ -155,6 +157,7 @@ def _run_design_pass(
         tube_back_x=tube_back_x,
         tube_outer_diameter=tube_outer_diameter,
         tube_length=tube_length,
+        pvc_lift_force=sizing.lift_gust_increment,
     )
 
     drag = estimate_cd0(
@@ -488,6 +491,11 @@ def run_pipeline(config) -> PipelineResult:
     print(f"Stall: V_stall = {config.V_STALL:.2f} m/s, "
           f"CL_max_wing = Cl_max · AR/(AR+2) = {CL_max_wing:.3f}  →  "
           f"CL_cruise_bound = (V_stall/V_cruise)² · CL_max_wing = {CL_stall_bound_init:.3f}")
+    failure_margin_init = CL_max_wing - sizing.CL_one_drone_failure
+    failure_flag_init = "OK" if failure_margin_init >= -1.0e-9 else "FAIL"
+    print(f"One-drone-failure lift: CL_req = {sizing.CL_one_drone_failure:.3f}, "
+          f"CL_max_wing = {CL_max_wing:.3f}, margin = {failure_margin_init:+.3f}  "
+          f"[{failure_flag_init}]")
 
     # ----- Steps 2-4: iterate propulsion → fuselage → drag → mass → wing-area → sizing -----
     mode = ", ".join([
@@ -641,6 +649,12 @@ def run_pipeline(config) -> PipelineResult:
     llt = llt_at_cl(sizing, polar, CL_target=CL_req)
     max_Cl_local = float(np.max(np.abs(llt.Cl_local)))
     lift_achievable = max_Cl_local <= Cl_max
+    failure_lift_achievable = sizing.CL_one_drone_failure <= CL_max_wing
+    failure_margin = CL_max_wing - sizing.CL_one_drone_failure
+    failure_flag = "OK" if failure_lift_achievable else "FAIL"
+    print(f"    One-drone-failure CL check: CL_req = {sizing.CL_one_drone_failure:.3f}, "
+          f"CL_max_wing = {CL_max_wing:.3f}, margin = {failure_margin:+.3f}  "
+          f"[{failure_flag}]")
 
     # ----- Step 6: CL/CD sweep → drone-only and drone+payload polars -----
     CL_sweep, CD_wing_sweep = wing_drag_polar(sizing, polar, config.ALPHA_SWEEP_DEG)
@@ -787,6 +801,7 @@ def run_pipeline(config) -> PipelineResult:
         tc=tc,
         polar=polar,
         cl_max=Cl_max,
+        cl_max_wing=CL_max_wing,
         sizing=sizing,
         propulsion=final_propulsion,
         fus=p.fus,
@@ -808,6 +823,7 @@ def run_pipeline(config) -> PipelineResult:
         cl_req=CL_req,
         max_cl_local=max_Cl_local,
         lift_achievable=lift_achievable,
+        failure_lift_achievable=failure_lift_achievable,
         cl_sweep=CL_sweep,
         cd_drone_sweep=CD_drone_sweep,
         cd_full_sweep=CD_full_sweep,

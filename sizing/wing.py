@@ -26,6 +26,7 @@ class SizingInputs:
     # Flight Conditions
     h_cruise: float = 100        # Cruise altitude [m]
     V_cruise: float = 20         # Cruise speed [m/s]
+    gust_speed: float = 5.0      # Gust increment used for structures/control sizing [m/s]
     # Mission
     R: float = 20000             # Range [m]
     # Materials
@@ -69,8 +70,14 @@ class SizingResult:
     c_root: float
     # Aerodynamics
     q_cruise: float
+    V_structural: float
+    q_structural: float
     e: float
     CL: float
+    CL_one_drone_failure: float
+    lift_one_drone_failure: float
+    lift_one_drone_failure_gust: float
+    lift_gust_increment: float
     Cl_airfoil: float
     k: float
     Cd: float
@@ -141,8 +148,17 @@ def run(
 
     # Aerodynamics
     q_cruise = 0.5 * rho * i.V_cruise ** 2
+    V_structural = i.V_cruise + i.gust_speed
+    q_structural = 0.5 * rho * V_structural ** 2
     e = 1.78 * (1 - 0.045 * i.AR ** 0.68) - 0.64
     CL = (m_drone_loaded * g0) / (q_cruise * Sw)
+    if i.n_drones <= 1:
+        raise ValueError("n_drones must be greater than 1 for one-drone-failure sizing.")
+    m_one_drone_failure = (i.n_drones * i.m_drone_empty + i.m_payload) / (i.n_drones - 1)
+    CL_one_drone_failure = (m_one_drone_failure * g0) / (q_cruise * Sw)
+    lift_one_drone_failure = CL_one_drone_failure * q_cruise * Sw
+    lift_one_drone_failure_gust = CL_one_drone_failure * q_structural * Sw
+    lift_gust_increment = lift_one_drone_failure_gust - lift_one_drone_failure
     Cl_airfoil = (i.AR + 2) * CL / i.AR
     k = 1 / (np.pi * e * i.AR)
     Cd = i.Cd0 + k * CL ** 2 + (i.Cd_payload * i.S_payload / (i.n_drones * Sw))
@@ -193,8 +209,14 @@ def run(
         c=c,
         c_root=c_root,
         q_cruise=q_cruise,
+        V_structural=V_structural,
+        q_structural=q_structural,
         e=e,
         CL=CL,
+        CL_one_drone_failure=CL_one_drone_failure,
+        lift_one_drone_failure=lift_one_drone_failure,
+        lift_one_drone_failure_gust=lift_one_drone_failure_gust,
+        lift_gust_increment=lift_gust_increment,
         Cl_airfoil=Cl_airfoil,
         k=k,
         Cd=Cd,
@@ -235,8 +257,13 @@ def summary(r: SizingResult) -> None:
 
     print("\n--- Aerodynamics ---")
     print(f"  Dynamic pressure     : {r.q_cruise:.2f}  Pa")
+    print(f"  Gust speed           : {r.inputs.gust_speed:.2f}  m/s")
+    print(f"  Structural speed     : {r.V_structural:.2f}  m/s")
+    print(f"  Structural q         : {r.q_structural:.2f}  Pa")
     print(f"  Oswald efficiency    : {r.e:.4f}")
     print(f"  CL (drone)           : {r.CL:.4f}")
+    print(f"  CL (1-drone failure) : {r.CL_one_drone_failure:.4f}")
+    print(f"  Gust lift increment  : {r.lift_gust_increment:.2f}  N")
     print(f"  Cl (airfoil)         : {r.Cl_airfoil:.4f}")
     print(f"  CD                   : {r.Cd:.5f}")
     print(f"  L/D ratio            : {r.LD_ratio:.2f}")

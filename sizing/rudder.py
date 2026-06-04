@@ -44,7 +44,6 @@ class RudderInputs:
     max_deflection_deg: float = 30.0   # hard deflection limit [deg]
     Cn_dist:            float = 0.10   # max yaw-moment disturbance the rudder must
                                        # counteract at δ_R_max [-]
-    Vgust:              float = 10.0   # lateral gust velocity [m/s]
     CDY:                float = 0.8    # fuselage side-drag coefficient [-]
     Kf1:                float = 0.85   # fuselage correction on Cn_β [-]
     Kf2:                float = 1.0    # fuselage correction on Cy_β [-]
@@ -164,10 +163,11 @@ def run(
     # ------------------------------------------------------------------
     # Gust kinematics
     # ------------------------------------------------------------------
-    VT      = np.sqrt(v_stall ** 2 + i.Vgust ** 2)   # total speed in gust [m/s]
-    beta    = np.arctan(i.Vgust / v_stall)            # gust sideslip [rad]
+    gust_speed = s.inputs.gust_speed
+    VT      = np.sqrt(v_stall ** 2 + gust_speed ** 2)   # total speed in gust [m/s]
+    beta    = np.arctan(gust_speed / v_stall)            # gust sideslip [rad]
     q_total = 0.5 * rho * VT ** 2
-    q_gust  = 0.5 * rho * i.Vgust ** 2
+    q_gust  = 0.5 * rho * gust_speed ** 2
     Fw      = q_gust * Ss * i.CDY                     # lateral gust force [N]
 
     delta_R_max = np.radians(i.max_deflection_deg)

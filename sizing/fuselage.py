@@ -59,6 +59,7 @@ class FuselageResult:
     battery_y_min: float       = 0.0  # [m]  lowest allowable battery bottom
     foam_floor_thickness: float = 0.0  # [m]  required foam below battery
     pvc_floor_thickness: float = 0.0  # [m]  required foam below PVC/wing tube
+    pvc_design_force: float = 0.0     # [N]  force used for PVC tearout sizing
 
 
 def run(
@@ -70,6 +71,7 @@ def run(
     tube_back_x: float | None = None,
     tube_outer_diameter: float = 0.0,
     tube_length: float = 0.0,
+    pvc_lift_force: float = 0.0,
 ) -> FuselageResult:
 
     if inputs is None:
@@ -104,7 +106,8 @@ def run(
 
     box_width_prelim = b_width * i.casing_factor
     pvc_bearing_area = tube_length * box_width_prelim
-    pvc_design_force = i.pvc_snap_force * i.pvc_snap_safety_factor
+    pvc_snap_design_force = i.pvc_snap_force * i.pvc_snap_safety_factor
+    pvc_design_force = max(pvc_snap_design_force, pvc_lift_force)
     pvc_stress = pvc_design_force / pvc_bearing_area if pvc_bearing_area > 0 else 0.0
     pvc_floor_thickness = max(pvc_stress / epp.s_t, i.min_pvc_foam_floor)
 
@@ -208,6 +211,7 @@ def run(
         battery_y_min=battery_y_min,
         foam_floor_thickness=foam_floor_thickness,
         pvc_floor_thickness=pvc_floor_thickness,
+        pvc_design_force=pvc_design_force,
     )
 
 
@@ -225,6 +229,7 @@ def summary(r: FuselageResult) -> None:
     print(f"  Cylinder internal vol  : {r.volume_shell:.6f}  m³")
     print(f"  Foam floor thickness   : {r.foam_floor_thickness*1e3:.1f}  mm")
     print(f"  PVC floor thickness    : {r.pvc_floor_thickness*1e3:.1f}  mm")
+    print(f"  PVC tearout design load: {r.pvc_design_force:.1f}  N")
 
 
 if __name__ == "__main__":

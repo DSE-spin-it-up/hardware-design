@@ -42,6 +42,7 @@ sizing:
   Cd_payload: 1.05
   h_cruise: 100
   V_cruise: 20
+  gust_speed: 5.0
   R: 20000
   foam_density: 48
   Vv: 0.04
@@ -110,7 +111,6 @@ elevator:
 rudder:
   max_deflection_deg: 30.0
   Cn_dist: 0.0
-  Vgust: 5.0
   CDY: 0.8
   Kf1: 0.85
   Kf2: 1.0

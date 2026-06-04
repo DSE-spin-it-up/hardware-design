@@ -53,6 +53,8 @@ if "sizing" in _data:
     for _boom_alias in ("lboom", "l_boom"):
         if _boom_alias in _data["sizing"]:
             _data["sizing"]["L_boom"] = _data["sizing"].pop(_boom_alias)
+    if "rudder" in _data and "Vgust" in _data["rudder"]:
+        _data["sizing"].setdefault("gust_speed", _data["rudder"].pop("Vgust"))
 
 _data["airfoil"] = _resolve_repo_path(_data.get("airfoil"))
 _data["tail_airfoil"] = _resolve_repo_path(_data.get("tail_airfoil"))

@@ -95,6 +95,13 @@ def print_main_summary(result: PipelineResult) -> None:
         print(f"  ✗ Lift NOT achievable — section Cl exceeds polar by "
               f"{result.max_cl_local - result.cl_max:.3f}")
 
+    failure_margin = result.cl_max_wing - sizing.CL_one_drone_failure
+    print(f"\nOne-drone-failure wing CL:")
+    print(f"  CL required          : {sizing.CL_one_drone_failure:.4f}")
+    print(f"  Wing CL_max          : {result.cl_max_wing:.4f}")
+    print(f"  Margin               : {failure_margin:+.4f}")
+    print(f"  Status               : {'OK' if result.failure_lift_achievable else 'FAIL'}")
+
     # ----- α sweep summary -----
     print("\nSweeping α to build drag polar…")
     LD_drone = result.cl_sweep / result.cd_drone_sweep
