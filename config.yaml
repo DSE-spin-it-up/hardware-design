@@ -107,6 +107,8 @@ elevator:
   Cm_dist: 0.0
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 20.0
+  payload_cable_min_angle_deg: 0.0
+  payload_cable_max_angle_deg: null  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----
 rudder:

@@ -46,6 +46,8 @@ class ElevatorInputs:
                                             # counteract at delta_e_max [-]
     max_deflection_up_deg:   float = 25.0   # elevator-up   deflection limit [deg]
     max_deflection_down_deg: float = 20.0   # elevator-down deflection limit [deg]
+    payload_cable_min_angle_deg: float = 0.0       # min cable sweep angle from vertical [deg]
+    payload_cable_max_angle_deg: float | None = None  # max angle; None -> 2 * equilibrium angle
     enforce_tail_stall:      bool = True    # raise if max |CLh| exceeds tail Cl_max
 
 
@@ -69,8 +71,11 @@ class PayloadCableResult:
     attachment_y: float
     vertical_drop: float
     attachment_dx: float
-    Cm_horizontal: float
-    Cm_vertical: float
+    Cm_at_equilibrium: float
+    sweep_min_angle_rad: float
+    sweep_max_angle_rad: float
+    worst_pitch_up_angle_rad: float
+    worst_pitch_down_angle_rad: float
     Cm_pitch_up: float
     Cm_pitch_down: float
 
@@ -117,8 +122,15 @@ def tau_from_chord_ratio(cf_c: float) -> float:
 def compute_payload_cable(
     sizing: SizingResult,
     y_cg: dict[str, float],
+    inputs: ElevatorInputs,
 ) -> PayloadCableResult:
-    """Compute the per-drone payload cable angle and pitch moments."""
+    """Compute the per-drone payload cable angle and pitch moment envelope.
+
+    The attachment is placed so the nominal equilibrium cable line passes
+    through the CG. Therefore the pitch moment is zero at the equilibrium
+    angle. The envelope sweeps cable angles from vertical to the same angular
+    excursion on the other side of equilibrium.
+    """
     s = sizing
     n_drones = max(float(s.inputs.n_drones), 1.0)
     payload_mass = s.inputs.m_payload / n_drones
@@ -131,8 +143,33 @@ def compute_payload_cable(
     attachment_dx = vertical_drop * np.tan(cable_angle)
 
     denom = s.q_cruise * s.Sw * s.c
-    Cm_horizontal = payload_drag * vertical_drop / denom if denom > 0.0 else 0.0
-    Cm_vertical = payload_weight * attachment_dx / denom if denom > 0.0 else 0.0
+    sweep_min_angle = np.radians(inputs.payload_cable_min_angle_deg)
+    if inputs.payload_cable_max_angle_deg is None:
+        sweep_max_angle = 2.0 * cable_angle
+    else:
+        sweep_max_angle = np.radians(inputs.payload_cable_max_angle_deg)
+    sweep_min_angle = float(np.clip(sweep_min_angle, 0.0, np.radians(89.0)))
+    sweep_max_angle = float(np.clip(sweep_max_angle, 0.0, np.radians(89.0)))
+    if sweep_max_angle < sweep_min_angle:
+        raise ValueError(
+            "payload_cable_max_angle_deg must be greater than or equal to "
+            "payload_cable_min_angle_deg."
+        )
+    cable_angles = np.linspace(sweep_min_angle, sweep_max_angle, 401)
+
+    if denom > 0.0:
+        Cm_sweep = (
+            payload_weight
+            * vertical_drop
+            * (np.tan(cable_angles) - np.tan(cable_angle))
+            / denom
+        )
+    else:
+        Cm_sweep = np.zeros_like(cable_angles)
+
+    i_up = int(np.argmax(Cm_sweep))
+    i_down = int(np.argmin(Cm_sweep))
+    Cm_at_equilibrium = 0.0
 
     return PayloadCableResult(
         payload_mass_per_drone=payload_mass,
@@ -144,10 +181,13 @@ def compute_payload_cable(
         attachment_y=attachment_y,
         vertical_drop=vertical_drop,
         attachment_dx=attachment_dx,
-        Cm_horizontal=Cm_horizontal,
-        Cm_vertical=Cm_vertical,
-        Cm_pitch_up=Cm_horizontal + Cm_vertical,
-        Cm_pitch_down=Cm_horizontal - Cm_vertical,
+        Cm_at_equilibrium=Cm_at_equilibrium,
+        sweep_min_angle_rad=sweep_min_angle,
+        sweep_max_angle_rad=sweep_max_angle,
+        worst_pitch_up_angle_rad=float(cable_angles[i_up]),
+        worst_pitch_down_angle_rad=float(cable_angles[i_down]),
+        Cm_pitch_up=float(Cm_sweep[i_up]),
+        Cm_pitch_down=float(Cm_sweep[i_down]),
     )
 
 
@@ -238,7 +278,7 @@ def run(
     # ------------------------------------------------------------------
     # Payload disturbance (from config.yaml sizing.m_payload)
     # ------------------------------------------------------------------
-    payload_cable = compute_payload_cable(sizing, y_cg)
+    payload_cable = compute_payload_cable(sizing, y_cg, i)
     Cm_payload = max(
         abs(payload_cable.Cm_pitch_up),
         abs(payload_cable.Cm_pitch_down),
@@ -427,10 +467,16 @@ def summary(r: ElevatorResult) -> None:
     print(f"  Cable angle from vertical: {np.degrees(pc.cable_angle_rad):+.3f} deg")
     print(f"  Tube centerline y        : {pc.attachment_y:.4f} m")
     print(f"  CG-to-attach vertical    : {pc.vertical_drop:.4f} m")
-    print(f"  CG-to-attach |x|         : {pc.attachment_dx:.4f} m")
-    print(f"  Horizontal-tension Cm    : {pc.Cm_horizontal:+.5f}")
-    print(f"  Vertical-load Cm         : +/-{pc.Cm_vertical:.5f}")
+    print(f"  CG-to-attach x offset    : {pc.attachment_dx:.4f} m")
+    print(f"  Cm at equilibrium angle  : {pc.Cm_at_equilibrium:+.5f}")
+    print(f"  Cable sweep              : "
+          f"{np.degrees(pc.sweep_min_angle_rad):.3f} to "
+          f"{np.degrees(pc.sweep_max_angle_rad):.3f} deg")
+    print(f"  Worst pitch-up angle     : "
+          f"{np.degrees(pc.worst_pitch_up_angle_rad):+.3f} deg")
     print(f"  Worst pitch-up Cm        : {pc.Cm_pitch_up:+.5f}")
+    print(f"  Worst pitch-down angle   : "
+          f"{np.degrees(pc.worst_pitch_down_angle_rad):+.3f} deg")
     print(f"  Worst pitch-down Cm      : {pc.Cm_pitch_down:+.5f}")
     print(f"  Cm_payload envelope      : {r.Cm_payload:+.5f}")
 
