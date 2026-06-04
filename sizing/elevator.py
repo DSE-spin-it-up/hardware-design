@@ -46,6 +46,7 @@ class ElevatorInputs:
                                             # counteract at delta_e_max [-]
     max_deflection_up_deg:   float = 25.0   # elevator-up   deflection limit [deg]
     max_deflection_down_deg: float = 20.0   # elevator-down deflection limit [deg]
+    enforce_tail_stall:      bool = True    # raise if max |CLh| exceeds tail Cl_max
 
 
 @dataclass
@@ -264,15 +265,15 @@ def run(
     CLh_at_max_up = CLh_cruise + CLalphah * tau_e * delta_e_up * bE_bh
     CLh_at_max_down = CLh_cruise + CLalphah * tau_e * delta_e_down * bE_bh
     Cl_max = tail_polar.Cl_max
-    CLh_max_required = max(CLh_at_max_up, CLh_at_max_down)
+    CLh_max_required = max(abs(CLh_at_max_up), abs(CLh_at_max_down))
 
-    if CLh_max_required > Cl_max:
+    if i.enforce_tail_stall and CLh_max_required > Cl_max:
         raise ValueError(
             "Tail sizing failed: required tail lift coefficient at one of the "
-            "control extremes exceeds the tail airfoil Cl_max.\n"
+            "control extremes exceeds the tail airfoil |Cl_max|.\n"
             f"  CLh({i.max_deflection_up_deg:.1f}° elevator up)   = {CLh_at_max_up:.3f}\n"
             f"  CLh({i.max_deflection_down_deg:.1f}° elevator down) = {CLh_at_max_down:.3f}\n"
-            f"  Cl_max = {Cl_max:.3f}\n"
+            f"  |Cl_max| = {Cl_max:.3f}\n"
             "Reduce trim/elevator demand, choose a higher-Cl tail airfoil, "
             "or increase tail volume."
         )

@@ -6,6 +6,12 @@ Cl_dist (an input).  The loop grows the aileron inboard from the outboard
 edge until |Cl_δa · δ_a_max| ≥ Cl_dist.  The achievable steady roll rate is
 still reported (it uses the roll-damping derivative Cl_p) but no longer gates
 the sizing.
+
+A second sizing criterion mirrors the elevator payload check: a horizontal
+payload tension (magnitude m_payload × g) acting at the PVC tube bottom
+produces a roll moment whose arm is the vertical distance from that attach
+point to the overall CG.  Whichever criterion — disturbance or payload —
+demands the larger inboard span drives the result.
 """
 from dataclasses import dataclass
 
@@ -40,6 +46,8 @@ class AileronResult:
     roll_moment: float     # roll-control moment at δ_a_max, |Cl_δa·δ_a_max| [-]
     roll_rate: float       # achieved steady roll rate [rad/s]
     converged: bool        # True if disturbance counteracted before hitting root
+    roll_moment_payload: float   # roll moment from payload horizontal tension [-]
+    driving_constraint: str      # "disturbance" or "payload"
 
 
 def chord_at_y_frac(c_root: float, lam: float):
@@ -93,7 +101,22 @@ def run(
     sizing: SizingResult,
     inputs: AileronInputs | None = None,
     polar: AirfoilPolar | None = None,
+    y_cg: dict[str, float] | None = None,
 ) -> AileronResult:
+    """Size the ailerons.
+
+    Parameters
+    ----------
+    sizing  : converged wing sizing result
+    inputs  : AileronInputs overrides; defaults used when None
+    polar   : wing airfoil polar for section Cd_p; fallback used when None
+    y_cg    : vertical CG dict from compute_y_cg (keys: 'overall',
+              'pvc_tube_bottom').  When supplied, a payload roll-moment
+              criterion is added alongside the disturbance criterion,
+              exactly mirroring the elevator payload check.  When None
+              (e.g. standalone ``__main__`` runs) only the disturbance
+              criterion is active.
+    """
     if inputs is None:
         inputs = AileronInputs()
     i = inputs
@@ -112,6 +135,32 @@ def run(
 
     cl_p = compute_cl_p(i.cl_alpha, cd0_section, s.Sw, s.inputs.b, c_at_y_frac)
 
+    # ------------------------------------------------------------------
+    # Payload roll-moment criterion
+    #
+    # A horizontal payload tension (m_payload × g) acts at the PVC tube
+    # bottom attach point.  The moment arm is the vertical distance from
+    # that point to the overall CG — identical to the elevator payload
+    # arm — because the force is horizontal and the arm is vertical.
+    #
+    #   Cl_payload = (F_payload × moment_arm) / (q × Sw × b)
+    #
+    # When y_cg is not supplied (standalone runs) the payload criterion
+    # is suppressed and only the disturbance requirement drives sizing.
+    # ------------------------------------------------------------------
+    if y_cg is not None:
+        moment_arm = abs(y_cg["overall"] - y_cg["pvc_tube_bottom"])
+        F_payload = s.inputs.m_payload * 9.81
+        roll_moment_payload = (F_payload * moment_arm) / (s.q_cruise * s.Sw * s.inputs.b)
+    else:
+        roll_moment_payload = 0.0
+
+    roll_moment_required = max(i.roll_moment_dist, roll_moment_payload)
+    driving_constraint = "payload" if roll_moment_payload > i.roll_moment_dist else "disturbance"
+
+    # ------------------------------------------------------------------
+    # Inboard-span search
+    # ------------------------------------------------------------------
     start_y_frac = i.max_y_frac
     cl_da = 0.0
     roll_moment = 0.0
@@ -123,9 +172,9 @@ def run(
             s.inputs.b, s.Sw, i.cl_alpha, tau,
         )
         # Roll-control moment available at full deflection; size until it
-        # counteracts the disturbance (mirrors the elevator δ_max criterion).
+        # counteracts whichever criterion (disturbance or payload) is larger.
         roll_moment = abs(cl_da * max_da)
-        if roll_moment >= i.roll_moment_dist:
+        if roll_moment >= roll_moment_required:
             converged = True
             break
 
@@ -143,16 +192,22 @@ def run(
         roll_moment=roll_moment,
         roll_rate=P,
         converged=converged,
+        roll_moment_payload=roll_moment_payload,
+        driving_constraint=driving_constraint,
     )
 
 
 def summary(r: AileronResult) -> None:
+    req = max(r.inputs.roll_moment_dist, r.roll_moment_payload)
     if r.converged:
         print(f"  Roll-moment requirement met "
-              f"({r.roll_moment:.4f} ≥ {r.inputs.roll_moment_dist:.4f})")
+              f"({r.roll_moment:.4f} ≥ {req:.4f})")
     else:
         print(f"  ✗ Roll-moment requirement NOT met "
-              f"({r.roll_moment:.4f} < {r.inputs.roll_moment_dist:.4f})")
+              f"({r.roll_moment:.4f} < {req:.4f})")
+    print(f"  Active constraint           : {r.driving_constraint}")
+    print(f"  Roll-moment (disturbance)   : {r.inputs.roll_moment_dist:.4f}")
+    print(f"  Roll-moment (payload)       : {r.roll_moment_payload:.4f}")
     print(f"  Aileron inboard y/(b/2) : {r.start_y_frac:.3f}")
     print(f"  Aileron outboard y/(b/2): {r.inputs.max_y_frac:.3f}")
     print(f"  Aileron span (per side) : {r.aileron_span:.3f}  m")

@@ -373,6 +373,134 @@ def _optimize_battery_x_for_scissor(
     return battery_x, p, state, error
 
 
+def _final_scissor_for_y_cg(
+    sizing: SizingResult,
+    p: _DesignPass,
+    *,
+    config,
+    llt: LLTResult,
+    tail_loading: dict,
+    y_cg: dict[str, float],
+    propulsion: PropulsionResult,
+) -> ScissorData:
+    Z_T_front = y_cg["motors"]     - y_cg["overall"]
+    Z_T_back  = y_cg["motor_back"] - y_cg["overall"]
+    Cm_front, Cm_back = compute_cm_thrust(
+        propulsion.thrust_cruise_per_prop,
+        Z_T_front, Z_T_back,
+        sizing.q_cruise, sizing.Sw, sizing.c,
+    )
+
+    return compute_scissor_data(
+        sizing, p.fus,
+        wing_llt=llt,
+        tail_llt=tail_loading["llt_tail"],
+        x_cg_current=p.cg["overall"],
+        y_cg=y_cg["overall"],
+        Cm_thrust=Cm_front + Cm_back,
+        Vh_V=p.struct.inputs.Vh_V,
+    )
+
+
+def _optimize_battery_y_for_elevator(
+    sizing: SizingResult,
+    p: _DesignPass,
+    *,
+    config,
+    polar: AirfoilPolar,
+    tail_polar: AirfoilPolar,
+    airfoil: str,
+    llt: LLTResult,
+    tail_loading: dict,
+    propulsion: PropulsionResult,
+    tol: float = 1.0e-5,
+) -> tuple[float, dict[str, float], ScissorData, ElevatorResult, float]:
+    """Place the battery as high as possible without stalling the tail."""
+    elevator_inputs_unchecked = dataclasses.replace(
+        config.ELEVATOR,
+        enforce_tail_stall=False,
+    )
+    base_y_cg = weights_mass.compute_y_cg(
+        sizing=sizing, fus=p.fus, structure=p.struct,
+        masses=p.masses, airfoil_path=airfoil, cg=p.cg,
+    )
+    box_y0 = base_y_cg["fuselage"] - 0.5 * p.fus.box_height
+    y_lo = base_y_cg["battery_bottom"]
+    y_hi = box_y0 + p.fus.box_height - p.fus.battery_height
+
+    if y_hi < y_lo:
+        y_hi = y_lo
+
+    def evaluate(battery_y0: float):
+        y_cg = weights_mass.compute_y_cg(
+            sizing=sizing, fus=p.fus, structure=p.struct,
+            masses=p.masses, airfoil_path=airfoil, cg=p.cg,
+            battery_y0=battery_y0,
+        )
+        scissor = _final_scissor_for_y_cg(
+            sizing, p, config=config, llt=llt,
+            tail_loading=tail_loading, y_cg=y_cg,
+            propulsion=propulsion,
+        )
+        elevator_result = elevator.run(
+            sizing, scissor, llt, propulsion,
+            polar, tail_polar, y_cg, elevator_inputs_unchecked,
+        )
+        margin = elevator_result.Cl_max - max(
+            abs(elevator_result.CLh_at_max_up),
+            abs(elevator_result.CLh_at_max_down),
+        )
+        return y_cg, scissor, elevator_result, margin
+
+    y_cg_hi = scissor_hi = elevator_hi = None
+    margin_hi = float("-inf")
+    try:
+        y_cg_hi, scissor_hi, elevator_hi, margin_hi = evaluate(y_hi)
+        if margin_hi >= -tol:
+            elevator_hi.inputs = config.ELEVATOR
+            return y_hi, y_cg_hi, scissor_hi, elevator_hi, margin_hi
+    except ValueError:
+        margin_hi = float("-inf")
+
+    y_cg_lo, scissor_lo, elevator_lo, margin_lo = evaluate(y_lo)
+    if margin_lo < -tol:
+        raise ValueError(
+            "Battery vertical placement failed: even the baseline battery "
+            "height violates the elevator tail-stall limit.\n"
+            f"  baseline battery_y0 = {y_lo:.4f} m, "
+            f"battery_y = {y_cg_lo['battery']:.4f} m, "
+            f"tail |CLh| margin = {margin_lo:+.4f}\n"
+            f"  fuselage-top battery_y0 = {y_hi:.4f} m, "
+            f"tail |CLh| margin = {margin_hi:+.4f}"
+        )
+
+    best_y = y_lo
+    best = (y_cg_lo, scissor_lo, elevator_lo, margin_lo)
+    lo = y_lo
+    hi = y_hi
+    for _ in range(50):
+        mid = 0.5 * (lo + hi)
+        try:
+            y_cg_mid, scissor_mid, elevator_mid, margin_mid = evaluate(mid)
+            feasible = margin_mid >= -tol
+        except ValueError:
+            feasible = False
+
+        if feasible:
+            best_y = mid
+            best = (y_cg_mid, scissor_mid, elevator_mid, margin_mid)
+            lo = mid
+        else:
+            hi = mid
+
+        if hi - lo <= tol:
+            break
+
+    y_cg_best, scissor_best, elevator_best, margin_best = best
+    elevator_best.inputs = config.ELEVATOR
+    return best_y, y_cg_best, scissor_best, elevator_best, margin_best
+
+
 def _sw_closure_ar(
     sizing: SizingResult,
     drag: DragResult,
@@ -682,45 +810,25 @@ def run_pipeline(config) -> PipelineResult:
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
-    # ----- Step 8: stability scissor on the final consistent state -----
-    y_cg = weights_mass.compute_y_cg(
-        sizing=sizing, fus=p.fus, structure=p.struct,
-        masses=p.masses, airfoil_path=airfoil, cg=p.cg,
-    )
-
-    # Thrust moments for the final scissor (matches the convention used in the
-    # convergence loop via _scissor_state_for_pass).
-    Z_T_front_final = y_cg["motors"]     - y_cg["overall"]
-    Z_T_back_final  = y_cg["motor_back"] - y_cg["overall"]
-    Cm_front_final, Cm_back_final = compute_cm_thrust(
-        p.propulsion.thrust_cruise_per_prop,
-        Z_T_front_final, Z_T_back_final,
-        sizing.q_cruise, sizing.Sw, sizing.c,
-    )
-
-    scissor = compute_scissor_data(
-        sizing, p.fus,
-        wing_llt=llt,
-        tail_llt=tail_loading["llt_tail"],
-        x_cg_current=p.cg["overall"],
-        y_cg=y_cg["overall"],
-        Cm_thrust=Cm_front_final + Cm_back_final,
-        Vh_V=p.struct.inputs.Vh_V,
-    )
-
-    # ----- Step 9: elevator + rudder control-surface sizing on the final state -----
+    # ----- Step 8: vertical battery placement + final scissor/elevator -----
     final_propulsion = p.propulsion
-    elevator_result = elevator.run(
-        sizing,
-        scissor,
-        llt,
-        final_propulsion,
-        polar,
-        tail_polar,
-        y_cg,
-        config.ELEVATOR,
+    battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+        _optimize_battery_y_for_elevator(
+            sizing, p,
+            config=config,
+            polar=polar,
+            tail_polar=tail_polar,
+            airfoil=airfoil,
+            llt=llt,
+            tail_loading=tail_loading,
+            propulsion=final_propulsion,
+        )
     )
+    print(f"    Battery vertical tuning: battery_y0={battery_y0:.4f} m, "
+          f"battery_y={y_cg['battery']:.4f} m, y_cg={y_cg['overall']:.4f} m, "
+          f"tail |CLh| margin={elevator_cl_margin:+.4f}")
 
+    # ----- Step 9: rudder control-surface sizing on the final state -----
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
@@ -750,15 +858,17 @@ def run_pipeline(config) -> PipelineResult:
             final_propulsion = updated_propulsion
             break
         final_propulsion = updated_propulsion
-        elevator_result = elevator.run(
-            sizing,
-            scissor,
-            llt,
-            final_propulsion,
-            polar,
-            tail_polar,
-            y_cg,
-            config.ELEVATOR,
+        battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+            _optimize_battery_y_for_elevator(
+                sizing, p,
+                config=config,
+                polar=polar,
+                tail_polar=tail_polar,
+                airfoil=airfoil,
+                llt=llt,
+                tail_loading=tail_loading,
+                propulsion=final_propulsion,
+            )
         )
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
@@ -773,6 +883,18 @@ def run_pipeline(config) -> PipelineResult:
         sizing,
         config.PROPULSION,
         cruise_drag=cruise_drag,
+    )
+    battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+        _optimize_battery_y_for_elevator(
+            sizing, p,
+            config=config,
+            polar=polar,
+            tail_polar=tail_polar,
+            airfoil=airfoil,
+            llt=llt,
+            tail_loading=tail_loading,
+            propulsion=final_propulsion,
+        )
     )
 
     # ----- Step 10: torsion check on the boom + physics-based VT rod sizing -----
