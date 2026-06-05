@@ -325,7 +325,7 @@ def compute_y_cg(
     Vertical positions are measured from the bottom of the airfoil/fuselage.
 
     Also computes y_ac: the vertical position of the wing aerodynamic centre,
-    defined as the camber-line height at x/c = 0.25 of the root airfoil.
+    defined on the root-airfoil chord line at x/c = 0.25.
     This is the correct reference point for thrust pitching moment arms in the
     scissor trim balance — all moments in the balance are about the AC, so
     Z_T = y_motor - y_ac (not y_motor - y_cg_overall).
@@ -347,12 +347,20 @@ def compute_y_cg(
     y_rod_spar    = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
     y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
 
-    # Wing AC vertical position: camber-line height at x/c = 0.25.
+    # Wing AC vertical position: chord-line height at x/c = 0.25.
     # This is the correct moment reference for the scissor trim balance —
     # all moment contributions (wing Cm_ac, tail, thrust) must be about
     # the same point, which is the aerodynamic centre.
-    _, y_up_ac, y_lo_ac = airfoil.compute_thickness(0.25)
-    y_ac_pre_shift = 0.5 * (y_up_ac + y_lo_ac) * root_chord + airfoil_y_offset
+    x_norm = airfoil.polygon[:, 0]
+    y_norm = airfoil.polygon[:, 1]
+    le_x_norm = float(np.min(x_norm))
+    te_x_norm = float(np.max(x_norm))
+    le_norm_mask = np.isclose(x_norm, le_x_norm, atol=1e-6)
+    te_norm_mask = np.isclose(x_norm, te_x_norm, atol=1e-6)
+    y_le_chord = float(np.mean(y_norm[le_norm_mask]))
+    y_te_chord = float(np.mean(y_norm[te_norm_mask]))
+    y_ac_norm = y_le_chord + 0.25 * (y_te_chord - y_le_chord)
+    y_ac_pre_shift = y_ac_norm * root_chord + airfoil_y_offset
 
     # Tube wraps both wing rods with the configured casing margin.
     tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
@@ -473,7 +481,7 @@ def compute_y_cg(
         'motors':             y_motor,
         'motor_back':         y_motor_back,
         'wing':               y_wing,
-        'wing_ac':            y_ac,       # camber-line height at x/c=0.25; thrust moment reference
+        'wing_ac':            y_ac,       # chord-line height at x/c=0.25; thrust moment reference
         'rod_spar':           y_rod_spar,
         'rod_aileron':        y_rod_aileron,
         'hor_tail':           y_tail_h,

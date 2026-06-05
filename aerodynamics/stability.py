@@ -80,8 +80,9 @@ def controllability_line_ShS(
     they form the classical scissor and bound the allowable CG range.
 
     `Cm_thrust` is the total thrust pitching moment coefficient (front + rear
-    propellers) about the CG. It is nose-up positive and is added to Cm_ac
-    since both are non-tail, non-CG-position contributions to the trim balance.
+    propellers) about the same aerodynamic-centre reference as Cm_ac. It is
+    nose-up positive and is added to Cm_ac since both are non-tail,
+    non-CG-position contributions to the trim balance.
 
     `CL_h`, `CL_A_h`, `Cm_ac` are evaluated at the controllability condition
     (cruise as default; switch to landing/max-CL values for the conservative
@@ -195,7 +196,8 @@ def calculate_Sh_S(
     for l_h at a fixed S_h/S. Returns the binding (larger) of the two.
 
     `Cm_thrust` is the total thrust pitching moment (front + rear props) about
-    the CG, nose-up positive. It enters the controllability balance only —
+    the same aerodynamic-centre reference as Cm_ac, nose-up positive. It enters
+    the controllability balance only —
     thrust shifts the trim point but not the stability-margin gradient.
     """
     factor_stab = (CL_alpha_h / CL_alpha_A_h) * (1.0 - dep_da) * (l_h / c) * Vh_V**2

@@ -175,7 +175,7 @@ def print_final_drag(result: PipelineResult) -> None:
     print(f"  CD_i  (LLT, wing)                   : {result.llt.CD_i:.5f}  ({result.llt.CD_i / total:6.2%})")
     print(f"  CD_i  (LLT, tail, S_w ref)          : {result.cd_i_tail:.5f}  ({result.cd_i_tail / total:6.2%})")
     print(f"  CD_payload                          : {result.cd_payload:.5f}  ({result.cd_payload / total:6.2%})")
-    print(f"Tail trim (no downwash):")
+    print(f"Tail trim (with elevator/downwash trim):")
     print(f"  CL_tail required (trim)             : {tl['CL_tail']:+.4f}")
     print(f"  e_tail                              : {tl['e_tail']:.4f}")
     print(f"  AR_tail                             : {tl['AR_tail']:.3f}")

@@ -270,11 +270,12 @@ def _scissor_state_for_pass(
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
     )
 
-    # Thrust pitching moments about the CG — included in the controllability
+    # Thrust pitching moments about the wing AC — included in the controllability
     # trim balance so the scissor sizes Sh large enough to handle them,
     # rather than leaving the entire burden to the elevator incidence angle.
-    Z_T_front = y_cg["motors"]     - y_cg["overall"]
-    Z_T_back  = y_cg["motor_back"] - y_cg["overall"]
+    y_thrust_ref = y_cg["wing_ac"]
+    Z_T_front = y_cg["motors"]     - y_thrust_ref
+    Z_T_back  = y_cg["motor_back"] - y_thrust_ref
     Cm_front, Cm_back = compute_cm_thrust(
         p.propulsion.thrust_cruise_per_prop,
         Z_T_front, Z_T_back,
@@ -426,8 +427,9 @@ def _final_scissor_for_y_cg(
     y_cg: dict[str, float],
     propulsion: PropulsionResult,
 ) -> ScissorData:
-    Z_T_front = y_cg["motors"]     - y_cg["overall"]
-    Z_T_back  = y_cg["motor_back"] - y_cg["overall"]
+    y_thrust_ref = y_cg["wing_ac"]
+    Z_T_front = y_cg["motors"]     - y_thrust_ref
+    Z_T_back  = y_cg["motor_back"] - y_thrust_ref
     Cm_front, Cm_back = compute_cm_thrust(
         propulsion.thrust_cruise_per_prop,
         Z_T_front, Z_T_back,

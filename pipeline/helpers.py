@@ -156,13 +156,13 @@ def compute_cm_thrust(
     Sw: float,
     c: float,
 ) -> tuple[float, float]:
-    """Non-dimensionalise thrust pitching moments about the CG.
+    """Non-dimensionalise thrust pitching moments about a supplied reference point.
 
     Parameters
     ----------
     T_per_prop : thrust per propeller [N]
-    Z_T_front  : vertical distance from front motor to CG, +ve upward [m]
-    Z_T_back   : vertical distance from rear  motor to CG, +ve upward [m]
+    Z_T_front  : vertical distance from reference point to front motor, +ve upward [m]
+    Z_T_back   : vertical distance from reference point to rear  motor, +ve upward [m]
     q          : dynamic pressure [Pa]
     Sw         : wing reference area [m²]
     c          : mean aerodynamic chord [m]

@@ -23,13 +23,13 @@ in pipeline/helpers.py.  The scissor loop therefore sizes Sh to account for
 thrust, so the elevator here is only responsible for disturbance and payload
 authority rather than compensating for an under-sized tail.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
 from aerodynamics.airfoil_polar import AirfoilPolar
 from aerodynamics.llt import LLTResult
-from pipeline.helpers import ScissorData
+from pipeline.helpers import ScissorData, compute_cm_thrust
 from propulsion.sizing import PropulsionResult
 from sizing.wing import SizingResult
 
@@ -245,7 +245,7 @@ def run(
     wing_polar  : wing airfoil polar for zero-lift angle
     tail_polar  : tail airfoil polar for stall coefficient checks
     y_cg        : vertical CG dict from compute_y_cg (keys: 'overall',
-                  'motors', 'motor_back', 'pvc_tube_bottom')
+                  'wing_ac', 'motors', 'motor_back', 'pvc_tube_bottom')
     inputs      : ElevatorInputs overrides; defaults used when None
 
     Returns
@@ -263,6 +263,8 @@ def run(
             "elevator.trim_mode must be 'tail_incidence' or "
             "'payload_attachment'."
         )
+    inputs = replace(inputs, eta_h=scissor.Vh_V**2)
+    i = inputs
 
     # ------------------------------------------------------------------
     # Aero state from the converged design
@@ -284,25 +286,20 @@ def run(
     epsilon = scissor.dep_da * alpha  # epsilon0 ≈ 0 for symmetric tail (alpha_L0_h = 0)
 
     # ------------------------------------------------------------------
-    # Thrust pitching moments about CG
+    # Thrust pitching moments about the wing AC
     # 2 front propellers at y_cg["motors"], 1 back at y_cg["motor_back"].
-    # Z_T positive when motor is above CG (nose-up moment for puller config).
+    # Z_T positive when motor is above the wing AC.
     # ------------------------------------------------------------------
-    y_overall = y_cg["overall"]
-    Z_T_front = y_cg["motors"]     - y_overall
-    Z_T_back  = y_cg["motor_back"] - y_overall
+    y_thrust_ref = y_cg["wing_ac"]
+    Z_T_front = y_cg["motors"]     - y_thrust_ref
+    Z_T_back  = y_cg["motor_back"] - y_thrust_ref
 
     T_per_prop = propulsion.thrust_cruise_per_prop
     q          = s.q_cruise
 
-    Cm_thrust_front = -(
-        2.0 * T_per_prop * Z_T_front
-    ) / (q * s.Sw * s.c)
-
-    Cm_thrust_back = -(
-        1.0 * T_per_prop * Z_T_back
-    ) / (q * s.Sw * s.c)
-
+    Cm_thrust_front, Cm_thrust_back = compute_cm_thrust(
+        T_per_prop, Z_T_front, Z_T_back, q, s.Sw, s.c,
+    )
     Cm_thrust = Cm_thrust_front + Cm_thrust_back
 
     # ------------------------------------------------------------------
@@ -464,6 +461,7 @@ def summary(r: ElevatorResult) -> None:
 
     print(f"  Front motors y-position : {r.y_cg['motors']:.4f}")
     print(f"  Back motor y-position   : {r.y_cg['motor_back']:.4f}")
+    print(f"  Wing AC y-position      : {r.y_cg['wing_ac']:.4f}")
     print(f"  Aircraft CG (overall)    : {r.y_cg['overall']:.4f}")
     print("====================================================\n")
 
@@ -473,7 +471,7 @@ def summary(r: ElevatorResult) -> None:
     print("  Elevator TE-down (positive deflection) → nose-down moment")
     print("==============================================================\n")
 
-    print("----- Pitching Moment Breakdown (about CG) -----")
+    print("----- Pitching Moment Breakdown (about wing AC) -----")
     print(f"  Trim mode                         : {r.inputs.trim_mode}")
     print(f"  Wing-body moment (Cm0 + α term) : {r.Cm_wing_body:+.5f}")
     print(f"  Tail moment (α - ε - αL0,h)     : {r.Cm_tail_base:+.5f}")
