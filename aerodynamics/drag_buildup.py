@@ -105,8 +105,8 @@ def run(
     V = s.inputs.V_cruise
     rho = s.rho
     M_cruise = V / np.sqrt(gamma_air * R_air * s.T_isa)
-    M_tail = rods.Vh_V * M_cruise
-    V_tail = rods.Vh_V * V
+    M_tail = np.sqrt(rods.eta_h) * M_cruise
+    V_tail = np.sqrt(rods.eta_h) * V
 
     tc_w, xtc_w = _max_tc_with_location(i.wing_airfoil)
     tc_t, xtc_t = _max_tc_with_location(i.tail_airfoil)

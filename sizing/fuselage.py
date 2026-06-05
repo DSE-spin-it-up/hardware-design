@@ -146,7 +146,7 @@ def run(
     )
     pvc_lift_design_force = pvc_lift_force * i.pvc_gust_safety_factor
     pvc_lift_stress = (
-        pvc_lift_design_force / pvc_lift_bearing_area if pvc_lift_bearing_area > 0 else 0.0
+        pvc_lift_design_force / pvc_bearing_area if pvc_bearing_area > 0 else 0.0
     )
     pvc_roof_thickness = max(pvc_lift_stress / epp.s_t, i.min_pvc_foam_floor)
 

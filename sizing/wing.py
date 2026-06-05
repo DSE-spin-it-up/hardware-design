@@ -47,6 +47,10 @@ class SizingInputs:
     # https://www.fmsg-alling.de/wp-content/uploads/2013/09/V-Leitwerke.pdf
     ARt: float = 4.5
     lam_t: float = 1.0
+    # Static stability margin x_cg/c [-]. Typical range 0.05–0.15.
+    # Larger values give more inherent stability but increase trim drag and
+    # tail-load demand. Set in config.yaml under sizing: SM.
+    SM: float = 0.05
 
 
 @dataclass
@@ -282,6 +286,9 @@ def summary(r: SizingResult) -> None:
     print(f"  Vertical tail chord  : {r.cv:.4f}  m")
     print(f"  Horizontal tail span : {r.bh:.4f}  m")
     print(f"  Vertical tail span   : {r.bv:.4f}  m")
+
+    print("\n--- Stability ---")
+    print(f"  Static margin (SM)   : {r.inputs.SM:.3f}  (x_cg/c)")
 
 
 if __name__ == "__main__":

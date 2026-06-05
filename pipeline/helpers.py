@@ -186,7 +186,7 @@ def compute_scissor_data(
     y_cg: float = 0.0,
     Cm_thrust: float = 0.0,
     Cm_payload: float = 0.0,
-    SM: float = 0.05,
+    SM: float | None = None,
     Vh_V: float = 0.85,
     x_cg_range: tuple[float, float] | None = None,
     n_points: int = 200,
@@ -203,11 +203,18 @@ def compute_scissor_data(
 
     Parameters
     ----------
+    SM        : static stability margin x_cg/c [-]. When None (default), the
+                value is read from sizing.inputs.SM so the config.yaml knob is
+                honoured automatically. Pass an explicit float only to override.
     Cm_thrust : total thrust pitching moment Cm_thrust_front + Cm_thrust_back,
                 nose-up positive, referenced to q·Sw·c. Use `compute_cm_thrust`
                 to obtain this from propulsion results before calling here.
                 Defaults to 0.0 so existing callers remain unaffected.
     """
+    # Resolve SM: prefer explicit argument, fall back to sizing input.
+    if SM is None:
+        SM = sizing.inputs.SM
+
     s = sizing
 
     wing_geom = WingGeometry(b=s.inputs.b, S=s.Sw, taper=s.inputs.lam)

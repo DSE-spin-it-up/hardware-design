@@ -45,6 +45,14 @@ def _print_control_authority(result: PipelineResult) -> None:
           f"(Cn_delta_r {r.Cndr:+.5f}/rad * {np.degrees(dr_max):.1f} deg)")
 
 
+def _fmt_mass(label: str, value: float, width: int = 28) -> str:
+    return f"  {label:<{width}}: {value:.4f}  kg"
+
+
+def _fmt_cg(label: str, value: float, width: int = 28) -> str:
+    return f"  {label:<{width}}: {value:+8.4f}  m"
+
+
 def print_main_summary(result: PipelineResult) -> None:
     sizing = result.sizing
     drag = result.drag
@@ -68,47 +76,82 @@ def print_main_summary(result: PipelineResult) -> None:
     print("\n========== STRUCTURE ==========")
     rods.summary(result.struct)
 
+    # ------------------------------------------------------------------
+    # Mass breakdown
+    # ------------------------------------------------------------------
     print("\n========== MASS ESTIMATES ==========")
-    print(f"  Battery mass : {masses['battery']:.3f} kg")
-    print(f"  Motor mass   : {masses['motors']:.3f} kg")
-    print(f"  Prop mass    : {masses['props']:.3f} kg")
-    print(f"  Wing mass    : {masses['wing']:.3f} kg")
-    print(f"  Horizontal tail mass    : {masses['hor_tail']:.3f} kg")
-    print(f"  Vertical tail mass    : {masses['ver_tail']:.3f} kg")
-    if 'glass_sheet_wing' in masses:
-            print(f"  Glass sheet (wing): {masses['glass_sheet_wing']:.3f} kg")
-    if 'glass_sheet_tail_h' in masses:
-            print(f"  Glass sheet (hor. tail): {masses['glass_sheet_tail_h']:.3f} kg")
-    if 'glass_sheet_tail_v' in masses:
-            print(f"  Glass sheet (ver. tail): {masses['glass_sheet_tail_v']:.3f} kg")
-    if 'glass_sheet' in masses:
-            print(f"  Glass sheet (total): {masses['glass_sheet']:.3f} kg")
-    print(f"  Spar rod mass   : {masses['rod_spar']:.3f} kg")
-    print(f"  Aileron rod mass: {masses['rod_aileron']:.3f} kg")
-    print(f"  Tail rod mass: {masses['tail_rod']:.3f} kg")
-    print(f"  HT spar mass: {masses['ht_spar']:.3f} kg")
-    print(f"  HT elevator mass: {masses['ht_rud']:.3f} kg")
-    print(f"  VT spar mass: {masses['vt_spar']:.3f} kg")
-    print(f"  VT rudder mass: {masses['vt_rud']:.3f} kg")
-    print(f"  Fuselage mass: {masses['fuselage']:.3f} kg")
-    if 'pvc_tubes' in masses:
-        print(f"  PVC tubes    : {masses['pvc_tubes']:.3f} kg")
-    print(f"  Total mass   : {masses['total']:.3f} kg")
+    print("  --- Propulsion ---")
+    print(_fmt_mass("Battery",              masses['battery']))
+    print(_fmt_mass("Motors (total)",       masses['motors']))
+    print(_fmt_mass("Propellers (total)",   masses['props']))
 
-    print("\n========== CENTER OF GRAVITY ==========")
-    print(f"  Fuselage CG     : {cg['fuselage']:8.4f}  m from LEMAC")
-    print(f"  Battery CG      : {cg['battery']:8.4f}  m from LEMAC")
-    print(f"  Motors CG       : {cg['motors']:8.4f}  m from LEMAC")
-    print(f"  Spar rod CG     : {cg['rod_spar']:8.4f}  m from LEMAC")
-    print(f"  Aileron rod CG  : {cg['rod_aileron']:8.4f}  m from LEMAC")
-    print(f"  Tail rod CG     : {cg['tail_rod']:8.4f}  m from LEMAC")
-    print(f"  VT spar rod CG  : {cg['vt_spar']:8.4f}  m from LEMAC")
-    print(f"  VT rud rod CG   : {cg['vt_rud']:8.4f}  m from LEMAC")
-    print(f"  Tail CG    : {cg['tail']:8.4f}  m from LEMAC")
-    print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
-    print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
-    print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")
+    print("  --- Airframe ---")
+    print(_fmt_mass("Wing (foam)",          masses['wing']))
+    print(_fmt_mass("Horizontal tail",      masses['hor_tail']))
+    print(_fmt_mass("Vertical tail",        masses['ver_tail']))
+    print(_fmt_mass("Fuselage (shell)",     masses['fuselage']))
+    print(_fmt_mass("PVC tubes",            masses.get('pvc_tubes', 0.0)))
 
+    print("  --- Rods ---")
+    print(_fmt_mass("Wing spar rod",        masses['rod_spar']))
+    print(_fmt_mass("Wing aileron rod",     masses['rod_aileron']))
+    print(_fmt_mass("Tail (boom) rod",      masses['tail_rod']))
+    print(_fmt_mass("HT spar rod",          masses.get('ht_spar', 0.0)))
+    print(_fmt_mass("HT elevator rod",      masses.get('ht_rud', 0.0)))
+    print(_fmt_mass("VT spar rod",          masses.get('vt_spar', 0.0)))
+    print(_fmt_mass("VT rudder rod",        masses.get('vt_rud', 0.0)))
+
+    print("  --- Glass sheet ---")
+    print(_fmt_mass("Glass sheet (wing)",   masses.get('glass_sheet_wing',   0.0)))
+    print(_fmt_mass("Glass sheet (HT)",     masses.get('glass_sheet_tail_h', 0.0)))
+    print(_fmt_mass("Glass sheet (VT)",     masses.get('glass_sheet_tail_v', 0.0)))
+    print(_fmt_mass("Glass sheet (total)",  masses.get('glass_sheet',        0.0)))
+
+    print("  --- Other ---")
+    print(_fmt_mass("Servos (total)",       masses.get('servos', 0.0)))
+    print(_fmt_mass("Sensors",              masses.get('sensors', 0.0)))
+    print(_fmt_mass("Wiring (total)",       masses.get('wiring',  0.0)))
+
+    print(f"\n  {'TOTAL (with margin)':<28}: {masses['total']:.4f}  kg")
+
+    # ------------------------------------------------------------------
+    # x-CG breakdown
+    # ------------------------------------------------------------------
+    print("\n========== CENTER OF GRAVITY (x, from LEMAC) ==========")
+    print("  --- Propulsion ---")
+    print(_fmt_cg("Battery",               cg['battery']))
+    print(_fmt_cg("Front motors",          cg['motors']))
+    print(_fmt_cg("Rear motor",            cg.get('motor_back', float('nan'))))
+
+    print("  --- Airframe ---")
+    print(_fmt_cg("Wing",                  cg.get('wing', float('nan'))))
+    print(_fmt_cg("Horizontal tail",       cg.get('tail', float('nan'))))
+    print(_fmt_cg("Fuselage",              cg['fuselage']))
+    print(_fmt_cg("PVC tubes",             cg['pvc_tubes']))
+
+    print("  --- Rods ---")
+    print(_fmt_cg("Wing spar rod",         cg['rod_spar']))
+    print(_fmt_cg("Wing aileron rod",      cg['rod_aileron']))
+    print(_fmt_cg("Tail (boom) rod",       cg['tail_rod']))
+    print(_fmt_cg("HT spar rod",           cg.get('ht_spar', float('nan'))))
+    print(_fmt_cg("HT elevator rod",       cg.get('ht_rud',  float('nan'))))
+    print(_fmt_cg("VT spar rod",           cg.get('vt_spar', float('nan'))))
+    print(_fmt_cg("VT rudder rod",         cg.get('vt_rud',  float('nan'))))
+
+    print("  --- Other ---")
+    print(_fmt_cg("Servos (avg)",          cg.get('servos',         float('nan'))))
+    print(_fmt_cg("Sensors",               cg.get('sensors',        float('nan'))))
+    print(_fmt_cg("Wiring (wing)",         cg.get('wiring_wing',    float('nan'))))
+    print(_fmt_cg("Wiring (tail)",         cg.get('wiring_tail',    float('nan'))))
+    print(_fmt_cg("Wiring (signal)",       cg.get('wiring_signal',  float('nan'))))
+    print(_fmt_cg("Glass sheet",           cg.get('glass_sheet',    float('nan'))))
+
+    print(f"\n  {'Overall CG':<28}: {cg['overall']:+8.4f}  m from LEMAC"
+          f"  ({cg['overall'] / sizing.c_root:6.2%} of root chord)")
+
+    # ------------------------------------------------------------------
+    # y-CG breakdown (vertical axis)
+    # ------------------------------------------------------------------
     z_cg = compute_y_cg(
         sizing,
         result.fus,
@@ -117,6 +160,50 @@ def print_main_summary(result: PipelineResult) -> None:
         result.airfoil,
         cg=cg,
     )
+
+    print("\n========== CENTER OF GRAVITY (y, vertical axis) ==========")
+    print("  Sign convention: +y upward from bottom of airfoil/fuselage")
+    print("  --- Propulsion ---")
+    print(_fmt_cg("Battery",               z_cg['battery']))
+    print(_fmt_cg("Front motors",          z_cg['motors']))
+    print(_fmt_cg("Rear motor",            z_cg.get('motor_back', float('nan'))))
+
+    print("  --- Airframe ---")
+    print(_fmt_cg("Wing",                  z_cg.get('wing', float('nan'))))
+    print(_fmt_cg("Wing AC (thrust ref)",  z_cg.get('wing_ac', float('nan'))))
+    print(_fmt_cg("Horizontal tail",       z_cg.get('hor_tail', float('nan'))))
+    print(_fmt_cg("Vertical tail",         z_cg.get('ver_tail', float('nan'))))
+    print(_fmt_cg("Fuselage",              z_cg.get('fuselage', float('nan'))))
+    print(_fmt_cg("PVC tubes",             z_cg.get('pvc_tubes', float('nan'))))
+    print(_fmt_cg("PVC tube bottom",       z_cg.get('pvc_tube_bottom', float('nan'))))
+    print(_fmt_cg("Battery bottom",        z_cg.get('battery_bottom', float('nan'))))
+
+    print("  --- Rods ---")
+    print(_fmt_cg("Wing spar rod",         z_cg.get('rod_spar',    float('nan'))))
+    print(_fmt_cg("Wing aileron rod",      z_cg.get('rod_aileron', float('nan'))))
+    print(_fmt_cg("Tail (boom) rod",       z_cg.get('tail_rod',    float('nan'))))
+    print(_fmt_cg("HT spar rod",           z_cg.get('vt_spar',     float('nan'))))
+    print(_fmt_cg("HT elevator rod",       z_cg.get('vt_rud',      float('nan'))))
+    print(_fmt_cg("VT spar rod",           z_cg.get('vt_spar',     float('nan'))))
+    print(_fmt_cg("VT rudder rod",         z_cg.get('vt_rud',      float('nan'))))
+
+    print("  --- Other ---")
+    print(_fmt_cg("Servos (avg)",          z_cg.get('servos',        float('nan'))))
+    print(_fmt_cg("Servo (front)",         z_cg.get('servo_front',   float('nan'))))
+    print(_fmt_cg("Servo (aileron)",       z_cg.get('servo_aileron', float('nan'))))
+    print(_fmt_cg("Servo (rear)",          z_cg.get('servo_rear',    float('nan'))))
+    print(_fmt_cg("Servo (HT)",            z_cg.get('servo_ht',      float('nan'))))
+    print(_fmt_cg("Servo (VT)",            z_cg.get('servo_vt',      float('nan'))))
+    print(_fmt_cg("Sensors",               z_cg.get('sensors',       float('nan'))))
+    print(_fmt_cg("Wiring (wing)",         z_cg.get('wiring_wing',   float('nan'))))
+    print(_fmt_cg("Wiring (tail)",         z_cg.get('wiring_tail',   float('nan'))))
+    print(_fmt_cg("Wiring (signal)",       z_cg.get('wiring_signal', float('nan'))))
+
+    print(f"\n  {'Overall CG (y)':<28}: {z_cg['overall']:+8.4f}  m")
+
+    # ------------------------------------------------------------------
+    # Inertia
+    # ------------------------------------------------------------------
     inertia = calculate_mass_moment_of_inertia(
         sizing=sizing,
         fus=result.fus,

@@ -30,6 +30,7 @@ V_stall: 14.0
 battery_x: -0.3
 
 # ----- Initial / wing sizing -----
+# ----- Initial / wing sizing -----
 sizing:
   m_payload: 60
   m_drone_empty: 8
@@ -47,9 +48,10 @@ sizing:
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 1.75
+  L_boom: 2
   ARt: 4.5
   lam_t: 1.0
+  SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15
 
 # ----- Propulsion -----
 propulsion:

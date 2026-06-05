@@ -72,7 +72,8 @@ class RodInputs:
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
-    Vh_V: float = 0.85                # V_tail/V_cruise — used for tail download
+    eta_h: float = 0.85               # tail dynamic pressure ratio q_t/q (from elevator config)
+    eta_v: float = 0.85               # vertical tail dynamic pressure ratio q_v/q (from rudder config)
     t_spar: float = 0.00079375        # [m] minimum wall thickness of the spar rod
     t_control: float = 0.0016256      # [m] minimum wall thickness of the aileron rod
     t_control_ht: float = 0.0014      # [m] same as t_spar, thinner than t_control
@@ -103,7 +104,8 @@ class RodResult:
     mass_t: float
     defl_t: float
     fail_mode_t: str        # "deflection" | "compressive" | "torsion (von Mises)"
-    Vh_V: float
+    eta_h: float
+    eta_v: float
     d_spar_ht: float
     t_spar_ht: float
     mass_spar_ht: float
@@ -523,8 +525,10 @@ def run(
     else:
         CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
-    V_tail_structural = i.Vh_V * V_structural
-    q_tail_structural = q_structural * i.Vh_V ** 2
+    # eta_h is the dynamic pressure ratio q_t/q (read from elevator config).
+    # V_tail_structural is derived from it for reporting purposes only.
+    q_tail_structural = q_structural * i.eta_h
+    V_tail_structural = V_structural * np.sqrt(i.eta_h)
     F_tail = s.Sh * CL_h * q_tail_structural * i.safety_factor
     L_t    = s.L_boom
     M_t    = F_tail * L_t
@@ -614,7 +618,7 @@ def run(
 
     if rudder is not None and CLalphav_vt != 0.0:
         # ---- loads ----
-        q_vt        = q_tail_structural
+        q_vt        = q_structural * i.eta_v
         F_fin       = 0.5 * q_vt * s.Sv * CLalphav_vt * rudder.beta_gust
         F_thrust_vt = 0.5 * propulsion.thrust_cruise_per_prop
 
@@ -666,6 +670,7 @@ def run(
 
     else:
         # ---- fallback: thrust load only ----
+        q_vt_fallback = q_structural * i.eta_v
         F_vt_rod  = propulsion.thrust_cruise_per_prop
         t_spar_vt = i.t_spar
 
@@ -719,7 +724,8 @@ def run(
         F_tail_structural=F_tail,
         V_tail_structural=V_tail_structural,
         q_tail_structural=q_tail_structural,
-        Vh_V=i.Vh_V,
+        eta_h=i.eta_h,
+        eta_v=i.eta_v,
         d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
         defl_spar_ht=defl_spar_ht, fail_mode_spar_ht=fail_spar_ht,
         d_control_ht=d_control_ht, t_control_ht=t_control_ht, mass_control_ht=mass_control_ht,
@@ -770,10 +776,11 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_aileron * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_aileron)}")
 
     print("\n--- Tail rod (aileron hinge → tail TE) ---")
-    print(f"  Structural CL_h       : {r.CL_h_structural:.3f}")
-    print(f"  Structural tail speed : {r.V_tail_structural:.2f}  m/s")
-    print(f"  Structural tail q     : {r.q_tail_structural:.2f}  Pa")
-    print(f"  Structural tail force : {r.F_tail_structural:.2f}  N")
+    print(f"  Tail dynamic pressure ratio (η_h) : {r.eta_h:.3f}")
+    print(f"  Structural tail speed  : {r.V_tail_structural:.2f}  m/s")
+    print(f"  Structural tail q      : {r.q_tail_structural:.2f}  Pa")
+    print(f"  Structural CL_h        : {r.CL_h_structural:.3f}")
+    print(f"  Structural tail force  : {r.F_tail_structural:.2f}  N")
     print(f"  Outer diameter         : {r.d_t * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_t * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_t * 1000:.2f}  mm")
@@ -800,6 +807,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_control_ht * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_control_ht)}")
 
     print("\n--- Spar rod vertical tail (one of two) ---")
+    print(f"  VT dynamic pressure ratio (η_v) : {r.eta_v:.3f}")
     print(f"  Outer diameter         : {r.d_spar_vt * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar_vt * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar_vt * 1000:.2f}  mm")

@@ -165,9 +165,9 @@ def _run_design_pass(
         spar_rod_diameter=struct.d_spar,
         aileron_rod_diameter=struct.d_aileron,
         pvc_lift_force=lift_gust_increment,
-        x_front_spar=x_rod_spar,                          
-        n_active_drones=sizing.inputs.n_drones - 1,        
-        m_total_failure=(                                   
+        x_front_spar=x_rod_spar,
+        n_active_drones=sizing.inputs.n_drones - 1,
+        m_total_failure=(
             sizing.inputs.n_drones * sizing.inputs.m_drone_empty
             + sizing.inputs.m_payload
         ),
@@ -266,8 +266,6 @@ def _scissor_state_for_pass(
 ) -> _ScissorState:
     x_cg = p.cg["overall"]
     llt = llt_at_cl(sizing, polar, CL_target=sizing.CL)
-    # A tiny nonzero tail CL keeps the LLT-derived lift slope finite for the
-    # scissor plot while remaining negligible for drag feedback.
     payload_trim_mode = config.ELEVATOR.trim_mode.lower() == "payload_attachment"
     CL_tail_trim = 1.0e-3 if payload_trim_mode else None
     tail_loading = tail_drag_at_cruise(
@@ -289,9 +287,6 @@ def _scissor_state_for_pass(
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
     )
 
-    # Thrust pitching moments about the wing AC — included in the controllability
-    # trim balance so the scissor sizes Sh large enough to handle them,
-    # rather than leaving the entire burden to the elevator incidence angle.
     y_thrust_ref = y_cg["wing_ac"]
     Z_T_front = y_cg["motors"]     - y_thrust_ref
     Z_T_back  = y_cg["motor_back"] - y_thrust_ref
@@ -301,6 +296,10 @@ def _scissor_state_for_pass(
         sizing.q_cruise, sizing.Sw, sizing.c,
     )
 
+    # eta_h is the dynamic pressure ratio; stability.py expects a velocity
+    # ratio (Vh_V) and squares it internally, so pass sqrt(eta_h).
+    Vh_V = np.sqrt(p.struct.eta_h)
+
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
@@ -308,7 +307,7 @@ def _scissor_state_for_pass(
         x_cg_current=x_cg,
         y_cg=y_cg["overall"],
         Cm_thrust=Cm_front + Cm_back,
-        Vh_V=p.struct.Vh_V,
+        Vh_V=Vh_V,
     )
     Cm_payload = _payload_trim_moment_for_scissor(config, scissor)
     if Cm_payload != 0.0:
@@ -320,7 +319,7 @@ def _scissor_state_for_pass(
             y_cg=y_cg["overall"],
             Cm_thrust=Cm_front + Cm_back,
             Cm_payload=Cm_payload,
-            Vh_V=p.struct.Vh_V,
+            Vh_V=Vh_V,
         )
     if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
         x_target = x_cg
@@ -504,6 +503,10 @@ def _final_scissor_for_y_cg(
         sizing.q_cruise, sizing.Sw, sizing.c,
     )
 
+    # eta_h is the dynamic pressure ratio; stability.py expects a velocity
+    # ratio (Vh_V) and squares it internally, so pass sqrt(eta_h).
+    Vh_V = np.sqrt(p.struct.inputs.eta_h)
+
     scissor = compute_scissor_data(
         sizing, p.fus,
         wing_llt=llt,
@@ -511,7 +514,7 @@ def _final_scissor_for_y_cg(
         x_cg_current=p.cg["overall"],
         y_cg=y_cg["overall"],
         Cm_thrust=Cm_front + Cm_back,
-        Vh_V=p.struct.inputs.Vh_V,
+        Vh_V=Vh_V,
     )
     Cm_payload = _payload_trim_moment_for_scissor(config, scissor)
     if Cm_payload != 0.0:
@@ -523,7 +526,7 @@ def _final_scissor_for_y_cg(
             y_cg=y_cg["overall"],
             Cm_thrust=Cm_front + Cm_back,
             Cm_payload=Cm_payload,
-            Vh_V=p.struct.inputs.Vh_V,
+            Vh_V=Vh_V,
         )
     return scissor
 
@@ -651,17 +654,6 @@ def _sw_closure_ar(
     cl_max_wing: float,
     V_stall: float,
 ) -> tuple[float, float, float, bool]:
-    """Pick the aspect ratio that places the operating CL at max drone+payload L/D,
-    clamped by the stall-speed bound.
-
-    CL_stall_bound = (V_stall / V_cruise)^2 · CL_max_wing is the largest cruise
-    CL that keeps the stall speed at-or-below V_stall. If the unconstrained
-    max-L/D CL exceeds the bound, we operate at the bound and accept a
-    sub-optimal L/D. `cl_max_wing` is the 3D wing CL_max
-    (section Cl_max · AR/(AR+2)).
-
-    Returns (AR_new, CL_target, CL_stall_bound, stall_binding).
-    """
     s = sizing.inputs
     CL_sw, CD_wing_sw = wing_drag_polar(sizing, polar, alpha_range)
     CD_nonwing = drag.CD0_tail_h + drag.CD0_tail_v + drag.CD0_fus
@@ -728,13 +720,7 @@ def _print_iter(
 
 
 def run_pipeline(config) -> PipelineResult:
-    """Run the full design pipeline and return a bundled result.
-
-    `config` is any module exposing SIZING, PROPULSION, FUSELAGE,
-    CONTROL_SURFACE, STRUCTURE, AIRFOIL, TAIL_AIRFOIL, ALPHA_SWEEP_DEG,
-    ALPHA_SWEEP_LOOP_DEG, MASS_CLOSURE, SW_CLOSURE, N_ITER_MAX,
-    CD0_TOL, MASS_TOL, SW_TOL.
-    """
+    """Run the full design pipeline and return a bundled result."""
     # ----- Step 0: resolve airfoil → read t/c from its geometry -----
     airfoil = resolve_airfoil(config.AIRFOIL)
     tc = airfoil_thickness_to_chord(airfoil)
@@ -748,7 +734,7 @@ def run_pipeline(config) -> PipelineResult:
         c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
     )
 
-    # ----- Step 1b: load airfoil polar once (Re from initial sizing) -----
+    # ----- Step 1b: load airfoil polar once -----
     Re_ref = sizing.rho * sizing.inputs.V_cruise * sizing.c / 1.7894e-5
     polar = get_airfoil_polar(
         airfoil, Re=Re_ref, M=0.0, alpha_range=(-5.0, 15.0, 0.5), use_cache=True
@@ -773,7 +759,7 @@ def run_pipeline(config) -> PipelineResult:
           f"CL_max_wing = {CL_max_wing:.3f}, margin = {failure_margin_init:+.3f}  "
           f"[{failure_flag_init}]")
 
-    # ----- Steps 2-4: iterate propulsion → fuselage → drag → mass → wing-area → sizing -----
+    # ----- Steps 2-4: convergence loop -----
     mode = ", ".join([
         "mass-closure" if config.MASS_CLOSURE else "fixed m_drone",
         "Sw-closure" if config.SW_CLOSURE else "fixed Sw",
@@ -800,10 +786,6 @@ def run_pipeline(config) -> PipelineResult:
     m_drone = m_drone_guess
     converged = False
     it = 0
-
-    # Tail induced drag from the previous iteration, carried forward into the
-    # next Cd0 so propulsion sizing sees the full cruise drag.  Zero on the
-    # first pass (no scissor state yet); converges in one extra iteration.
     cd_i_tail_prev: float = 0.0
 
     for it in range(1, config.N_ITER_MAX + 1):
@@ -822,7 +804,6 @@ def run_pipeline(config) -> PipelineResult:
         Sh_S_new = scissor_state.ShS_target
         Sh_new = Sh_S_new * sizing.Sw
 
-        # --- Wing-area closure ---
         if config.SW_CLOSURE:
             m_eff = m_drone if config.MASS_CLOSURE else sizing_inputs.m_drone_empty
             AR_new, CL_target, CL_stall_bound, stall_binding = _sw_closure_ar(
@@ -838,8 +819,6 @@ def run_pipeline(config) -> PipelineResult:
             stall_binding = False
             AR_new = sizing_inputs.AR
 
-        # --- Feed CD0 + tail induced drag back into sizing so propulsion sees
-        #     the full cruise drag, not just the parasite contribution. ---
         replace_kwargs: dict = {
             "Cd0": p.drag.CD0 + cd_i_tail_prev,
             "AR": AR_new,
@@ -855,7 +834,6 @@ def run_pipeline(config) -> PipelineResult:
             c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
         )
 
-        # Update tail induced drag for the next iteration.
         cd_i_tail_prev = scissor_state.tail_loading["CD_i_tail_wing_ref"]
 
         cd0_history.append(p.drag.CD0)
@@ -890,8 +868,6 @@ def run_pipeline(config) -> PipelineResult:
         print(f"    ✗ Did NOT converge after {config.N_ITER_MAX} iterations "
               f"(last {_last_deltas(config, dCD0, dM, dSw)}).")
 
-    # Final coupled pass so both x_cg and Sh/S match the scissor intersection
-    # for the converged sizing before downstream analyses.
     sizing, battery_x, p, final_scissor_state, final_cg_error, final_ShS_error = (
         _retune_tail_area_and_battery_for_scissor(
             sizing,
@@ -911,8 +887,6 @@ def run_pipeline(config) -> PipelineResult:
         f"Sh/S={sizing.Sh / sizing.Sw:.4f}, scissor_Sh/S*={final_scissor_state.ShS_target:.4f}, "
         f"Sh/S_error={final_ShS_error:+.2e}"
     )
-    # One final battery-only touch-up after the last Sh update keeps all
-    # returned sub-solvers synchronized with the final sizing.
     battery_x, p, final_scissor_state, final_cg_error = _optimize_battery_x_for_scissor(
         sizing,
         config=config,
@@ -928,7 +902,6 @@ def run_pipeline(config) -> PipelineResult:
         print("    WARNING: fuselage height is just casing_factor × battery_height; "
               "airfoil height is not being used for fuselage sizing.")
 
-    # Stall check on the converged design.
     W_loaded = sizing.m_drone_loaded * 9.80665
     V_stall_actual = float(np.sqrt(2 * W_loaded / (sizing.rho * sizing.Sw * CL_max_wing)))
     margin = config.V_STALL - V_stall_actual
@@ -948,7 +921,7 @@ def run_pipeline(config) -> PipelineResult:
           f"CL_max_wing = {CL_max_wing:.3f}, margin = {failure_margin:+.3f}  "
           f"[{failure_flag}]")
 
-    # ----- Step 6: CL/CD sweep → drone-only and drone+payload polars -----
+    # ----- Step 6: CL/CD sweep -----
     CL_sweep, CD_wing_sweep = wing_drag_polar(sizing, polar, config.ALPHA_SWEEP_DEG)
     CD_nonwing = p.drag.CD0_tail_h + p.drag.CD0_tail_v + p.drag.CD0_fus
     CD_payload = sizing.inputs.Cd_payload * sizing.inputs.S_payload / (
@@ -957,9 +930,7 @@ def run_pipeline(config) -> PipelineResult:
     CD_drone_sweep = CD_wing_sweep + CD_nonwing
     CD_full_sweep = CD_drone_sweep + CD_payload
 
-    # ----- Step 7: tail trim loading + induced drag (elevator not yet known) -----
-    # A tiny nonzero tail CL keeps the LLT-derived lift slope finite for the
-    # scissor plot while remaining negligible for drag feedback.
+    # ----- Step 7: tail trim loading + induced drag -----
     CL_tail_trim = (
         1.0e-3 if config.ELEVATOR.trim_mode.lower() == "payload_attachment" else None
     )
@@ -998,17 +969,13 @@ def run_pipeline(config) -> PipelineResult:
           f"battery_y={y_cg['battery']:.4f} m, y_cg={y_cg['overall']:.4f} m, "
           f"tail |CLh| margin={elevator_cl_margin:+.4f}")
 
-    # ----- Step 9: rudder control-surface sizing on the final state -----
+    # ----- Step 9: rudder sizing -----
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
     )
 
-    # ----- Step 7b: recompute tail drag at the correctly trimmed CL_tail -----
-    # elevator_result.CLh_cruise is derived from the full trim solve (including
-    # thrust moments and downwash), so it is more accurate than the moment-balance
-    # approximation used in Step 7. Rerun final cruise propulsion with that
-    # drag so E_cruise and battery sizing include the tail induced drag.
+    # ----- Step 7b: recompute tail drag at trimmed CL_tail -----
     for _ in range(3):
         tail_loading = tail_drag_at_cruise(
             sizing, polar, llt,
@@ -1075,9 +1042,6 @@ def run_pipeline(config) -> PipelineResult:
         )
     )
 
-    # The final tail-drag propulsion update changes thrust moment and can move
-    # the controllability curve. Close the actual final scissor point again,
-    # updating both Sh/S and battery x before the returned report is built.
     def evaluate_final_scissor(candidate_battery_x: float):
         p_eval = _run_design_pass(
             sizing,
@@ -1215,7 +1179,7 @@ def run_pipeline(config) -> PipelineResult:
         x_cg=p.cg["overall"],
     )
 
-    # ----- Step 10: torsion check on the boom + physics-based VT rod sizing -----
+    # ----- Step 10: torsion check + physics-based VT rod sizing -----
     vt_geom = WingGeometry(b=sizing.bv, S=sizing.Sv, taper=sizing.inputs.lam_t)
     vt_flight = FlightCondition(
         V_inf=sizing.inputs.V_cruise, rho=sizing.rho, CL_target=0.5,
