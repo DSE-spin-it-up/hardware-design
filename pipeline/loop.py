@@ -84,6 +84,8 @@ class PipelineResult:
     cd_i_tail: float       # tail induced drag, wing-area reference
     tail_loading: dict     # CL_tail, CD_i_tail (tail ref), e_tail, AR_tail
     scissor: ScissorData   # stability-line scissor plot data
+    battery_y0: float      # [m] battery bottom used for final vertical trim
+    y_cg: dict[str, float] # final vertical CG breakdown
 
 
 @dataclass
@@ -119,7 +121,8 @@ def _run_design_pass(
     battery_x: float | None,
 ) -> _DesignPass:
     propulsion = prop_sizing.run(sizing, config.PROPULSION)
-    V_structural = max(propulsion.V_climb, sizing.inputs.V_cruise) + sizing.inputs.gust_speed
+    q_control = 0.5 * sizing.rho * config.V_STALL ** 2
+    V_structural = sizing.inputs.v_max
     q_structural = 0.5 * sizing.rho * V_structural ** 2
     lift_one_drone_failure_gust = (
         sizing.CL_one_drone_failure * q_structural * sizing.Sw
@@ -145,10 +148,18 @@ def _run_design_pass(
     # Tube geometry for fuselage sizing.
     # The tube runs from the spar rod to the aileron hinge, then extends aft
     # by tube_tail_overlap to grip the tail boom inside the fuselage.
-    tube_outer_diameter = max(struct.d_spar, struct.d_aileron)
+    tube_outer_diameter = (
+        max(struct.d_spar, struct.d_aileron, struct.d_t)
+        * config.FUSELAGE.tube_clearance_factor
+    )
     x_rod_aileron = (1.0 - control_surface.inputs.c_aileron_to_c_wing) * sizing.c_root
-    _, x_max_tc = AirfoilGeometry(airfoil).compute_maximum_thickness()
+    wing_airfoil_geom = AirfoilGeometry(airfoil)
+    _, x_max_tc = wing_airfoil_geom.compute_maximum_thickness()
     x_rod_spar = x_max_tc * sizing.c_root
+    wing_section_height = (
+        float(np.max(wing_airfoil_geom.polygon[:, 1]) - np.min(wing_airfoil_geom.polygon[:, 1]))
+        * sizing.c_root
+    )
     tube_front_x = x_rod_spar - config.FUSELAGE.tube_tail_overlap
     tube_back_x = x_rod_aileron + config.FUSELAGE.tube_tail_overlap
     tube_length = tube_back_x - tube_front_x
@@ -164,6 +175,8 @@ def _run_design_pass(
         tube_length=tube_length,
         spar_rod_diameter=struct.d_spar,
         aileron_rod_diameter=struct.d_aileron,
+        tail_rod_diameter=struct.d_t,
+        wing_section_height=wing_section_height,
         pvc_lift_force=lift_gust_increment,
         x_front_spar=x_rod_spar,
         n_active_drones=sizing.inputs.n_drones - 1,
@@ -211,6 +224,7 @@ def _run_design_pass(
         config.CONTROL_SURFACE,
         polar=polar,
         y_cg=y_cg_for_aileron,
+        q_sizing=q_control,
     )
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)
 
@@ -243,6 +257,38 @@ def _scissor_intersection(scissor: ScissorData) -> tuple[float, float]:
     x = float(scissor.x_cg[k])
     y = float(max(scissor.ShS_stab[k], scissor.ShS_ctrl[k]))
     return x, y
+
+
+def _stability_x_at_ShS(
+    scissor: ScissorData,
+    ShS_horizontal: float,
+    *,
+    reference_x: float | None = None,
+) -> tuple[float, float]:
+    """Return where the current horizontal Sh/S line crosses the stability curve."""
+    diff = scissor.ShS_stab - ShS_horizontal
+    candidates: list[float] = []
+
+    for k in range(len(diff) - 1):
+        d0 = float(diff[k])
+        d1 = float(diff[k + 1])
+        if d0 == 0.0:
+            candidates.append(float(scissor.x_cg[k]))
+        elif d0 * d1 < 0.0:
+            frac = -d0 / (d1 - d0)
+            x = float(scissor.x_cg[k] + frac * (scissor.x_cg[k + 1] - scissor.x_cg[k]))
+            candidates.append(x)
+
+    if float(diff[-1]) == 0.0:
+        candidates.append(float(scissor.x_cg[-1]))
+
+    if candidates:
+        if reference_x is None:
+            return candidates[0], float(ShS_horizontal)
+        return min(candidates, key=lambda x: abs(x - reference_x)), float(ShS_horizontal)
+
+    k = int(np.argmin(np.abs(diff)))
+    return float(scissor.x_cg[k]), float(ShS_horizontal)
 
 
 def _payload_trim_moment_for_scissor(config, scissor: ScissorData) -> float:
@@ -321,14 +367,19 @@ def _scissor_state_for_pass(
             Cm_payload=Cm_payload,
             Vh_V=Vh_V,
         )
+    ShS_current = sizing.Sh / sizing.Sw
+    x_target, _ = _stability_x_at_ShS(
+        scissor,
+        ShS_current,
+        reference_x=x_cg,
+    )
     if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
-        x_target = x_cg
         ShS_target = float(max(
             np.interp(x_cg, scissor.x_cg, scissor.ShS_stab),
             np.interp(x_cg, scissor.x_cg, scissor.ShS_ctrl),
         ))
     else:
-        x_target, ShS_target = _scissor_intersection(scissor)
+        _, ShS_target = _scissor_intersection(scissor)
     return _ScissorState(
         llt=llt,
         tail_loading=tail_loading,
@@ -371,7 +422,7 @@ def _optimize_battery_x_for_scissor(
     tol: float = 1.0e-4,
     max_iter: int = 8,
 ) -> tuple[float, _DesignPass, _ScissorState, float]:
-    """Move the battery until the CG lies at the scissor bottom intersection."""
+    """Move the battery until CG lies on the stability curve at the current Sh/S."""
     battery_x = battery_x_initial
     p, state, error = _evaluate_battery_x(
         sizing,
@@ -448,7 +499,7 @@ def _retune_tail_area_and_battery_for_scissor(
     tol_ShS: float = 1.0e-4,
     max_iter: int = 8,
 ) -> tuple[SizingResult, float, _DesignPass, _ScissorState, float, float]:
-    """Couple battery-x and Sh/S so the design point sits on the scissor intersection."""
+    """Couple battery-x with the stability line and Sh/S with the scissor minimum."""
     battery_x = battery_x_initial
     p: _DesignPass | None = None
     state: _ScissorState | None = None
@@ -574,8 +625,9 @@ def _optimize_battery_y_for_elevator(
         elevator_result = elevator.run(
             sizing, scissor, llt, propulsion,
             polar, tail_polar, y_cg, elevator_inputs_unchecked,
+            q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
         )
-        margin = elevator_result.Cl_max - max(
+        margin = elevator_result.tail_CL_limit - max(
             abs(elevator_result.CLh_at_max_up),
             abs(elevator_result.CLh_at_max_down),
         )
@@ -585,7 +637,25 @@ def _optimize_battery_y_for_elevator(
         return elevator.run(
             sizing, scissor, llt, propulsion,
             polar, tail_polar, y_cg, config.ELEVATOR,
+            q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
         )
+
+    battery_y0_override = getattr(config, "BATTERY_Y0", None)
+    battery_y_frac = getattr(config, "BATTERY_Y_FRAC", None)
+    if battery_y0_override is not None and battery_y_frac is not None:
+        raise ValueError("Set only one of battery_y0 or battery_y_frac.")
+    if battery_y_frac is not None:
+        frac = float(np.clip(battery_y_frac, 0.0, 1.0))
+        battery_y0_override = y_lo + frac * (y_hi - y_lo)
+    if battery_y0_override is not None:
+        y_fixed = float(np.clip(battery_y0_override, y_lo, y_hi))
+        y_cg_fixed, scissor_fixed, _, margin_fixed = evaluate(y_fixed)
+        elevator_fixed = checked_elevator(y_cg_fixed, scissor_fixed)
+        margin_fixed = elevator_fixed.tail_CL_limit - max(
+            abs(elevator_fixed.CLh_at_max_up),
+            abs(elevator_fixed.CLh_at_max_down),
+        )
+        return y_fixed, y_cg_fixed, scissor_fixed, elevator_fixed, margin_fixed
 
     y_cg_hi = scissor_hi = elevator_hi = None
     margin_hi = float("-inf")
@@ -593,7 +663,7 @@ def _optimize_battery_y_for_elevator(
         y_cg_hi, scissor_hi, elevator_hi, margin_hi = evaluate(y_hi)
         if margin_hi >= -tol:
             elevator_hi = checked_elevator(y_cg_hi, scissor_hi)
-            margin_hi = elevator_hi.Cl_max - max(
+            margin_hi = elevator_hi.tail_CL_limit - max(
                 abs(elevator_hi.CLh_at_max_up),
                 abs(elevator_hi.CLh_at_max_down),
             )
@@ -637,11 +707,22 @@ def _optimize_battery_y_for_elevator(
 
     y_cg_best, scissor_best, elevator_best, margin_best = best
     elevator_best = checked_elevator(y_cg_best, scissor_best)
-    margin_best = elevator_best.Cl_max - max(
+    margin_best = elevator_best.tail_CL_limit - max(
         abs(elevator_best.CLh_at_max_up),
         abs(elevator_best.CLh_at_max_down),
     )
     return best_y, y_cg_best, scissor_best, elevator_best, margin_best
+
+
+def _is_elevator_tail_margin_failure(exc: Exception) -> bool:
+    if not isinstance(exc, ValueError):
+        return False
+    message = str(exc)
+    return (
+        "violates the elevator tail-stall limit" in message
+        or "avoids tail stall at max deflection" in message
+        or "trimmed tail is already beyond the allowed finite-tail" in message
+    )
 
 
 def _sw_closure_ar(
@@ -847,8 +928,8 @@ def run_pipeline(config) -> PipelineResult:
         _print_iter(it, p=p, sizing=sizing, m_drone=m_drone, x_cg=x_cg,
                     CL_target=CL_target, stall_binding=stall_binding,
                     dCD0=dCD0, dM=dM, dSw=dSw)
-        print(f"             battery_x={battery_x:.4f}  scissor_x*={scissor_state.x_target:.4f}  "
-              f"x_cg-x*={cg_error:+.2e}  cd_i_tail={cd_i_tail_prev:.5f}")
+        print(f"             battery_x={battery_x:.4f}  stability_x@Sh/S={scissor_state.x_target:.4f}  "
+              f"x_cg-stability_x={cg_error:+.2e}  cd_i_tail={cd_i_tail_prev:.5f}")
 
         mass_ok = (dM < config.MASS_TOL) if config.MASS_CLOSURE else True
         sw_ok = (dSw < config.SW_TOL) if config.SW_CLOSURE else True
@@ -882,9 +963,9 @@ def run_pipeline(config) -> PipelineResult:
     sizing_inputs = sizing.inputs
     print(
         f"    Scissor coupled tuning: battery_x={battery_x:.4f} m, "
-        f"x_cg={p.cg['overall']:.4f} m, scissor_x*={final_scissor_state.x_target:.4f} m, "
+        f"x_cg={p.cg['overall']:.4f} m, stability_x@Sh/S={final_scissor_state.x_target:.4f} m, "
         f"x_error={final_cg_error:+.2e} m, "
-        f"Sh/S={sizing.Sh / sizing.Sw:.4f}, scissor_Sh/S*={final_scissor_state.ShS_target:.4f}, "
+        f"Sh/S={sizing.Sh / sizing.Sw:.4f}, scissor_min_Sh/S={final_scissor_state.ShS_target:.4f}, "
         f"Sh/S_error={final_ShS_error:+.2e}"
     )
     battery_x, p, final_scissor_state, final_cg_error = _optimize_battery_x_for_scissor(
@@ -896,7 +977,7 @@ def run_pipeline(config) -> PipelineResult:
         battery_x_initial=battery_x,
     )
     print(f"    Battery CG tuning: battery_x={battery_x:.4f} m, "
-          f"x_cg={p.cg['overall']:.4f} m, scissor_x*={final_scissor_state.x_target:.4f} m, "
+          f"x_cg={p.cg['overall']:.4f} m, stability_x@Sh/S={final_scissor_state.x_target:.4f} m, "
           f"error={final_cg_error:+.2e} m")
     if np.isclose(p.fus.height, config.FUSELAGE.casing_factor * p.fus.battery_height):
         print("    WARNING: fuselage height is just casing_factor × battery_height; "
@@ -951,20 +1032,103 @@ def run_pipeline(config) -> PipelineResult:
     cd_i_tail = tail_loading["CD_i_tail_wing_ref"]
     CD_full_buildup = full_drag_estimate(sizing, p.drag, llt, cd_i_tail=cd_i_tail)
 
+    def refresh_after_tail_area_change(
+        sizing_new: SizingResult,
+        battery_x_initial: float | None,
+        *,
+        CL_tail_for_scissor: float | None,
+    ):
+        battery_x_new, p_new, scissor_state_new, cg_error_new = (
+            _optimize_battery_x_for_scissor(
+                sizing_new,
+                config=config,
+                polar=polar,
+                tail_polar=tail_polar,
+                airfoil=airfoil,
+                battery_x_initial=battery_x_initial,
+            )
+        )
+        llt_new = llt_at_cl(sizing_new, polar, CL_target=sizing_new.CL)
+        tail_loading_new = tail_drag_at_cruise(
+            sizing_new, polar, llt_new,
+            x_cg=p_new.cg["overall"],
+            tail_airfoil=config.TAIL_AIRFOIL,
+            CL_tail=CL_tail_for_scissor,
+        )
+        cd_i_tail_new = tail_loading_new["CD_i_tail_wing_ref"]
+        CD_full_new = full_drag_estimate(
+            sizing_new, p_new.drag, llt_new, cd_i_tail=cd_i_tail_new,
+        )
+        cruise_drag_new = CD_full_new * sizing_new.q_cruise * sizing_new.Sw
+        propulsion_new = prop_sizing.run(
+            sizing_new,
+            config.PROPULSION,
+            cruise_drag=cruise_drag_new,
+        )
+        return (
+            sizing_new, battery_x_new, p_new, scissor_state_new, cg_error_new,
+            llt_new, tail_loading_new, cd_i_tail_new, CD_full_new, propulsion_new,
+        )
+
+    def increase_tail_area_for_margin(factor: float = 1.10, *, label: str = "Elevator"):
+        nonlocal sizing, sizing_inputs, battery_x, p, final_scissor_state
+        nonlocal final_cg_error, llt, tail_loading, tail_loading_for_scissor
+        nonlocal cd_i_tail, CD_full_buildup, final_propulsion
+
+        Sh_old = sizing.Sh
+        Sw_old = sizing.Sw
+        sizing_inputs = dataclasses.replace(
+            sizing.inputs,
+            Sh=factor * sizing.Sh,
+        )
+        sizing = wing.run(
+            sizing_inputs,
+            t_over_c_root=tc,
+            c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+        )
+        sizing_inputs = sizing.inputs
+        (
+            sizing, battery_x, p, final_scissor_state, final_cg_error,
+            llt, tail_loading, cd_i_tail, CD_full_buildup, final_propulsion,
+        ) = refresh_after_tail_area_change(
+            sizing,
+            battery_x,
+            CL_tail_for_scissor=CL_tail_trim,
+        )
+        tail_loading_for_scissor = tail_loading
+        if config.ELEVATOR.trim_mode.lower() == "payload_attachment":
+            tail_loading_for_scissor = tail_drag_at_cruise(
+                sizing, polar, llt,
+                x_cg=p.cg["overall"],
+                tail_airfoil=config.TAIL_AIRFOIL,
+                CL_tail=0.5,
+            )
+        print(
+            f"    {label} tail CL margin tuning: increased Sh/S "
+            f"from {Sh_old / Sw_old:.4f} to {sizing.Sh / sizing.Sw:.4f}"
+        )
+
     # ----- Step 8: vertical battery placement + final scissor/elevator -----
     final_propulsion = p.propulsion
-    battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
-        _optimize_battery_y_for_elevator(
-            sizing, p,
-            config=config,
-            polar=polar,
-            tail_polar=tail_polar,
-            airfoil=airfoil,
-            llt=llt,
-            tail_loading=tail_loading_for_scissor,
-            propulsion=final_propulsion,
-        )
-    )
+    for tail_area_iter in range(10):
+        try:
+            battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+                _optimize_battery_y_for_elevator(
+                    sizing, p,
+                    config=config,
+                    polar=polar,
+                    tail_polar=tail_polar,
+                    airfoil=airfoil,
+                    llt=llt,
+                    tail_loading=tail_loading_for_scissor,
+                    propulsion=final_propulsion,
+                )
+            )
+            break
+        except ValueError as exc:
+            if not _is_elevator_tail_margin_failure(exc) or tail_area_iter == 9:
+                raise
+            increase_tail_area_for_margin(1.15, label="Elevator")
     print(f"    Battery vertical tuning: battery_y0={battery_y0:.4f} m, "
           f"battery_y={y_cg['battery']:.4f} m, y_cg={y_cg['overall']:.4f} m, "
           f"tail |CLh| margin={elevator_cl_margin:+.4f}")
@@ -1003,18 +1167,25 @@ def run_pipeline(config) -> PipelineResult:
             final_propulsion = updated_propulsion
             break
         final_propulsion = updated_propulsion
-        battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
-            _optimize_battery_y_for_elevator(
-                sizing, p,
-                config=config,
-                polar=polar,
-                tail_polar=tail_polar,
-                airfoil=airfoil,
-                llt=llt,
-                tail_loading=tail_loading_for_scissor,
-                propulsion=final_propulsion,
-            )
-        )
+        for tail_area_iter in range(6):
+            try:
+                battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+                    _optimize_battery_y_for_elevator(
+                        sizing, p,
+                        config=config,
+                        polar=polar,
+                        tail_polar=tail_polar,
+                        airfoil=airfoil,
+                        llt=llt,
+                        tail_loading=tail_loading_for_scissor,
+                        propulsion=final_propulsion,
+                    )
+                )
+                break
+            except ValueError as exc:
+                if not _is_elevator_tail_margin_failure(exc) or tail_area_iter == 5:
+                    raise
+                increase_tail_area_for_margin(1.10, label="Propulsion refresh elevator")
     tail_loading = tail_drag_at_cruise(
         sizing, polar, llt,
         x_cg=p.cg["overall"],
@@ -1029,18 +1200,26 @@ def run_pipeline(config) -> PipelineResult:
         config.PROPULSION,
         cruise_drag=cruise_drag,
     )
-    battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
-        _optimize_battery_y_for_elevator(
-            sizing, p,
-            config=config,
-            polar=polar,
-            tail_polar=tail_polar,
-            airfoil=airfoil,
-            llt=llt,
-            tail_loading=tail_loading,
-            propulsion=final_propulsion,
-        )
-    )
+    for tail_area_iter in range(6):
+        try:
+            battery_y0, y_cg, scissor, elevator_result, elevator_cl_margin = (
+                _optimize_battery_y_for_elevator(
+                    sizing, p,
+                    config=config,
+                    polar=polar,
+                    tail_polar=tail_polar,
+                    airfoil=airfoil,
+                    llt=llt,
+                    tail_loading=tail_loading,
+                    propulsion=final_propulsion,
+                )
+            )
+            break
+        except ValueError as exc:
+            if not _is_elevator_tail_margin_failure(exc) or tail_area_iter == 5:
+                raise
+            increase_tail_area_for_margin(1.10, label="Final elevator")
+            tail_loading = tail_loading_for_scissor
 
     def evaluate_final_scissor(candidate_battery_x: float):
         p_eval = _run_design_pass(
@@ -1080,7 +1259,13 @@ def run_pipeline(config) -> PipelineResult:
                 propulsion=propulsion_eval,
             )
         )
-        x_target_eval, ShS_target_eval = _scissor_intersection(scissor_eval)
+        ShS_current_eval = sizing.Sh / sizing.Sw
+        x_target_eval, _ = _stability_x_at_ShS(
+            scissor_eval,
+            ShS_current_eval,
+            reference_x=p_eval.cg["overall"],
+        )
+        _, ShS_target_eval = _scissor_intersection(scissor_eval)
         return {
             "battery_x": float(candidate_battery_x),
             "p": p_eval,
@@ -1100,15 +1285,28 @@ def run_pipeline(config) -> PipelineResult:
             "ShS_error": sizing.Sh / sizing.Sw - ShS_target_eval,
         }
 
-    final_state = evaluate_final_scissor(float(battery_x))
+    for tail_area_iter in range(10):
+        try:
+            final_state = evaluate_final_scissor(float(battery_x))
+            break
+        except ValueError as exc:
+            if not _is_elevator_tail_margin_failure(exc) or tail_area_iter == 9:
+                raise
+            increase_tail_area_for_margin(1.10, label="Final elevator")
     for _ in range(6):
         if (
             abs(final_state["x_error"]) <= 1.0e-4
-            and abs(final_state["ShS_error"]) <= 1.0e-4
+            and final_state["ShS_error"] >= -1.0e-4
+            and final_state["margin"] >= -1.0e-4
         ):
             break
 
-        if abs(final_state["ShS_error"]) > 1.0e-4:
+        if final_state["margin"] < -1.0e-4:
+            increase_tail_area_for_margin(1.10, label="Final elevator")
+            final_state = evaluate_final_scissor(final_state["battery_x"])
+            continue
+
+        if final_state["ShS_error"] < -1.0e-4:
             sizing_inputs = dataclasses.replace(
                 sizing.inputs,
                 Sh=final_state["ShS_target"] * sizing.Sw,
@@ -1164,13 +1362,18 @@ def run_pipeline(config) -> PipelineResult:
     elevator_result = final_state["elevator"]
     elevator_cl_margin = final_state["margin"]
 
-    final_scissor_x_target, final_scissor_ShS_target = _scissor_intersection(scissor)
+    final_scissor_x_target, _ = _stability_x_at_ShS(
+        scissor,
+        sizing.Sh / sizing.Sw,
+        reference_x=p.cg["overall"],
+    )
+    _, final_scissor_ShS_target = _scissor_intersection(scissor)
     print(
         f"    Final scissor closure: x_cg={p.cg['overall']:.4f} m, "
-        f"scissor_x*={final_scissor_x_target:.4f} m, "
+        f"stability_x@Sh/S={final_scissor_x_target:.4f} m, "
         f"x_error={p.cg['overall'] - final_scissor_x_target:+.2e} m, "
         f"Sh/S={sizing.Sh / sizing.Sw:.4f}, "
-        f"scissor_Sh/S*={final_scissor_ShS_target:.4f}, "
+        f"scissor_min_Sh/S={final_scissor_ShS_target:.4f}, "
         f"Sh/S_error={sizing.Sh / sizing.Sw - final_scissor_ShS_target:+.2e}"
     )
 
@@ -1244,4 +1447,6 @@ def run_pipeline(config) -> PipelineResult:
         cd_i_tail=cd_i_tail,
         tail_loading=tail_loading,
         scissor=scissor,
+        battery_y0=battery_y0,
+        y_cg=y_cg,
     )

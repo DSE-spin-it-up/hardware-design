@@ -224,7 +224,12 @@ def build_components(
     vt_rud_i = _rod_along_z_inertia(masses.get("vt_rud", 0.0), sizing.bv)
     _append_if_positive(components, PointMass("vt_rud", masses.get("vt_rud", 0.0), cg["vt_rud"], 0.0, z_cg["vt_rud"], *vt_rud_i))
 
-    pvc_i = _box_inertia(masses.get("pvc_tubes", 0.0), fus.box_length, fus.box_width, structure.d_spar)
+    pvc_i = _box_inertia(
+        masses.get("pvc_tubes", 0.0),
+        fus.box_length,
+        fus.box_width,
+        fus.structural_tube_outer_diameter,
+    )
     _append_if_positive(components, PointMass("pvc_tubes", masses.get("pvc_tubes", 0.0), cg["pvc_tubes"], 0.0, z_cg["pvc_tubes"], *pvc_i))
 
     _append_if_positive(components, PointMass("servos", masses.get("servos", 0.0), cg["servos"], 0.0, z_cg["servos"]))

@@ -56,6 +56,17 @@ if "sizing" in _data:
     if "rudder" in _data and "Vgust" in _data["rudder"]:
         _data["sizing"].setdefault("gust_speed", _data["rudder"].pop("Vgust"))
 
+if "fuselage" in _data:
+    _fuselage_aliases = {
+        "pvc_snap_force": "tube_snap_force",
+        "pvc_snap_safety_factor": "tube_snap_safety_factor",
+        "pvc_gust_safety_factor": "tube_gust_safety_factor",
+        "min_pvc_foam_floor": "min_tube_foam_floor",
+    }
+    for _old, _new in _fuselage_aliases.items():
+        if _old in _data["fuselage"]:
+            _data["fuselage"].setdefault(_new, _data["fuselage"].pop(_old))
+
 _data["airfoil"] = _resolve_repo_path(_data.get("airfoil"))
 _data["tail_airfoil"] = _resolve_repo_path(_data.get("tail_airfoil"))
 _data["propulsion"]["csv_prop"] = _resolve_repo_path(_data["propulsion"]["csv_prop"])
@@ -74,6 +85,8 @@ AIRFOIL: str | None = _data["airfoil"]
 TAIL_AIRFOIL: str = _data["tail_airfoil"]
 
 BATTERY_X: float | None = _data.get("battery_x")
+BATTERY_Y0: float | None = _data.get("battery_y0")
+BATTERY_Y_FRAC: float | None = _data.get("battery_y_frac")
 
 V_STALL: float = _data["V_stall"]
 

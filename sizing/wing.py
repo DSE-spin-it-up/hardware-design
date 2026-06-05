@@ -26,7 +26,8 @@ class SizingInputs:
     # Flight Conditions
     h_cruise: float = 100        # Cruise altitude [m]
     V_cruise: float = 20         # Cruise speed [m/s]
-    gust_speed: float = 5.0      # Gust increment used for structures/control sizing [m/s]
+    gust_speed: float = 5.0      # Gust speed used for gust-angle/control checks [m/s]
+    v_max: float = 30.0          # Structural sizing speed [m/s]
     # Mission
     R: float = 20000             # Range [m]
     # Materials
@@ -152,7 +153,7 @@ def run(
 
     # Aerodynamics
     q_cruise = 0.5 * rho * i.V_cruise ** 2
-    V_structural = i.V_cruise + i.gust_speed
+    V_structural = i.v_max
     q_structural = 0.5 * rho * V_structural ** 2
     e = 1.78 * (1 - 0.045 * i.AR ** 0.68) - 0.64
     CL = (m_drone_loaded * g0) / (q_cruise * Sw)

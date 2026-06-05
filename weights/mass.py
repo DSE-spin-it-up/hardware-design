@@ -17,7 +17,7 @@ from structures.materials import Aluminum_6061_T6
 DEFAULT_MATERIALS = PartMaterials()
 
 SERVO_MASS = 0.052  # [kg] per servo
-_PVC_SF = 1.2       # safety factor for PVC tube mass estimate
+_STRUCTURAL_TUBE_SF = 1.2       # safety factor for structural tube mass estimate
 
 
 # ==============================================================================
@@ -84,23 +84,29 @@ def _tube_y_bounds(
     y_rod_spar: float,
     y_rod_aileron: float,
 ) -> tuple[float, float]:
-    max_d  = max(structure.d_spar, structure.d_aileron)
-    margin = 0.5 * max(fus.inputs.casing_factor - 1.0, 0.0) * max_d
-    y0 = min(
+    rod_lower = min(
         y_rod_spar    - structure.d_spar    / 2.0,
         y_rod_aileron - structure.d_aileron / 2.0,
-    ) - margin
-    y1 = max(
+        y_rod_aileron - structure.d_t / 2.0,
+    )
+    rod_upper = max(
         y_rod_spar    + structure.d_spar    / 2.0,
         y_rod_aileron + structure.d_aileron / 2.0,
-    ) + margin
+        y_rod_aileron + structure.d_t / 2.0,
+    )
+    rod_height = rod_upper - rod_lower
+    tube_height = max(fus.structural_tube_outer_diameter, rod_height)
+    extra_height = tube_height - rod_height
+    y0 = rod_lower - extra_height / 2.0
+    y1 = rod_upper + extra_height / 2.0
     return y0, y1
 
 
-def _pvc_mass(structure: RodResult, tube_length: float) -> float:
-    outer_d = structure.d_spar
-    inner_d = structure.d_spar - structure.t_spar
-    return tube_length * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6().rho * _PVC_SF
+def _structural_tube_mass(structure: RodResult, fus: FuselageResult, tube_length: float) -> float:
+    outer_d = fus.structural_tube_outer_diameter
+    inner_d = max(outer_d - 2.0 * structure.t_spar, 0.0)
+    area = np.pi * (outer_d**2 - inner_d**2) / 4.0
+    return tube_length * area * Aluminum_6061_T6().rho * _STRUCTURAL_TUBE_SF
 
 
 # ==============================================================================
@@ -210,7 +216,7 @@ def compute_cg(
     m_tail_h     = hor_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_v     = ver_tail_mass(sizing, tail_airfoil_path, materials=materials)
     m_tail_rod   = structure.mass_t
-    m_pvc        = (_pvc_mass(structure, tube_length)
+    m_pvc        = (_structural_tube_mass(structure, fus, tube_length)
                     if pvc_tubes_mass_override is None else pvc_tubes_mass_override)
 
     x_servo_front   = x_motor_front
@@ -362,9 +368,11 @@ def compute_y_cg(
     y_ac_norm = y_le_chord + 0.25 * (y_te_chord - y_le_chord)
     y_ac_pre_shift = y_ac_norm * root_chord + airfoil_y_offset
 
-    # Tube wraps both wing rods with the configured casing margin.
+    # Place the wing as low as possible: the root airfoil's lowest point is
+    # the fuselage bottom datum. The structural tube then sits wherever the
+    # rod centerlines put it inside the fuselage.
     tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
-    wing_y_shift = fus.pvc_floor_thickness - tube_y0
+    wing_y_shift = 0.0
     y_coords      += wing_y_shift
     y_rod_spar    += wing_y_shift
     y_rod_aileron += wing_y_shift
@@ -382,14 +390,9 @@ def compute_y_cg(
 
     if battery_y0 is not None:
         batt_y0 = battery_y0
-    elif cg["battery"] < 0.0:
-        batt_y0 = fus.battery_y_min
     else:
-        batt_y0 = tube_y0 + 0.005
-    box_y0 = min(
-        batt_y0 - fus.foam_floor_thickness,
-        tube_y0 - fus.pvc_floor_thickness,
-    )
+        batt_y0 = fus.battery_y_min
+    box_y0 = 0.0
     box_yc = box_y0 + fus.box_height / 2.0
 
     y_fus      = box_yc
@@ -549,7 +552,7 @@ def total_mass(
     x_rod_spar    = _max_tc_x(airfoil_path) * sizing.c_root
     tube_x0       = x_rod_spar - fus.inputs.tube_tail_overlap
     tube_x1       = fus.x_nose + fus.l_nose + fus.box_length - fus.inputs.casing_thickness
-    m_pvc         = _pvc_mass(structure, tube_x1 - tube_x0)
+    m_pvc         = _structural_tube_mass(structure, fus, tube_x1 - tube_x0)
     m_servos      = 8 * SERVO_MASS
 
     x_batt   = 0.25 * sizing.c_root

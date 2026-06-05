@@ -212,7 +212,7 @@ def plot_cg_side_view(
     tube_x1     = x_rod_aileron + fus.inputs.tube_tail_overlap
     tube_length = tube_x1 - tube_x0
     tube_y0, tube_y1 = _tube_y_bounds(struct, fus, y_rod_spar, y_rod_aileron)
-    wing_y_shift = fus.pvc_floor_thickness - tube_y0
+    wing_y_shift = 0.0
     airfoil_coords[:, 1] += wing_y_shift
     y_rod_spar += wing_y_shift
     y_rod_aileron += wing_y_shift
@@ -226,17 +226,13 @@ def plot_cg_side_view(
     battery_length = fus.battery_length
     battery_height = fus.battery_height
     batt_x0 = x_batt - battery_length / 2.0
-    if x_batt < 0.0:
-        batt_y0 = fus.battery_y_min
-    else:
-        batt_y0 = tube_y0 + 0.005   # battery sits just above tube floor
+    batt_y0 = fus.battery_y_min
 
     # ------------------------------------------------------------------ structural box vertical placement
-    box_y0 = min(
-        batt_y0 - fus.foam_floor_thickness,
-        tube_y0 - fus.pvc_floor_thickness,
-    )
+    box_y0 = 0.0
     box_yc = box_y0 + fus.box_height / 2.0
+    body_y0 = 0.0
+    body_yc = body_y0 + fus.height / 2.0
 
     # ------------------------------------------------------------------ Raymer fuselage x-coordinates
     box_x0      = fus.x_nose + fus.l_nose
@@ -248,19 +244,22 @@ def plot_cg_side_view(
 
     # Nose cone: triangle  tip → top-left → bottom-left
     nose_poly = np.array([
-        [fus_nose_x, box_yc],
-        [box_x0,     box_yc + half_h],
-        [box_x0,     box_yc - half_h],
+        [fus_nose_x, body_yc],
+        [box_x0,     body_yc + half_h],
+        [box_x0,     body_yc - half_h],
     ])
-    # Tail cone: triangle  top-right → bottom-right → tip
+    tail_exit_radius = struct.d_t / 2.0
+    # Tail cone: top/bottom of cylinder taper to the tail-boom outer diameter.
     tail_poly = np.array([
-        [box_x1,     box_yc + half_h],
-        [box_x1,     box_yc - half_h],
-        [fus_tail_x, y_rod_aileron],
+        [box_x1,     body_yc + half_h],
+        [box_x1,     body_yc - half_h],
+        [fus_tail_x, y_rod_aileron - tail_exit_radius],
+        [fus_tail_x, y_rod_aileron + tail_exit_radius],
     ])
 
     plot_height = max(
-        box_yc + half_h + 0.02,
+        body_yc + half_h + 0.02,
+        box_yc + fus.box_height / 2.0 + 0.02,
         batt_y0 + battery_height + 0.01,
         y_rod_aileron + b_v_total + 0.05,
     )
@@ -270,7 +269,7 @@ def plot_cg_side_view(
 
     # --- Raymer fuselage body ---
     fus_kw = dict(facecolor="lightcyan", edgecolor="navy", alpha=0.5, linewidth=2)
-    ax.add_patch(Rectangle((box_x0, box_yc - half_h), fus.l_cylinder, fus.height,
+    ax.add_patch(Rectangle((box_x0, body_y0), fus.l_cylinder, fus.height,
                             label="Fuselage cylinder", **fus_kw))
     ax.add_patch(Polygon(nose_poly, closed=True, label="Fuselage nose", **fus_kw))
     ax.add_patch(Polygon(tail_poly, closed=True, label="Fuselage tail", **fus_kw))
@@ -289,10 +288,10 @@ def plot_cg_side_view(
     ax.add_patch(Rectangle((batt_x0, batt_y0), battery_length, battery_height,
                             color="orange", alpha=0.5, label="Battery"))
 
-    # --- PVC tube ---
+    # --- Structural tube ---
     ax.add_patch(Rectangle((tube_x0, tube_y0), tube_length, tube_height,
                             facecolor="lightgreen", alpha=0.4, edgecolor="darkgreen",
-                            label="Tube"))
+                            label="Structural tube"))
 
     # --- Vertical tail ---
     ax.add_patch(Rectangle((x_tail_root_v, y_rod_aileron), c_v, b_v_total,
@@ -307,8 +306,8 @@ def plot_cg_side_view(
                 color="darkred", linewidth=2, linestyle="--", label="Rudder hinge")
 
     vt_rod_y0    = y_rod_aileron
-    vt_spar_w    = max(struct.d_spar_vt,    0.01)
-    vt_rud_w     = max(struct.d_control_vt, 0.01)
+    vt_spar_w    = struct.d_spar_vt
+    vt_rud_w     = struct.d_control_vt
     ax.add_patch(Rectangle(
         (x_tail_root_v + c_v * 0.25 - vt_spar_w / 2.0, vt_rod_y0),
         vt_spar_w, b_v_total,
@@ -340,24 +339,63 @@ def plot_cg_side_view(
         ))
 
     if x_ht_spar is not None and x_ht_control is not None:
-        ht_r = max(max(struct.d_spar_ht, struct.d_control_ht) * 0.5, 0.01)
-        ax.add_patch(Circle((x_ht_spar,    y_ht_spar),    ht_r, color="indigo",    alpha=0.8, label="HT spar rod"))
-        ax.add_patch(Circle((x_ht_control, y_ht_control), ht_r, color="darkorange", alpha=0.8, label="HT elevator rod"))
+        ax.add_patch(Circle(
+            (x_ht_spar, y_ht_spar),
+            struct.d_spar_ht * 0.5,
+            color="indigo",
+            alpha=0.8,
+            label="HT spar rod",
+        ))
+        ax.add_patch(Circle(
+            (x_ht_control, y_ht_control),
+            struct.d_control_ht * 0.5,
+            color="darkorange",
+            alpha=0.8,
+            label="HT elevator rod",
+        ))
 
     # --- Wing rods ---
     ax.add_patch(Circle((x_rod_wing,    y_rod_spar),    rod_radius_w, color="brown",  alpha=0.8, label="Wing rod"))
     ax.add_patch(Circle((x_rod_aileron, y_rod_aileron), rod_radius_a, color="sienna", alpha=0.8, label="Aileron rod"))
 
     # --- Tail boom ---
-    tail_start = x_rod_aileron + rod_radius_a + 0.001
-    ax.plot([tail_start, x_tail_end], [y_rod_aileron, y_rod_aileron],
-            color="gray", linewidth=3, solid_capstyle="butt", label="Tail boom")
+    tail_start = x_rod_aileron
+    tail_boom_d = struct.d_t
+    ax.add_patch(Rectangle(
+        (tail_start, y_rod_aileron - tail_boom_d / 2.0),
+        x_tail_end - tail_start,
+        tail_boom_d,
+        facecolor="gray",
+        edgecolor="dimgray",
+        alpha=0.75,
+        label="Tail boom",
+    ))
 
-    # --- CG markers ---
+    # --- Servos (small dots behind rods so they don't obscure rod geometry) ---
     y_cg      = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     motor_y   = y_cg["motors"]
     overall_y = y_cg["overall"]
 
+    x_servo_front   = cg["motors"]
+    x_servo_aileron = cg["rod_aileron"]
+    x_servo_rear    = x_motor_back
+    x_servo_ht      = cg.get("ht_rud", cg["tail"])
+    x_servo_vt      = cg.get("vt_rud", cg["tail"])
+    ax.scatter(
+        [x_servo_front,   x_servo_front,
+         x_servo_aileron, x_servo_aileron,
+         x_servo_rear,
+         x_servo_ht,      x_servo_ht,
+         x_servo_vt],
+        [y_cg["servo_front"],   y_cg["servo_front"],
+         y_cg["servo_aileron"], y_cg["servo_aileron"],
+         y_cg["servo_rear"],
+         y_cg["servo_ht"],      y_cg["servo_ht"],
+         y_cg["servo_vt"]],
+        color="teal", zorder=2, s=15, marker=".", label="Servo",
+    )
+
+    # --- CG markers ---
     ax.scatter([x_motor, x_overall], [motor_y, overall_y],
                color=["red", "black"], zorder=5)
     ax.text(x_motor,   motor_y   + 0.03, "Motor (front)", color="red",   ha="center", fontsize=8)
@@ -388,26 +426,6 @@ def plot_cg_side_view(
             color="cyan", marker="X", s=80, edgecolors="black",
             zorder=6, label="Wiring Harness Centers",
         )
-
-    # --- Servos ---
-    x_servo_front   = cg["motors"]
-    x_servo_aileron = cg["rod_aileron"]
-    x_servo_rear    = x_motor_back
-    x_servo_ht      = cg.get("ht_rud", cg["tail"])
-    x_servo_vt      = cg.get("vt_rud", cg["tail"])
-    ax.scatter(
-        [x_servo_front,   x_servo_front,
-         x_servo_aileron, x_servo_aileron,
-         x_servo_rear,
-         x_servo_ht,      x_servo_ht,
-         x_servo_vt],
-        [y_cg["servo_front"],   y_cg["servo_front"],
-         y_cg["servo_aileron"], y_cg["servo_aileron"],
-         y_cg["servo_rear"],
-         y_cg["servo_ht"],      y_cg["servo_ht"],
-         y_cg["servo_vt"]],
-        color="teal", zorder=5, s=60, marker="s", label="Servo",
-    )
 
     # ------------------------------------------------------------------ axes
     x_left  = min(fus_nose_x - 0.05, -0.05)

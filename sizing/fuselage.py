@@ -19,14 +19,16 @@ class FuselageInputs:
     casing_thickness: float = 0.001  # [m] minimum hard wall thickness (fore/aft end caps)
     # How far the tube extends aft of the aileron hinge to grip the tail boom.
     tube_tail_overlap: float = 0.03  # [m]
+    # Sleeve OD must exceed the largest attached rod OD by this factor.
+    tube_clearance_factor: float = 1.10  # [-]
     # EPP tearout prevention
     load_factor: float    = 1.5     # [-] battery tearout safety factor
     g: float              = 9.81    # [m/s²]
     min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
-    pvc_snap_force: float = 372.8/2   # [N] dynamic peak snap force reacted by PVC support
-    pvc_snap_safety_factor: float = 1.5  # [-] safety factor on PVC snap force
-    pvc_gust_safety_factor: float = 1.5  # [-] safety factor on upward gust lift
-    min_pvc_foam_floor: float = 0.005  # [m] minimum EPP floor below PVC support
+    tube_snap_force: float = 372.8/2   # [N] dynamic peak snap force reacted by tube support
+    tube_snap_safety_factor: float = 1.5  # [-] safety factor on tube snap force
+    tube_gust_safety_factor: float = 1.5  # [-] safety factor on upward gust lift
+    min_tube_foam_floor: float = 0.005  # [m] minimum EPP floor below tube support
     # Raymer nose / tail fineness fractions of total aero length
     nose_fraction: float = 0.20     # [-] nose cone length / total aero length
     tail_fraction: float = 0.30     # [-] tail taper length / total aero length
@@ -61,8 +63,9 @@ class FuselageResult:
     x_nose: float              = 0.0  # [m]  aero nose x from LEMAC
     battery_y_min: float       = 0.0  # [m]  lowest allowable battery bottom
     foam_floor_thickness: float = 0.0  # [m]  required foam below battery
-    pvc_floor_thickness: float = 0.0  # [m]  required foam below PVC/wing tube
-    pvc_roof_thickness: float = 0.0   # [m]  required foam above PVC/wing tube
+    structural_tube_outer_diameter: float = 0.0  # [m] sleeve OD around attached rods
+    pvc_floor_thickness: float = 0.0  # [m]  required foam below structural tube
+    pvc_roof_thickness: float = 0.0   # [m]  required foam above structural tube
     pvc_design_force: float = 0.0     # [N]  downward snap force used for floor sizing
     pvc_lift_force: float = 0.0       # [N]  one-drone-failure gust lift increment
     pvc_lift_design_force: float = 0.0  # [N]  factored upward gust force for roof sizing
@@ -86,6 +89,8 @@ def run(
     tube_length: float = 0.0,
     spar_rod_diameter: float = 0.0,
     aileron_rod_diameter: float = 0.0,
+    tail_rod_diameter: float = 0.0,
+    wing_section_height: float | None = None,
     pvc_lift_force: float = 0.0,
     x_front_spar: float = 0.0,        # [m] from LEMAC — max thickness x position
     n_active_drones: int = 2,          # [-] drones still flying in failure case
@@ -123,41 +128,24 @@ def run(
     battery_y_min = foam_floor_thickness
 
     box_width_prelim = b_width * i.casing_factor
+    largest_attached_rod_diameter = max(
+        tube_outer_diameter,
+        spar_rod_diameter,
+        aileron_rod_diameter,
+        tail_rod_diameter,
+    )
+    tube_outer_diameter = largest_attached_rod_diameter * i.tube_clearance_factor
     pvc_bearing_area = tube_length * box_width_prelim
-    pvc_snap_design_force = i.pvc_snap_force * i.pvc_snap_safety_factor
-    pvc_design_force = pvc_snap_design_force
-    pvc_stress = pvc_design_force / pvc_bearing_area if pvc_bearing_area > 0 else 0.0
-    pvc_floor_thickness = max(pvc_stress / epp.s_t, i.min_pvc_foam_floor)
-
-    if pvc_stress / epp.s_t > i.min_pvc_foam_floor:
-        print(f"  PVC floor: snap tearout governs  "
-              f"(required {pvc_floor_thickness*1e3:.1f} mm for "
-              f"{pvc_design_force:.1f} N downward snap load)")
-    else:
-        print(f"  PVC floor: min thickness governs  "
-              f"(required {pvc_floor_thickness*1e3:.1f} mm, "
-              f"snap tearout would need {pvc_stress/epp.s_t*1e3:.1f} mm)")
-
+    pvc_design_force = 0.0
+    pvc_floor_thickness = 0.0
     exposed_rod_width = max(box_width_prelim - tube_outer_diameter, 0.0)
     pvc_lift_bearing_area = (
         tube_length * tube_outer_diameter
         + spar_rod_diameter * exposed_rod_width
         + aileron_rod_diameter * exposed_rod_width
     )
-    pvc_lift_design_force = pvc_lift_force * i.pvc_gust_safety_factor
-    pvc_lift_stress = (
-        pvc_lift_design_force / pvc_bearing_area if pvc_bearing_area > 0 else 0.0
-    )
-    pvc_roof_thickness = max(pvc_lift_stress / epp.s_t, i.min_pvc_foam_floor)
-
-    if pvc_lift_stress / epp.s_t > i.min_pvc_foam_floor:
-        print(f"  PVC roof: gust tearout governs   "
-              f"(required {pvc_roof_thickness*1e3:.1f} mm for "
-              f"{pvc_lift_design_force:.1f} N upward gust design load)")
-    else:
-        print(f"  PVC roof: min thickness governs  "
-              f"(required {pvc_roof_thickness*1e3:.1f} mm, "
-              f"gust tearout would need {pvc_lift_stress/epp.s_t*1e3:.1f} mm)")
+    pvc_lift_design_force = 0.0
+    pvc_roof_thickness = 0.0
 
     # ------------------------------------------------------------------ 3. Structural Box
     # Front wall: forward face of battery minus the end-cap thickness.
@@ -168,21 +156,23 @@ def run(
 
     x_nose_box = x_battery_front - i.casing_thickness
 
-    # Back wall: rear face of PVC tube minus the end-cap thickness.
+    # Back wall: rear face of structural tube minus the end-cap thickness.
     _tube_back  = tube_back_x if tube_back_x is not None else sizing.c_root
     x_aft_box   = _tube_back + i.casing_thickness
 
     box_length = x_aft_box - x_nose_box
     box_width  = box_width_prelim
-    tube_height = tube_outer_diameter * i.casing_factor
-    battery_floor_for_height = (
-        pvc_floor_thickness + 0.005
-        if battery_x is not None and battery_x >= 0.0
-        else foam_floor_thickness
+    tube_height = tube_outer_diameter
+    battery_floor_for_height = foam_floor_thickness
+    available_airfoil_height = (
+        float(wing_section_height)
+        if wing_section_height is not None and wing_section_height > 0.0
+        else 0.0
     )
     box_height = max(
         battery_floor_for_height + b_height,
-        pvc_floor_thickness + tube_height + pvc_roof_thickness,
+        tube_height,
+        available_airfoil_height,
     )
 
     # ------------------------------------------------------------------ 3b. Bending check
@@ -256,7 +246,11 @@ def run(
 
     length = l_total                   # total aerodynamic length
     width  = box_width                 # max cross-section width
-    height = box_height                # max cross-section height
+    height = (
+        float(wing_section_height)
+        if wing_section_height is not None and wing_section_height > 0.0
+        else box_height
+    )
 
     # Aero nose starts forward of the structural box nose by exactly l_nose.
     x_nose = x_nose_box - l_nose
@@ -296,6 +290,7 @@ def run(
         x_nose=x_nose,
         battery_y_min=battery_y_min,
         foam_floor_thickness=foam_floor_thickness,
+        structural_tube_outer_diameter=tube_outer_diameter,
         pvc_floor_thickness=pvc_floor_thickness,
         pvc_roof_thickness=pvc_roof_thickness,
         pvc_design_force=pvc_design_force,
@@ -323,13 +318,11 @@ def summary(r: FuselageResult) -> None:
     print(f"  Wetted Area (Raymer)   : {r.Swet:.4f}  m²")
     print(f"  Cylinder internal vol  : {r.volume_shell:.6f}  m³")
     print(f"  Foam floor thickness   : {r.foam_floor_thickness*1e3:.1f}  mm")
-    print(f"  PVC floor thickness    : {r.pvc_floor_thickness*1e3:.1f}  mm")
-    print(f"  PVC roof thickness     : {r.pvc_roof_thickness*1e3:.1f}  mm")
-    print(f"  PVC snap floor load    : {r.pvc_design_force:.1f}  N")
-    print(f"  PVC gust roof load     : {r.pvc_lift_force:.1f}  N")
-    print(f"  PVC gust roof design   : {r.pvc_lift_design_force:.1f}  N")
-    print(f"  PVC floor bearing area : {r.pvc_bearing_area:.6f}  m²")
-    print(f"  PVC roof bearing area  : {r.pvc_lift_bearing_area:.6f}  m²")
+    print(f"  Structural tube OD     : {r.structural_tube_outer_diameter*1e3:.1f}  mm")
+    print(f"  Tube tearout sizing    : disabled")
+    print(f"  Tube gust roof load    : {r.pvc_lift_force:.1f}  N")
+    print(f"  Tube bearing area      : {r.pvc_bearing_area:.6f}  m²")
+    print(f"  Tube/rod contact area  : {r.pvc_lift_bearing_area:.6f}  m²")
     print(f"  Gust load factor       : {r.n_gust:.3f}")
     print(f"  Bending moment         : {r.bending_moment:.3f}  N·m")
     print(f"  Bending stress         : {r.bending_stress/1e3:.2f}  kPa  (Y = 262 kPa)")

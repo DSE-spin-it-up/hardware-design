@@ -218,6 +218,28 @@ def _d_for_stress(M: float, sigma_lim: float, t: float) -> float:
     return np.sqrt(4 * M / (np.pi * sigma_lim * t))
 
 
+def _t_for_defl_half_cantilever_udl(
+    F_total: float, L_span: float, E: float, d: float, defl_max: float
+) -> float:
+    F, L = F_total / 2, L_span / 2
+    return F * L ** 3 / (np.pi * E * d ** 3 * defl_max)
+
+
+def _t_for_defl_cantilever_point(
+    F: float, L: float, E: float, d: float, defl_max: float
+) -> float:
+    return 8 * F * L ** 3 / (3 * np.pi * E * d ** 3 * defl_max)
+
+
+def _t_for_stress(M: float, sigma_lim: float, d: float) -> float:
+    return 4 * M / (np.pi * sigma_lim * d ** 2)
+
+
+def _t_for_von_mises(M: float, T: float, sigma_allow: float, d: float) -> float:
+    numerator = np.sqrt(16 * M ** 2 + 12 * T ** 2)
+    return numerator / (np.pi * d ** 2 * sigma_allow)
+
+
 def _defl_half_cantilever_udl(
     F_total: float, L_span: float, E: float, I: float
 ) -> float:
@@ -323,6 +345,39 @@ def _check_wall(t: float, d: float, label: str) -> float:
         return 2 * t
     else:
         return d
+
+
+def _enforce_airfoil_fit(
+    d: float,
+    t: float,
+    section_h: float,
+    d_to_section_ratio: float,
+    label: str,
+    required_wall_at_d,
+) -> tuple[float, float, bool]:
+    d_max_geo = d_to_section_ratio * section_h
+    if d_max_geo <= 0.0:
+        raise ValueError(f"{label}: invalid local section height {section_h:.6f} m.")
+    if d <= d_max_geo:
+        return d, t, True
+
+    t_required = max(t, float(required_wall_at_d(d_max_geo)))
+    if t_required > d_max_geo / 2.0:
+        raise ValueError(
+            f"{label}: hard geometric fit constraint cannot be satisfied.\n"
+            f"  max allowed OD = {d_max_geo * 1000:.2f} mm "
+            f"({d_to_section_ratio * 100:.0f}% of section height "
+            f"{section_h * 1000:.2f} mm)\n"
+            f"  required wall thickness at this OD = {t_required * 1000:.2f} mm, "
+            f"but radius = {d_max_geo * 500:.2f} mm."
+        )
+
+    print(
+        f"{label}: OD capped by geometric fit from {d * 1000:.2f} mm "
+        f"to {d_max_geo * 1000:.2f} mm; wall thickness increased "
+        f"from {t * 1000:.2f} mm to {t_required * 1000:.2f} mm."
+    )
+    return d_max_geo, t_required, True
 
 
 def _check_geometric_fit(
@@ -461,10 +516,9 @@ def run(
     airfoil      = AirfoilGeometry(airfoil_path)
     tail_airfoil = AirfoilGeometry(tail_airfoil_path)
 
-    # Total wing lift and span (shared by both wing rods). The structural
-    # case uses the larger of climb/cruise, with the configured gust speed
-    # added on top.
-    V_structural = max(propulsion.V_climb, si.V_cruise) + si.gust_speed
+    # Total wing lift and span (shared by both wing rods). Structural sizing
+    # uses the explicit max speed from config.yaml.
+    V_structural = si.v_max
     q_structural = 0.5 * s.rho * V_structural ** 2
     L_lift = s.CL_one_drone_failure * q_structural * s.Sw
     b_w = si.b
@@ -485,14 +539,17 @@ def run(
     else:
         d_spar, fail_spar = d_spar_comp, "compressive"
     d_spar    = _check_wall(t_spar, d_spar, "Spar rod")
+    d_spar, t_spar, fits_spar = _enforce_airfoil_fit(
+        d_spar, t_spar, section_h_spar, i.d_to_section_ratio,
+        f"Wing spar rod (x/c = {xc_spar:.3f})",
+        lambda d_cap: max(
+            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, i.defl_max),
+            _t_for_stress(M_spar, sigma_lim, d_cap),
+        ),
+    )
     defl_spar = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_spar, d_spar))
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
     f_n_wing  = _wing_natural_frequency(E, _I_tube(t_spar, d_spar), b_w / 2, mass_spar)
-
-    fits_spar = _check_geometric_fit(
-        d_spar, section_h_spar, i.d_to_section_ratio,
-        f"Wing spar rod (x/c = {xc_spar:.3f})"
-    )
 
     # ------------------------------------------------------------------ #
     # Aileron rod — at hinge x/c = 1 - c_aileron/c_wing                  #
@@ -509,13 +566,16 @@ def run(
     else:
         d_aileron, fail_aileron = d_ail_comp, "compressive"
     d_aileron    = _check_wall(t_control, d_aileron, "Aileron rod")
+    d_aileron, t_control, fits_aileron = _enforce_airfoil_fit(
+        d_aileron, t_control, section_h_aileron, i.d_to_section_ratio,
+        f"Wing aileron rod (x/c = {x_hinge:.3f})",
+        lambda d_cap: max(
+            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, i.defl_max),
+            _t_for_stress(M_spar, sigma_lim, d_cap),
+        ),
+    )
     defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_control, d_aileron))
     mass_aileron = _tube_mass(b_w, d_aileron, t_control, rho_mat)
-
-    fits_aileron = _check_geometric_fit(
-        d_aileron, section_h_aileron, i.d_to_section_ratio,
-        f"Wing aileron rod (x/c = {x_hinge:.3f})"
-    )
 
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
@@ -569,13 +629,16 @@ def run(
     else:
         d_spar_ht, fail_spar_ht = d_spar_comp_ht, "compressive"
     d_spar_ht    = _check_wall(t_spar_ht, d_spar_ht, "Spar rod horizontal tail")
+    d_spar_ht, t_spar_ht, fits_spar_ht = _enforce_airfoil_fit(
+        d_spar_ht, t_spar_ht, section_h_spar_ht, i.d_to_section_ratio,
+        f"HT spar rod (x/c = {xc_spar_ht:.3f})",
+        lambda d_cap: max(
+            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, i.defl_max),
+            _t_for_stress(M_spar_ht, sigma_lim, d_cap),
+        ),
+    )
     defl_spar_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_spar_ht, d_spar_ht))
     mass_spar_ht = _tube_mass(L_ht, d_spar_ht, t_spar_ht, rho_mat)
-
-    fits_spar_ht = _check_geometric_fit(
-        d_spar_ht, section_h_spar_ht, i.d_to_section_ratio,
-        f"HT spar rod (x/c = {xc_spar_ht:.3f})"
-    )
 
     # ------------------------------------------------------------------ #
     # Horizontal tail — elevator rod                                      #
@@ -595,13 +658,16 @@ def run(
     else:
         d_control_ht, fail_control_ht = d_control_comp_ht, "compressive"
     d_control_ht    = _check_wall(t_control_ht, d_control_ht, "Elevator rod horizontal tail")
+    d_control_ht, t_control_ht, fits_control_ht = _enforce_airfoil_fit(
+        d_control_ht, t_control_ht, section_h_control_ht, i.d_to_section_ratio,
+        f"HT elevator rod (x/c = {x_hinge_ht:.3f})",
+        lambda d_cap: max(
+            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, i.defl_max),
+            _t_for_stress(M_control_ht, sigma_lim, d_cap),
+        ),
+    )
     defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
     mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
-
-    fits_control_ht = _check_geometric_fit(
-        d_control_ht, section_h_control_ht, i.d_to_section_ratio,
-        f"HT elevator rod (x/c = {x_hinge_ht:.3f})"
-    )
 
     # ------------------------------------------------------------------ #
     # Vertical tail — spar rod and rudder rod                             #
@@ -637,6 +703,14 @@ def run(
         else:
             d_spar_vt, fail_spar_vt = d_spar_comp_vt, "compressive"
         d_spar_vt    = _check_wall(t_spar_vt, d_spar_vt, "Spar rod vertical tail")
+        d_spar_vt, t_spar_vt, fits_spar_vt = _enforce_airfoil_fit(
+            d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
+            f"VT spar rod (x/c = {xc_spar_vt:.3f})",
+            lambda d_cap: max(
+                _t_for_defl_half_cantilever_udl(F_thrust_vt + F_fin, L_vt, E, d_cap, i.defl_max),
+                _t_for_stress(M_spar_vt, sigma_lim, d_cap),
+            ),
+        )
         defl_spar_vt = _defl_half_cantilever_udl(
             F_thrust_vt + F_fin, L_vt, E, _I_tube(t_spar_vt, d_spar_vt)
         )
@@ -663,6 +737,14 @@ def run(
         else:
             d_control_vt, fail_control_vt = d_control_vm_vt, "von Mises (bending + torsion)"
         d_control_vt    = _check_wall(t_control_vt, d_control_vt, "Rudder rod vertical tail")
+        d_control_vt, t_control_vt, fits_control_vt = _enforce_airfoil_fit(
+            d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
+            f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
+            lambda d_cap: max(
+                _t_for_defl_half_cantilever_udl(F_thrust_vt_r + F_rudder, L_vt, E, d_cap, i.defl_max),
+                _t_for_von_mises(M_control_vt, T_rudder, sigma_lim, d_cap),
+            ),
+        )
         defl_control_vt = _defl_half_cantilever_udl(
             F_thrust_vt_r + F_rudder, L_vt, E, _I_tube(t_control_vt, d_control_vt)
         )
@@ -683,6 +765,14 @@ def run(
         else:
             d_spar_vt, fail_spar_vt = d_spar_comp_vt, "compressive"
         d_spar_vt    = _check_wall(t_spar_vt, d_spar_vt, "Spar rod vertical tail")
+        d_spar_vt, t_spar_vt, fits_spar_vt = _enforce_airfoil_fit(
+            d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
+            f"VT spar rod (x/c = {xc_spar_vt:.3f})",
+            lambda d_cap: max(
+                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_stress(M_spar_vt, sigma_lim, d_cap),
+            ),
+        )
         defl_spar_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
@@ -697,6 +787,14 @@ def run(
         else:
             d_control_vt, fail_control_vt = d_control_comp_vt, "compressive"
         d_control_vt    = _check_wall(t_control_vt, d_control_vt, "Rudder rod vertical tail")
+        d_control_vt, t_control_vt, fits_control_vt = _enforce_airfoil_fit(
+            d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
+            f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
+            lambda d_cap: max(
+                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_stress(M_control_vt, sigma_lim, d_cap),
+            ),
+        )
         defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
         mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
 

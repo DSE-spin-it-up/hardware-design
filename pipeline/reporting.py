@@ -90,7 +90,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("Horizontal tail",      masses['hor_tail']))
     print(_fmt_mass("Vertical tail",        masses['ver_tail']))
     print(_fmt_mass("Fuselage (shell)",     masses['fuselage']))
-    print(_fmt_mass("PVC tubes",            masses.get('pvc_tubes', 0.0)))
+    print(_fmt_mass("Structural tube",      masses.get('pvc_tubes', 0.0)))
 
     print("  --- Rods ---")
     print(_fmt_mass("Wing spar rod",        masses['rod_spar']))
@@ -127,7 +127,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("Wing",                  cg.get('wing', float('nan'))))
     print(_fmt_cg("Horizontal tail",       cg.get('tail', float('nan'))))
     print(_fmt_cg("Fuselage",              cg['fuselage']))
-    print(_fmt_cg("PVC tubes",             cg['pvc_tubes']))
+    print(_fmt_cg("Structural tube",       cg['pvc_tubes']))
 
     print("  --- Rods ---")
     print(_fmt_cg("Wing spar rod",         cg['rod_spar']))
@@ -174,8 +174,8 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("Horizontal tail",       z_cg.get('hor_tail', float('nan'))))
     print(_fmt_cg("Vertical tail",         z_cg.get('ver_tail', float('nan'))))
     print(_fmt_cg("Fuselage",              z_cg.get('fuselage', float('nan'))))
-    print(_fmt_cg("PVC tubes",             z_cg.get('pvc_tubes', float('nan'))))
-    print(_fmt_cg("PVC tube bottom",       z_cg.get('pvc_tube_bottom', float('nan'))))
+    print(_fmt_cg("Structural tube",       z_cg.get('pvc_tubes', float('nan'))))
+    print(_fmt_cg("Tube bottom",           z_cg.get('pvc_tube_bottom', float('nan'))))
     print(_fmt_cg("Battery bottom",        z_cg.get('battery_bottom', float('nan'))))
 
     print("  --- Rods ---")

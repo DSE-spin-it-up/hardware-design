@@ -43,12 +43,13 @@ sizing:
   Cd_payload: 1.05
   h_cruise: 100
   V_cruise: 20
+  v_max: 30.0
   gust_speed: 5.0
   R: 20000
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 2
+  L_boom: 1.5
   ARt: 4.5
   lam_t: 1.0
   SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15
@@ -91,8 +92,8 @@ fuselage:
   casing_factor: 1.15        # all-around EPP foam wall margin (~7.5% per side)
   casing_thickness: 0.001    # [m] minimum hard wall thickness
   tube_tail_overlap: 0.03    # [m] tube extension aft of aileron hinge for boom grip
+  tube_clearance_factor: 1.10 # [-] structural tube OD / largest attached rod OD
   min_foam_floor: 0.005      # [m] minimum EPP floor below battery
-  pvc_gust_safety_factor: 1.5 # [-] safety factor on upward gust roof load
 
 # ----- Aileron / control surface -----
 control_surface:
@@ -112,6 +113,7 @@ elevator:
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 25.0
   payload_cable_min_angle_deg: 0.0
+  tail_clmax_fraction: 0.90  # [-] allowed fraction of finite-tail CL_max
   payload_cable_max_angle_deg: null  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----
@@ -128,7 +130,7 @@ rudder:
 structure:
   safety_factor: 1.2
   defl_max: 0.05
-  d_to_section_ratio: 0.8
+  d_to_section_ratio: 0.8  # [-] hard max rod OD / local airfoil height
   tail_tc: 0.10
 
 # ----- Material selection -----

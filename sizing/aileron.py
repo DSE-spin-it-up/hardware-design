@@ -8,7 +8,7 @@ still reported (it uses the roll-damping derivative Cl_p) but no longer gates
 the sizing.
 
 A second sizing criterion mirrors the elevator payload check: a horizontal
-payload tension (magnitude m_payload × g) acting at the PVC tube bottom
+payload tension (magnitude m_payload × g) acting at the structural tube bottom
 produces a roll moment whose arm is the vertical distance from that attach
 point to the overall CG.  Whichever criterion — disturbance or payload —
 demands the larger inboard span drives the result.
@@ -50,6 +50,7 @@ class AileronResult:
     roll_moment_payload: float   # roll moment from payload lateral tension [-]
     payload_lateral_force: float # lateral payload force used for payload criterion [N]
     payload_moment_arm: float    # vertical arm from payload attach point to CG [m]
+    q_sizing: float              # dynamic pressure used for payload sizing [Pa]
     driving_constraint: str      # "disturbance" or "payload"
     cl_da_integral: float        # int c(y)*y dy over one aileron, physical units [m^3]
     cl_p_integral: float         # int c(y)*y^2 dy over one semi-span, physical units [m^4]
@@ -123,6 +124,7 @@ def run(
     inputs: AileronInputs | None = None,
     polar: AirfoilPolar | None = None,
     y_cg: dict[str, float] | None = None,
+    q_sizing: float | None = None,
 ) -> AileronResult:
     """Size the ailerons.
 
@@ -142,6 +144,7 @@ def run(
         inputs = AileronInputs()
     i = inputs
     s = sizing
+    q_size = s.q_cruise if q_sizing is None else q_sizing
 
     c_at_y_frac = chord_at_y_frac(s.c_root, s.inputs.lam)
     tau = tau_from_ratio(i.c_aileron_to_c_wing)
@@ -159,7 +162,7 @@ def run(
     # ------------------------------------------------------------------
     # Payload roll-moment criterion
     #
-    # A horizontal payload tension (m_payload × g) acts at the PVC tube
+    # A horizontal payload tension (m_payload × g) acts at the structural tube
     # bottom attach point.  The moment arm is the vertical distance from
     # that point to the overall CG — identical to the elevator payload
     # arm — because the force is horizontal and the arm is vertical.
@@ -181,7 +184,7 @@ def run(
         )
         roll_moment_payload = (
             payload_lateral_force * payload_moment_arm
-        ) / (s.q_cruise * s.Sw * s.inputs.b)
+        ) / (q_size * s.Sw * s.inputs.b)
     else:
         roll_moment_payload = 0.0
 
@@ -227,6 +230,7 @@ def run(
         roll_moment_payload=roll_moment_payload,
         payload_lateral_force=payload_lateral_force,
         payload_moment_arm=payload_moment_arm,
+        q_sizing=q_size,
         driving_constraint=driving_constraint,
         cl_da_integral=cl_da_int,
         cl_p_integral=cl_p_int,
@@ -269,6 +273,7 @@ def summary(r: AileronResult) -> None:
     print(f"  Payload lateral angle       : {r.inputs.payload_lateral_angle_deg:.2f}  deg")
     print(f"  Payload lateral force       : {r.payload_lateral_force:.3f}  N")
     print(f"  Payload moment arm          : {r.payload_moment_arm:.4f}  m")
+    print(f"  Sizing dynamic pressure     : {r.q_sizing:.2f}  Pa")
     print(f"  Aileron inboard y/(b/2)     : {r.start_y_frac:.3f}")
     print(f"  Aileron outboard y/(b/2)    : {r.inputs.max_y_frac:.3f}")
     print(f"  Aileron span (per side)     : {r.aileron_span:.3f}  m")
@@ -283,6 +288,7 @@ def summary(r: AileronResult) -> None:
     print(f"    payload lateral angle     : {r.inputs.payload_lateral_angle_deg:.2f}  deg")
     print(f"    payload lateral force     : {r.payload_lateral_force:.3f}  N")
     print(f"    payload moment arm        : {r.payload_moment_arm:.4f}  m")
+    print(f"    q_sizing                  : {r.q_sizing:.2f}  Pa")
     print("  Formulas:")
     print("    Cl_delta_a = 2*cl_alpha*tau_a/(S_ref*b_ref) * int_aileron(c*y dy)")
     print("    Cl_p       = -4*(cl_alpha+cd0_section)/(S_ref*b_ref^2) * int_semispan(c*y^2 dy)")

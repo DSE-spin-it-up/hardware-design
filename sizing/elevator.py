@@ -28,7 +28,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from aerodynamics.airfoil_polar import AirfoilPolar
-from aerodynamics.llt import LLTResult
+from aerodynamics.llt import FlightCondition, LLTResult, WingGeometry, solve_llt
 from pipeline.helpers import ScissorData, compute_cm_thrust
 from propulsion.sizing import PropulsionResult
 from sizing.wing import SizingResult
@@ -49,6 +49,7 @@ class ElevatorInputs:
     max_deflection_down_deg: float = 20.0   # elevator-down deflection limit [deg]
     payload_cable_min_angle_deg: float = 0.0       # min cable sweep angle from vertical [deg]
     payload_cable_max_angle_deg: float | None = None  # max angle; None -> 2 * equilibrium angle
+    tail_clmax_fraction:     float = 0.90   # allowed fraction of finite-tail CL_max [-]
     enforce_tail_stall:      bool = True    # raise if max |CLh| exceeds tail Cl_max
 
 
@@ -64,6 +65,7 @@ class ElevatorGeometry:
 class PayloadCableResult:
     """Shared-payload cable equilibrium and pitch-moment envelope."""
     payload_mass_per_drone: float
+    q_sizing: float
     payload_weight_per_drone: float
     payload_drag_per_drone: float
     cable_angle_rad: float
@@ -97,7 +99,9 @@ class ElevatorResult:
     CLh_cruise:     float           # tail section CL at cruise [–]
     CLh_at_max_up:  float           # tail section CL at maximum elevator-up deflection [–]
     CLh_at_max_down: float          # tail section CL at maximum elevator-down deflection [–]
-    Cl_max:         float           # tail airfoil maximum section Cl [–]
+    tail_CL_max_3d:  float          # finite-tail maximum CL from LLT [-]
+    tail_CL_limit:   float          # allowed finite-tail CL limit after fraction [-]
+    Cl_max:         float           # compatibility alias for tail_CL_limit [-]
     Cm_wing_body:   float
     Cm_tail_base:   float
     Cm_tail_incidence: float
@@ -130,6 +134,7 @@ def compute_payload_cable(
     inputs: ElevatorInputs,
     *,
     Cm_trim: float = 0.0,
+    q_sizing: float | None = None,
 ) -> PayloadCableResult:
     """Compute the per-drone payload cable angle and pitch moment envelope.
 
@@ -140,14 +145,15 @@ def compute_payload_cable(
     """
     s = sizing
     n_drones = max(float(s.inputs.n_drones), 1.0)
+    q_size = s.q_cruise if q_sizing is None else q_sizing
     payload_mass = s.inputs.m_payload / n_drones
     payload_weight = payload_mass * 9.80665
-    payload_drag = s.q_cruise * s.inputs.Cd_payload * s.inputs.S_payload / n_drones
+    payload_drag = q_size * s.inputs.Cd_payload * s.inputs.S_payload / n_drones
     cable_angle = float(np.arctan2(payload_drag, payload_weight))
 
     attachment_y = y_cg["pvc_tubes"]
     vertical_drop = max(y_cg["overall"] - attachment_y, 0.0)
-    denom = s.q_cruise * s.Sw * s.c
+    denom = q_size * s.Sw * s.c
     if vertical_drop > 0.0 and payload_weight > 0.0 and denom > 0.0:
         tan_attachment = np.tan(cable_angle) - (
             Cm_trim * denom / (payload_weight * vertical_drop)
@@ -199,6 +205,7 @@ def compute_payload_cable(
 
     return PayloadCableResult(
         payload_mass_per_drone=payload_mass,
+        q_sizing=q_size,
         payload_weight_per_drone=payload_weight,
         payload_drag_per_drone=payload_drag,
         cable_angle_rad=cable_angle,
@@ -238,6 +245,73 @@ def _span_limit_for_tail_stall(
     return hi
 
 
+def _finite_tail_cl_limit_llt(sizing: SizingResult, tail_polar: AirfoilPolar) -> float:
+    """Finite-tail CL limit from LLT at the first local section Cl limit."""
+    geom = WingGeometry(
+        b=sizing.bh,
+        S=sizing.Sh,
+        taper=sizing.inputs.lam_t,
+    )
+    llt0 = solve_llt(
+        geom,
+        tail_polar,
+        FlightCondition(V_inf=sizing.inputs.V_cruise, rho=sizing.rho, alpha_root=0.0),
+    )
+    llt1 = solve_llt(
+        geom,
+        tail_polar,
+        FlightCondition(V_inf=sizing.inputs.V_cruise, rho=sizing.rho, alpha_root=1.0),
+    )
+
+    cl0 = llt0.Cl_local
+    cl_slope = llt1.Cl_local - cl0
+    cl_section_max = float(np.max(tail_polar.Cl))
+    cl_section_min = float(np.min(tail_polar.Cl))
+
+    candidates: list[float] = []
+    positive_alpha = np.divide(
+        cl_section_max - cl0,
+        cl_slope,
+        out=np.full_like(cl0, np.inf),
+        where=cl_slope > 1.0e-12,
+    )
+    positive_alpha = positive_alpha[positive_alpha > 0.0]
+    if positive_alpha.size:
+        llt_pos = solve_llt(
+            geom,
+            tail_polar,
+            FlightCondition(
+                V_inf=sizing.inputs.V_cruise,
+                rho=sizing.rho,
+                alpha_root=float(np.min(positive_alpha)),
+            ),
+        )
+        candidates.append(abs(llt_pos.CL))
+
+    negative_alpha = np.divide(
+        cl_section_min - cl0,
+        cl_slope,
+        out=np.full_like(cl0, -np.inf),
+        where=cl_slope > 1.0e-12,
+    )
+    negative_alpha = negative_alpha[negative_alpha < 0.0]
+    if negative_alpha.size:
+        llt_neg = solve_llt(
+            geom,
+            tail_polar,
+            FlightCondition(
+                V_inf=sizing.inputs.V_cruise,
+                rho=sizing.rho,
+                alpha_root=float(np.max(negative_alpha)),
+            ),
+        )
+        candidates.append(abs(llt_neg.CL))
+
+    if not candidates:
+        raise RuntimeError("Could not derive finite-tail CL limit from LLT.")
+    return min(candidates)
+
+
 # ---------------------------------------------------------------------------
 # Main sizing routine
 # ---------------------------------------------------------------------------
@@ -251,6 +325,8 @@ def run(
     tail_polar:   AirfoilPolar,
     y_cg:         dict[str, float],
     inputs:       ElevatorInputs | None = None,
+    *,
+    q_sizing:     float | None = None,
 ) -> ElevatorResult:
     """
     Size the elevator by:
@@ -360,7 +436,14 @@ def run(
     # ------------------------------------------------------------------
     # Payload disturbance (from config.yaml sizing.m_payload)
     # ------------------------------------------------------------------
-    payload_cable = compute_payload_cable(sizing, y_cg, i, Cm_trim=Cm_payload_trim)
+    q_size = s.q_cruise if q_sizing is None else q_sizing
+    payload_cable = compute_payload_cable(
+        sizing,
+        y_cg,
+        i,
+        Cm_trim=Cm_payload_trim,
+        q_sizing=q_size,
+    )
     Cm_payload = max(
         abs(payload_cable.Cm_pitch_up),
         abs(payload_cable.Cm_pitch_down),
@@ -404,7 +487,9 @@ def run(
         )
 
     CLh_cruise = CLalphah * alpha_h
-    Cl_max = tail_polar.Cl_max
+    tail_CL_max_3d = _finite_tail_cl_limit_llt(s, tail_polar)
+    tail_CL_limit = i.tail_clmax_fraction * tail_CL_max_3d
+    Cl_max = tail_CL_limit
     CLh_delta_per_span = CLalphah * tau_e
     bE_bh_stall_limit = min(
         1.0,
@@ -420,9 +505,11 @@ def run(
         if bE_bh_stall_limit < 0.0:
             raise ValueError(
                 "Tail sizing failed: the trimmed tail is already beyond the "
-                "tail airfoil |Cl_max| before elevator span is applied.\n"
+                "allowed finite-tail |CL| before elevator span is applied.\n"
                 f"  CLh_cruise = {CLh_cruise:.3f}\n"
-                f"  |Cl_max| = {Cl_max:.3f}"
+                f"  finite-tail CL_max = {tail_CL_max_3d:.3f}\n"
+                f"  allowed fraction = {i.tail_clmax_fraction:.3f}\n"
+                f"  allowed |CLh| = {tail_CL_limit:.3f}"
             )
         if bE_bh_required > bE_bh_stall_limit + 1.0e-9:
             raise ValueError(
@@ -430,7 +517,7 @@ def run(
                 "span that avoids tail stall at max deflection.\n"
                 f"  required bE/bh = {bE_bh_required:.3f}\n"
                 f"  stall-limited bE/bh = {bE_bh_stall_limit:.3f}\n"
-                f"  CLh_cruise = {CLh_cruise:.3f}, |Cl_max| = {Cl_max:.3f}"
+                f"  CLh_cruise = {CLh_cruise:.3f}, allowed |CLh| = {tail_CL_limit:.3f}"
             )
         bE_bh = bE_bh_stall_limit
     else:
@@ -438,21 +525,23 @@ def run(
 
     # ------------------------------------------------------------------
     # Tail stall check: ensure cruise incidence plus maximum elevator deflection
-    # does not demand a tail lift coefficient above the airfoil's Cl_max.
+    # does not demand a tail lift coefficient above the allowed finite-tail CL.
     # Elevator influence is scaled by the elevator span fraction bE/bh.
     # ------------------------------------------------------------------
     CLh_at_max_up = CLh_cruise + CLalphah * tau_e * delta_e_up * bE_bh
     CLh_at_max_down = CLh_cruise + CLalphah * tau_e * delta_e_down * bE_bh
     CLh_max_required = max(abs(CLh_at_max_up), abs(CLh_at_max_down))
 
-    if i.enforce_tail_stall and CLh_max_required > Cl_max + 1.0e-9:
+    if i.enforce_tail_stall and CLh_max_required > tail_CL_limit + 1.0e-9:
         raise ValueError(
             "Tail sizing failed: required tail lift coefficient at one of the "
-            "control extremes exceeds the tail airfoil |Cl_max|.\n"
+            "control extremes exceeds the allowed finite-tail |CL|.\n"
             f"  CLh({i.max_deflection_up_deg:.1f}° elevator up)   = {CLh_at_max_up:.3f}\n"
             f"  CLh({i.max_deflection_down_deg:.1f}° elevator down) = {CLh_at_max_down:.3f}\n"
-            f"  |Cl_max| = {Cl_max:.3f}\n"
-            "Reduce trim/elevator demand, choose a higher-Cl tail airfoil, "
+            f"  finite-tail CL_max = {tail_CL_max_3d:.3f}\n"
+            f"  allowed fraction = {i.tail_clmax_fraction:.3f}\n"
+            f"  allowed |CLh| = {tail_CL_limit:.3f}\n"
+            "Reduce trim/elevator demand, choose a higher-CL tail, "
             "or increase tail volume."
         )
 
@@ -483,6 +572,8 @@ def run(
         CLh_cruise      = CLh_cruise,
         CLh_at_max_up   = CLh_at_max_up,
         CLh_at_max_down = CLh_at_max_down,
+        tail_CL_max_3d  = tail_CL_max_3d,
+        tail_CL_limit   = tail_CL_limit,
         Cl_max          = Cl_max,
         Cm_wing_body    = Cm_wing_body,
         Cm_tail_base    = Cm_tail_base,
@@ -553,6 +644,7 @@ def summary(r: ElevatorResult) -> None:
     print("----- Payload Contribution -----")
     pc = r.payload_cable
     print(f"  Payload mass / drone     : {pc.payload_mass_per_drone:.3f} kg")
+    print(f"  Payload sizing q         : {pc.q_sizing:.2f} Pa")
     print(f"  Payload drag / drone     : {pc.payload_drag_per_drone:.3f} N")
     print(f"  Payload weight / drone   : {pc.payload_weight_per_drone:.3f} N")
     print(f"  Cable angle from vertical: {np.degrees(pc.cable_angle_rad):+.3f} deg")
@@ -600,7 +692,9 @@ def summary(r: ElevatorResult) -> None:
     print("\n----- Tail Extremes Check -----")
     print(f"  CLh (elevator up max)    : {r.CLh_at_max_up:+.5f}")
     print(f"  CLh (elevator down max)  : {r.CLh_at_max_down:+.5f}")
-    print(f"  Airfoil Cl_max           : {r.Cl_max:+.5f}")
+    print(f"  Finite-tail CL_max       : {r.tail_CL_max_3d:+.5f}")
+    print(f"  Allowed CL fraction      : {r.inputs.tail_clmax_fraction:.3f}")
+    print(f"  Allowed |CLh| limit      : {r.tail_CL_limit:+.5f}")
 
     print("\n----- Elevator Geometry -----")
     print(f"  cE/ch                    : {g.cE_ch:.4f}")
