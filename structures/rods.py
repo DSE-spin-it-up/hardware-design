@@ -131,6 +131,21 @@ class RodResult:
     tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
     sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
     torsion_checked: bool = False
+    # Geometric fit results — True when the structurally-required diameter
+    # fits within the local airfoil section (d ≤ d_to_section_ratio × h_local).
+    fits_spar: bool = True
+    fits_aileron: bool = True
+    fits_spar_ht: bool = True
+    fits_control_ht: bool = True
+    fits_spar_vt: bool = True
+    fits_control_vt: bool = True
+    # Local section heights at each rod placement [m]
+    section_h_spar: float = 0.0
+    section_h_aileron: float = 0.0
+    section_h_spar_ht: float = 0.0
+    section_h_control_ht: float = 0.0
+    section_h_spar_vt: float = 0.0
+    section_h_control_vt: float = 0.0
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -221,13 +236,7 @@ def _wing_natural_frequency(E: float, I: float, L: float, mass: float) -> float:
 
 
 def _finite_tail_cl_limit_llt(sizing: SizingResult, tail_polar: AirfoilPolar) -> float:
-    """Finite-tail CL limit from LLT at the first section Cl limit.
-
-    This mirrors the wing LLT path: the 3D coefficient comes from the LLT
-    spanload, while the limiting condition is a local 2D section Cl from the
-    polar. Both positive and negative tail loading are checked, and the larger
-    absolute finite-tail CL is returned for structural sizing.
-    """
+    """Finite-tail CL limit from LLT at the first section Cl limit."""
     geom = WingGeometry(
         b=sizing.bh,
         S=sizing.Sh,
@@ -310,21 +319,55 @@ def _check_wall(t: float, d: float, label: str) -> float:
         return d
 
 
-def _tau_bredt(T: float, d: float, t: float) -> float:
-    """Torsional shear stress via Bredt-Batho for a closed thin-walled tube.
+def _check_geometric_fit(
+    d: float,
+    section_h: float,
+    d_to_section_ratio: float,
+    label: str,
+) -> bool:
+    """Return True if the rod fits within the airfoil section; print a warning if not.
 
-    τ = T / (2 · A_m · t),  A_m = π·(d/2)²
-    Megson, "Aircraft Structures for Engineering Students", Ch. 17.
+    The rod outer diameter must satisfy d ≤ d_to_section_ratio × section_h.
+    The check is informational — it does NOT alter d, because there is no
+    structural remedy available at this stage (the section height is fixed by
+    aerodynamic design).  The caller records the result in RodResult so that
+    higher-level design loops can act on it.
+
+    Parameters
+    ----------
+    d                  : structurally-required rod outer diameter [m]
+    section_h          : local airfoil section height at the rod x/c [m]
+    d_to_section_ratio : allowable fraction of section height (e.g. 0.80)
+    label              : human-readable rod name for the warning message
+
+    Returns
+    -------
+    True  → rod fits (d ≤ ratio × section_h)
+    False → rod does NOT fit; a warning is printed
     """
+    d_max_geo = d_to_section_ratio * section_h
+    if d > d_max_geo:
+        print(
+            f"WARNING — {label}: rod OD {d * 1000:.2f} mm exceeds the geometric "
+            f"limit of {d_max_geo * 1000:.2f} mm "
+            f"({d_to_section_ratio * 100:.0f}% × section height "
+            f"{section_h * 1000:.2f} mm).  "
+            f"The airfoil section is too thin to house this rod; consider a "
+            f"thicker airfoil, a larger chord, or accepting the structural "
+            f"penalty of a reduced wall thickness."
+        )
+        return False
+    return True
+
+
+def _tau_bredt(T: float, d: float, t: float) -> float:
+    """Torsional shear stress via Bredt-Batho for a closed thin-walled tube."""
     A_m = np.pi * (d / 2) ** 2
     return T / (2 * A_m * t)
 
 
 def _sigma_bending(M: float, d: float, t: float) -> float:
-    """Peak bending stress at outer fibre of thin-walled tube.
-
-    σ = M·(d/2) / I,  I = π·t·d³/8
-    """
+    """Peak bending stress at outer fibre of thin-walled tube."""
     I = _I_tube(t, d)
     return M * (d / 2) / I
 
@@ -333,23 +376,7 @@ def _d_for_von_mises(
     M: float, T: float, sigma_allow: float, t: float
 ) -> float:
     """Minimum diameter so von Mises stress ≤ sigma_allow under combined
-    bending moment M and torque T for a thin-walled circular tube.
-
-    σ_vm = sqrt(σ_b² + 3·τ²) ≤ σ_allow
-
-    Substituting thin-wall expressions:
-        σ_b = M·(d/2) / I = 4·M / (π·t·d²)
-        τ   = T / (2·A_m·t) = 2·T / (π·t·d²)
-
-    So: σ_vm² = (4M)²/(π·t·d²)² + 3·(2T)²/(π·t·d²)²
-              = [16M² + 12T²] / (π·t·d²)²
-
-    Solving for d:
-        d² = sqrt(16M² + 12T²) / (π·t·σ_allow)
-        d  = [sqrt(16M² + 12T²) / (π·t·σ_allow)]^(1/2)
-
-    References: Megson Ch. 11; Bruhn Section C2.
-    """
+    bending moment M and torque T for a thin-walled circular tube."""
     numerator = np.sqrt(16 * M ** 2 + 12 * T ** 2)
     return (numerator / (np.pi * t * sigma_allow)) ** 0.5
 
@@ -365,26 +392,7 @@ def apply_torsion_check(
     boom_length: float,
     safety_factor: float = 1.2,
 ) -> RodResult:
-    """Check and if necessary upsize the tail rod for combined bending + torsion.
-
-    The rudder hinge moment is transferred into the boom as a torque T.
-    The existing bending moment M = F_tail · L_boom is retained.
-    The von Mises criterion governs if the required diameter exceeds the
-    bending-only diameter already computed in run().
-
-    Parameters
-    ----------
-    rod                  : RodResult from run() — tail rod already bending-sized
-    rudder_hinge_moment  : |H| from RudderResult.hinge_moment.H  [N·m]
-    bending_force        : F_tail used in the original tail-rod sizing [N]
-    boom_length          : L_boom [m]
-    safety_factor        : applied to both M and T
-
-    Returns
-    -------
-    Updated RodResult with tau_t, sigma_vm_t, torsion_checked=True, and
-    potentially increased d_t / mass_t / fail_mode_t.
-    """
+    """Check and if necessary upsize the tail rod for combined bending + torsion."""
     import dataclasses
 
     T   = abs(rudder_hinge_moment) * safety_factor
@@ -455,9 +463,8 @@ def run(
     # ------------------------------------------------------------------ #
     # Spar rod — at max-thickness x/c                                     #
     # ------------------------------------------------------------------ #
-    tc_spar, _ = airfoil.compute_maximum_thickness()   # (t/c, x/c)
+    tc_spar, xc_spar = airfoil.compute_maximum_thickness()   # (t/c, x/c)
     section_h_spar = s.c_root * tc_spar
-    d_spar_max = i.d_to_section_ratio * section_h_spar
     t_spar = i.t_spar
 
     M_spar = L_lift * b_w / 16   # half-cantilever UDL max bending moment
@@ -473,13 +480,17 @@ def run(
     mass_spar = _tube_mass(b_w, d_spar, t_spar, rho_mat)
     f_n_wing  = _wing_natural_frequency(E, _I_tube(t_spar, d_spar), b_w / 2, mass_spar)
 
+    fits_spar = _check_geometric_fit(
+        d_spar, section_h_spar, i.d_to_section_ratio,
+        f"Wing spar rod (x/c = {xc_spar:.3f})"
+    )
+
     # ------------------------------------------------------------------ #
     # Aileron rod — at hinge x/c = 1 - c_aileron/c_wing                  #
     # ------------------------------------------------------------------ #
     x_hinge = 1.0 - aileron.inputs.c_aileron_to_c_wing
     tc_aileron, _, _ = airfoil.compute_thickness(x_hinge)
     section_h_aileron = s.c_root * tc_aileron
-    d_aileron = i.d_to_section_ratio * section_h_aileron
     t_control = i.t_control
 
     d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_control, i.defl_max)
@@ -491,6 +502,11 @@ def run(
     d_aileron    = _check_wall(t_control, d_aileron, "Aileron rod")
     defl_aileron = _defl_half_cantilever_udl(L_lift, b_w, E, _I_tube(t_control, d_aileron))
     mass_aileron = _tube_mass(b_w, d_aileron, t_control, rho_mat)
+
+    fits_aileron = _check_geometric_fit(
+        d_aileron, section_h_aileron, i.d_to_section_ratio,
+        f"Wing aileron rod (x/c = {x_hinge:.3f})"
+    )
 
     # ------------------------------------------------------------------ #
     # Tail rod (aileron hinge → tail TE, cantilever point load)           #
@@ -514,10 +530,19 @@ def run(
     d_t    = _check_wall(t_t, d_t, "Tail rod")
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
     mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
+    # Tail (boom) rod is a circular tube in free air — no airfoil section
+    # constraint applies.  No geometric fit check here.
 
     # ------------------------------------------------------------------ #
     # Horizontal tail — spar rod                                          #
     # ------------------------------------------------------------------ #
+    tc_spar_ht, xc_spar_ht = tail_airfoil.compute_maximum_thickness()
+    # Use the root chord of the horizontal tail for the section height.
+    # bh is the full span; assuming a symmetric tail the root chord is Sh/bh
+    # for an untapered surface, or c_root_ht if available on SizingResult.
+    c_root_ht = getattr(s, "c_root_ht", s.Sh / s.bh)
+    section_h_spar_ht = c_root_ht * tc_spar_ht
+
     L_ht      = s.bh
     F_ht_rod  = F_tail / 2
     t_spar_ht = i.t_spar
@@ -534,9 +559,18 @@ def run(
     defl_spar_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_spar_ht, d_spar_ht))
     mass_spar_ht = _tube_mass(L_ht, d_spar_ht, t_spar_ht, rho_mat)
 
+    fits_spar_ht = _check_geometric_fit(
+        d_spar_ht, section_h_spar_ht, i.d_to_section_ratio,
+        f"HT spar rod (x/c = {xc_spar_ht:.3f})"
+    )
+
     # ------------------------------------------------------------------ #
     # Horizontal tail — elevator rod                                      #
     # ------------------------------------------------------------------ #
+    x_hinge_ht = 1.0 - i.c_ruddervator_to_c_tail
+    tc_control_ht, _, _ = tail_airfoil.compute_thickness(x_hinge_ht)
+    section_h_control_ht = c_root_ht * tc_control_ht
+
     t_control_ht = i.t_control_ht
 
     M_control_ht = F_ht_rod * L_ht / 16
@@ -551,11 +585,22 @@ def run(
     defl_control_ht = _defl_half_cantilever_udl(F_ht_rod, L_ht, E, _I_tube(t_control_ht, d_control_ht))
     mass_control_ht = _tube_mass(L_ht, d_control_ht, t_control_ht, rho_mat)
 
+    fits_control_ht = _check_geometric_fit(
+        d_control_ht, section_h_control_ht, i.d_to_section_ratio,
+        f"HT elevator rod (x/c = {x_hinge_ht:.3f})"
+    )
+
     # ------------------------------------------------------------------ #
     # Vertical tail — spar rod and rudder rod                             #
-    # Physics-based path requires rudder result and CLalphav_vt.         #
-    # Fallback uses thrust load only (no sideslip data available).        #
     # ------------------------------------------------------------------ #
+    tc_spar_vt, xc_spar_vt = tail_airfoil.compute_maximum_thickness()
+    x_hinge_vt = 1.0 - i.c_ruddervator_to_c_tail
+    tc_control_vt, _, _ = tail_airfoil.compute_thickness(x_hinge_vt)
+    # Root chord of the vertical tail: Sv / bv (single-surface)
+    c_root_vt = getattr(s, "c_root_vt", s.Sv / s.bv)
+    section_h_spar_vt    = c_root_vt * tc_spar_vt
+    section_h_control_vt = c_root_vt * tc_control_vt
+
     L_vt = s.bv
 
     if rudder is not None and CLalphav_vt != 0.0:
@@ -564,7 +609,7 @@ def run(
         F_fin       = 0.5 * q_vt * s.Sv * CLalphav_vt * rudder.beta_gust
         F_thrust_vt = 0.5 * propulsion.thrust_cruise_per_prop
 
-        # ---- spar rod (bending only — no torque at spar) ----
+        # ---- spar rod ----
         M_thrust_spar = F_thrust_vt * L_vt / 8
         M_fin_spar    = F_fin       * L_vt / 8
         M_spar_vt     = np.sqrt(M_thrust_spar ** 2 + M_fin_spar ** 2)
@@ -584,7 +629,7 @@ def run(
         )
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
-        # ---- rudder rod (bending + torsion via von Mises) ----
+        # ---- rudder rod ----
         bR_bV         = rudder.geometry.bR_bV
         F_rudder      = 0.5 * q_vt * s.Sv * CLalphav_vt * (
             rudder.beta_gust + rudder.tau_r * rudder.delta_R * bR_bV
@@ -641,6 +686,16 @@ def run(
         defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
         mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
 
+    # Geometric fit checks — vertical tail (same airfoil for HT and VT)
+    fits_spar_vt = _check_geometric_fit(
+        d_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
+        f"VT spar rod (x/c = {xc_spar_vt:.3f})"
+    )
+    fits_control_vt = _check_geometric_fit(
+        d_control_vt, section_h_control_vt, i.d_to_section_ratio,
+        f"VT rudder rod (x/c = {x_hinge_vt:.3f})"
+    )
+
     return RodResult(
         inputs=inputs,
         d_spar=d_spar, t_spar=t_spar, mass_spar=mass_spar,
@@ -660,7 +715,25 @@ def run(
         defl_spar_vt=defl_spar_vt, fail_mode_spar_vt=fail_spar_vt,
         d_control_vt=d_control_vt, t_control_vt=t_control_vt, mass_control_vt=mass_control_vt,
         defl_control_vt=defl_control_vt, fail_mode_control_vt=fail_control_vt,
+        # geometric fit flags
+        fits_spar=fits_spar,
+        fits_aileron=fits_aileron,
+        fits_spar_ht=fits_spar_ht,
+        fits_control_ht=fits_control_ht,
+        fits_spar_vt=fits_spar_vt,
+        fits_control_vt=fits_control_vt,
+        # section heights
+        section_h_spar=section_h_spar,
+        section_h_aileron=section_h_aileron,
+        section_h_spar_ht=section_h_spar_ht,
+        section_h_control_ht=section_h_control_ht,
+        section_h_spar_vt=section_h_spar_vt,
+        section_h_control_vt=section_h_control_vt,
     )
+
+
+def _fit_marker(fits: bool) -> str:
+    return "OK" if fits else "*** DOES NOT FIT ***"
 
 
 def summary(r: RodResult) -> None:
@@ -671,6 +744,7 @@ def summary(r: RodResult) -> None:
     print(f"  Sizing criterion       : {r.fail_mode_spar}")
     print(f"  Mass (each)            : {r.mass_spar:.3f}  kg")
     print(f"  First bending frequency: {r.f_n_wing:.2f}  Hz")
+    print(f"  Section height at x/c  : {r.section_h_spar * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar)}")
 
     print("\n--- Aileron rod (two of two) ---")
     print(f"  Outer diameter         : {r.d_aileron * 1000:.2f}  mm")
@@ -678,6 +752,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_aileron * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_aileron}")
     print(f"  Mass (each)            : {r.mass_aileron:.3f}  kg")
+    print(f"  Section height at x/c  : {r.section_h_aileron * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_aileron)}")
 
     print("\n--- Tail rod (aileron hinge → tail TE) ---")
     print(f"  Structural CL_h       : {r.CL_h_structural:.3f}")
@@ -697,6 +772,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_spar_ht * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_spar_ht}")
     print(f"  Mass (each)            : {r.mass_spar_ht:.3f}  kg")
+    print(f"  Section height at x/c  : {r.section_h_spar_ht * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_ht)}")
 
     print("\n--- Elevator rod (two of two) ---")
     print(f"  Outer diameter         : {r.d_control_ht * 1000:.2f}  mm")
@@ -704,6 +780,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_control_ht * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_control_ht}")
     print(f"  Mass (each)            : {r.mass_control_ht:.3f}  kg")
+    print(f"  Section height at x/c  : {r.section_h_control_ht * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_control_ht)}")
 
     print("\n--- Spar rod vertical tail (one of two) ---")
     print(f"  Outer diameter         : {r.d_spar_vt * 1000:.2f}  mm")
@@ -711,6 +788,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_spar_vt * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_spar_vt}")
     print(f"  Mass (each)            : {r.mass_spar_vt:.3f}  kg")
+    print(f"  Section height at x/c  : {r.section_h_spar_vt * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_vt)}")
 
     print("\n--- Rudder rod (two of two) ---")
     print(f"  Outer diameter         : {r.d_control_vt * 1000:.2f}  mm")
@@ -718,6 +796,19 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_control_vt * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_control_vt}")
     print(f"  Mass (each)            : {r.mass_control_vt:.3f}  kg")
+    print(f"  Section height at x/c  : {r.section_h_control_vt * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_control_vt)}")
+
+    # Summary line — flag overall pass/fail
+    all_fit = all([
+        r.fits_spar, r.fits_aileron,
+        r.fits_spar_ht, r.fits_control_ht,
+        r.fits_spar_vt, r.fits_control_vt,
+    ])
+    print()
+    if all_fit:
+        print("  ✓ All rods fit within their respective airfoil sections.")
+    else:
+        print("  ✗ One or more rods exceed their airfoil section envelope — see warnings above.")
 
 
 if __name__ == "__main__":

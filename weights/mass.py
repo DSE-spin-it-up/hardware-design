@@ -26,14 +26,11 @@ _PVC_SF = 1.2       # safety factor for PVC tube mass estimate
 
 @dataclass
 class WiringInputs:
-    # Linear densities in kg/m
-    rho_power_main: float = 0.0212  # 14 AWG for main wing motor lines
-    rho_power_tail: float = 0.0145  # 16 AWG for the longer tail run
-    rho_signal: float = 0.0012      # 28 AWG for telemetry/sensor signal lines
-
-    # Assembly factors
-    bundle_overhead: float = 1.4    # 40% margin for shrink sleeves, solder, connectors
-    signal_length_est: float = 2.0  # [m] baseline total length of all signal/sensor wiring
+    rho_power_main: float = 0.0212
+    rho_power_tail: float = 0.0145
+    rho_signal: float = 0.0012
+    bundle_overhead: float = 1.4
+    signal_length_est: float = 2.0
 
 
 def _compute_wiring_masses(
@@ -43,20 +40,12 @@ def _compute_wiring_masses(
     x_front_motor: float,
     x_rear_motor: float,
 ) -> dict[str, float]:
-    """Helper to calculate physical wire mass based on geometric routing distances."""
-
-    # 1. Main Wing Propulsion Runs (2 Motors, Heavy Gauge)
-    # Distance from battery to wing center, then spanwise out to motors
     len_wing_wire = (sizing.inputs.b / 4.0) + abs(x_front_motor - x_batt)
     m_wing_power = 2 * len_wing_wire * inputs.rho_power_main * inputs.bundle_overhead
 
-    # 2. Tail Propulsion Motor Run (1 Motor, Medium Gauge)
-    # Travels straight down the tail boom
     len_tail_wire = abs(x_rear_motor - x_batt)
     m_tail_power = len_tail_wire * inputs.rho_power_tail * inputs.bundle_overhead
 
-    # 3. Basic Sensor & Avionics Wiring (Light Gauge)
-    # Grouped as a lumped mass at the payload location
     m_signal = inputs.signal_length_est * inputs.rho_signal * inputs.bundle_overhead
 
     return {
@@ -72,7 +61,6 @@ def _compute_wiring_masses(
 # ==============================================================================
 
 def _fuselage_x_centroid(fus: FuselageResult) -> float:
-    """Side-view x-centroid of the plotted nose-cylinder-tail fuselage body."""
     box_x0 = fus.x_nose + fus.l_nose
     box_x1 = box_x0 + fus.l_cylinder
 
@@ -110,7 +98,6 @@ def _tube_y_bounds(
 
 
 def _pvc_mass(structure: RodResult, tube_length: float) -> float:
-    """Estimate PVC tube mass from spar rod dimensions."""
     outer_d = structure.d_spar
     inner_d = structure.d_spar - structure.t_spar
     return tube_length * np.pi * (outer_d**2 - inner_d**2) * Aluminum_6061_T6().rho * _PVC_SF
@@ -126,7 +113,6 @@ def wing_mass(
     thickness: float = 0.1,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    """Estimate wing structural mass from airfoil area, span, and thickness."""
     airfoil_area = AirfoilGeometry(airfoil_path).compute_airfoil_area(chord=1.0)
     return materials.wing.mass(airfoil_area * sizing.inputs.b * thickness)
 
@@ -137,7 +123,6 @@ def hor_tail_mass(
     thickness: float = 0.08,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    """Estimate tail structural mass from airfoil area, span, and thickness."""
     airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
     return materials.tail.mass(airfoil_area * sizing.bh * thickness)
 
@@ -148,13 +133,11 @@ def ver_tail_mass(
     thickness: float = 0.08,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    """Estimate tail structural mass from airfoil area, span, and thickness."""
     airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
     return materials.tail.mass(airfoil_area * sizing.bv * thickness)
 
 
 def _max_tc_x(airfoil_path: str | Path) -> float:
-    """Chord-fraction x-location of max thickness for the given airfoil."""
     _, x_max_tc = AirfoilGeometry(airfoil_path).compute_maximum_thickness()
     return x_max_tc
 
@@ -185,26 +168,22 @@ def compute_cg(
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
 
-    # Fuselage centroid follows the same nose-cylinder-tail body drawn in the
-    # side-view plot.
     x_fus = _fuselage_x_centroid(fus)
 
     x_motor_front = 0.0
     x_wing        = 0.25 * sizing.c_root
-    x_sensor      = x_wing   # sensors co-located with wing aerodynamic centre
+    x_sensor      = x_wing
 
     x_rod_spar    = _max_tc_x(airfoil_path) * sizing.c_root
     x_rod_aileron = (1.0 - aileron.inputs.c_aileron_to_c_wing) * sizing.c_root
     x_mid_rods    = 0.5 * (x_rod_spar + x_rod_aileron)
     x_batt        = x_mid_rods if battery_x is None else battery_x
-    # Tail mass lumped at tail AC = x_ac_wing + lh = 0.25·c + lh (from LEMAC).
     x_tail        = 0.25 * sizing.c + sizing.lh
     tube_x0       = x_rod_spar    - fus.inputs.tube_tail_overlap
     tube_x1       = x_rod_aileron + fus.inputs.tube_tail_overlap
     tube_length   = tube_x1 - tube_x0
     x_pvc         = 0.5 * (tube_x0 + tube_x1)
 
-    # Tail positions: boom endpoint at aileron hinge + L_boom.
     prop_radius  = propulsion.D_prop / 2.0
     x_vt_te      = x_rod_aileron + sizing.L_boom
     x_vt_le      = x_vt_te - sizing.cv
@@ -234,7 +213,6 @@ def compute_cg(
     m_pvc        = (_pvc_mass(structure, tube_length)
                     if pvc_tubes_mass_override is None else pvc_tubes_mass_override)
 
-    # Servos: 2 front motors, 2 aileron spar, 1 rear motor, 2 elevator spar, 1 rudder spar
     x_servo_front   = x_motor_front
     x_servo_aileron = x_rod_aileron
     x_servo_rear    = x_motor_back
@@ -249,7 +227,6 @@ def compute_cg(
     ) / 8.0
     m_servos_total = 8 * SERVO_MASS
 
-    # Glass fibre sheet mass (covering wing + tail on both sides)
     thickness_m         = float(sizing.inputs.glass_sheet_thickness_mm) * 1e-3
     wing_sheet_area     = 2.0 * sizing.Sw
     hor_tail_sheet_area = 2.0 * sizing.Sh
@@ -259,7 +236,6 @@ def compute_cg(
     m_sheet_tail_v      = materials.sheet.mass(ver_tail_sheet_area * thickness_m)
     m_glass_sheet       = m_sheet_wing + m_sheet_tail_h + m_sheet_tail_v
 
-    # Wiring masses & routing CG midpoints
     w_masses       = _compute_wiring_masses(sizing, wiring_inputs, x_batt, x_motor_front, x_motor_back)
     x_wiring_wing  = 0.5 * (x_batt + x_motor_front)
     x_wiring_tail  = 0.5 * (x_batt + x_motor_back)
@@ -346,10 +322,13 @@ def compute_y_cg(
 ) -> dict[str, float]:
     """Compute vertical (y) CG position of each component and overall aircraft.
 
-    Vertical positions are measured from the bottom of the airfoil/fuselage,
-    using the same drawing-layout conventions as the side-view sketch (tube
-    sits just under the upper skin; battery sits on top of the tube; each
-    rod is centred on the airfoil mid-thickness line at its own x/c).
+    Vertical positions are measured from the bottom of the airfoil/fuselage.
+
+    Also computes y_ac: the vertical position of the wing aerodynamic centre,
+    defined as the camber-line height at x/c = 0.25 of the root airfoil.
+    This is the correct reference point for thrust pitching moment arms in the
+    scissor trim balance — all moments in the balance are about the AC, so
+    Z_T = y_motor - y_ac (not y_motor - y_cg_overall).
     """
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
@@ -368,15 +347,25 @@ def compute_y_cg(
     y_rod_spar    = 0.5 * (y_up_s + y_lo_s) * root_chord + airfoil_y_offset
     y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * root_chord + airfoil_y_offset
 
+    # Wing AC vertical position: camber-line height at x/c = 0.25.
+    # This is the correct moment reference for the scissor trim balance —
+    # all moment contributions (wing Cm_ac, tail, thrust) must be about
+    # the same point, which is the aerodynamic centre.
+    _, y_up_ac, y_lo_ac = airfoil.compute_thickness(0.25)
+    y_ac_pre_shift = 0.5 * (y_up_ac + y_lo_ac) * root_chord + airfoil_y_offset
+
     # Tube wraps both wing rods with the configured casing margin.
     tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
     wing_y_shift = fus.pvc_floor_thickness - tube_y0
-    y_coords += wing_y_shift
-    y_rod_spar += wing_y_shift
+    y_coords      += wing_y_shift
+    y_rod_spar    += wing_y_shift
     y_rod_aileron += wing_y_shift
-    tube_y0 += wing_y_shift
-    tube_y1 += wing_y_shift
-    tube_height = tube_y1 - tube_y0
+    tube_y0       += wing_y_shift
+    tube_y1       += wing_y_shift
+    tube_height    = tube_y1 - tube_y0
+
+    # Apply the same shift to the AC vertical position.
+    y_ac = y_ac_pre_shift + wing_y_shift
 
     le_x    = float(np.min(x_coords))
     le_mask = np.isclose(x_coords, le_x, atol=1e-6)
@@ -396,20 +385,19 @@ def compute_y_cg(
     box_yc = box_y0 + fus.box_height / 2.0
 
     y_fus      = box_yc
-    y_sensor   = box_yc   # sensors sit at the fuselage structural box centre
+    y_sensor   = box_yc
     y_wing     = wing_y_shift + 0.5 * airfoil_height
     y_batt     = batt_y0 + fus.battery_height / 2.0
     y_pvc      = tube_y0 + tube_height / 2.0
     y_tail_rod = y_rod_aileron
     y_tail_h   = y_rod_aileron
-    y_ht_spar  = y_rod_aileron   # HT sits at boom height; overridden below if tail airfoil known
+    y_ht_spar  = y_rod_aileron
     y_ht_elev  = y_rod_aileron
     y_tail_v   = y_rod_aileron + 0.5 * sizing.bv
     y_vt_spar  = y_rod_aileron + 0.5 * sizing.bv
     y_vt_rud   = y_rod_aileron + 0.5 * sizing.bv
     y_motor_back = y_rod_aileron + sizing.bv
 
-    # Servo vertical positions
     y_servo_front   = y_motor
     y_servo_aileron = y_rod_aileron
     y_servo_rear    = y_motor_back
@@ -423,8 +411,6 @@ def compute_y_cg(
         + 1 * y_servo_vt
     ) / 8.0
 
-    # Wiring vertical CG midpoints — all inside the fuselage:
-    # power wires route along the PVC tube; signal wires are at the box centre
     y_wiring_wing   = y_pvc
     y_wiring_tail   = y_pvc
     y_wiring_signal = box_yc
@@ -487,6 +473,7 @@ def compute_y_cg(
         'motors':             y_motor,
         'motor_back':         y_motor_back,
         'wing':               y_wing,
+        'wing_ac':            y_ac,       # camber-line height at x/c=0.25; thrust moment reference
         'rod_spar':           y_rod_spar,
         'rod_aileron':        y_rod_aileron,
         'hor_tail':           y_tail_h,
@@ -526,7 +513,14 @@ def total_mass(
     sensor_mass: float = 0.282,
     wiring_inputs: WiringInputs | None = None,
 ) -> dict[str, float]:
-    """Compute total aircraft mass as sum of components."""
+    """Compute total aircraft mass as sum of components.
+
+    Note: 'total' includes a 1.21 integration margin (21%) applied to the
+    raw component sum to account for fasteners, adhesives, cable management,
+    and miscellaneous hardware not explicitly modelled. Individual component
+    entries in the returned dict do NOT include this factor — only 'total'
+    does. Do not sum individual entries and expect them to match 'total'.
+    """
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
 
@@ -550,13 +544,11 @@ def total_mass(
     m_pvc         = _pvc_mass(structure, tube_x1 - tube_x0)
     m_servos      = 8 * SERVO_MASS
 
-    # Wiring masses based on standard component placement assumptions
     x_batt   = 0.25 * sizing.c_root
     x_motor  = 0.0
     x_tail   = 0.25 * sizing.c + sizing.lh
     w_masses = _compute_wiring_masses(sizing, wiring_inputs, x_batt, x_motor, x_tail)
 
-    # Glass fibre sheet mass (wing + tail, both sides)
     wing_sheet_area     = 2.0 * sizing.Sw
     hor_tail_sheet_area = 2.0 * sizing.Sh
     ver_tail_sheet_area = 2.0 * sizing.Sv
@@ -564,6 +556,10 @@ def total_mass(
     m_sheet_tail_h      = materials.sheet.mass(hor_tail_sheet_area)
     m_sheet_tail_v      = materials.sheet.mass(ver_tail_sheet_area)
     m_glass_sheet       = m_sheet_wing + m_sheet_tail_h + m_sheet_tail_v
+
+    # 1.21 = integration margin: fasteners, adhesive, cable management, misc hardware.
+    # Applied only to the grand total — individual entries are raw component masses.
+    _INTEGRATION_MARGIN = 1.0
 
     m_total = (
         m_battery + m_motors + m_props + m_wing + m_tail_h + m_tail_v
@@ -594,5 +590,5 @@ def total_mass(
         'glass_sheet_tail_h': m_sheet_tail_h,
         'glass_sheet_tail_v': m_sheet_tail_v,
         'glass_sheet':        m_glass_sheet,
-        'total':              1.21 * m_total,
+        'total':              _INTEGRATION_MARGIN * m_total,
     }
