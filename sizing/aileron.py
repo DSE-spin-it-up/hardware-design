@@ -30,6 +30,7 @@ class AileronInputs:
                                      # must counteract at δ_a_max [-]
     max_da_deg: float = 10.0         # max aileron deflection [deg]
     max_y_frac: float = 0.8          # outboard aileron edge, y/(b/2) [-]
+    payload_lateral_angle_deg: float = 0.0  # max payload lateral angle from vertical [deg]
     c_aileron_to_c_wing: float = 0.3 # aileron chord / wing chord [-]
     step: float = 0.01               # search step on y_frac [-]
 
@@ -46,8 +47,14 @@ class AileronResult:
     roll_moment: float     # roll-control moment at δ_a_max, |Cl_δa·δ_a_max| [-]
     roll_rate: float       # achieved steady roll rate [rad/s]
     converged: bool        # True if disturbance counteracted before hitting root
-    roll_moment_payload: float   # roll moment from payload horizontal tension [-]
+    roll_moment_payload: float   # roll moment from payload lateral tension [-]
+    payload_lateral_force: float # lateral payload force used for payload criterion [N]
+    payload_moment_arm: float    # vertical arm from payload attach point to CG [m]
     driving_constraint: str      # "disturbance" or "payload"
+    cl_da_integral: float        # int c(y)*y dy over one aileron, physical units [m^3]
+    cl_p_integral: float         # int c(y)*y^2 dy over one semi-span, physical units [m^4]
+    S_ref: float                 # wing reference area used in derivatives [m^2]
+    b_ref: float                 # wing span used in derivatives [m]
 
 
 def chord_at_y_frac(c_root: float, lam: float):
@@ -84,6 +91,13 @@ def compute_cl_da(
     return (2 * cl_alpha * tau) / (S_ref * b) * c_integral
 
 
+def cl_da_integral(start_y_frac: float, end_y_frac: float, c_at_y_frac, b: float) -> float:
+    """Physical one-side aileron integral int c(y)*y dy [m^3]."""
+    integrand = lambda y: c_at_y_frac(y) * y * (b / 2) ** 2
+    c_integral, _ = quad(integrand, start_y_frac, end_y_frac)
+    return float(c_integral)
+
+
 def compute_cl_p(
     cl_alpha: float,
     cd0_section: float,
@@ -95,6 +109,13 @@ def compute_cl_p(
     integrand = lambda y: c_at_y_frac(y) * (y ** 2) * (b / 2) ** 3
     c_integral, _ = quad(integrand, 0.0, 1.0)
     return -(4 * (cl_alpha + cd0_section) / (S_ref * b ** 2)) * c_integral
+
+
+def cl_p_integral(c_at_y_frac, b: float) -> float:
+    """Physical one-side roll-damping integral int c(y)*y^2 dy [m^4]."""
+    integrand = lambda y: c_at_y_frac(y) * (y ** 2) * (b / 2) ** 3
+    c_integral, _ = quad(integrand, 0.0, 1.0)
+    return float(c_integral)
 
 
 def run(
@@ -148,10 +169,19 @@ def run(
     # When y_cg is not supplied (standalone runs) the payload criterion
     # is suppressed and only the disturbance requirement drives sizing.
     # ------------------------------------------------------------------
-    if y_cg is not None:
-        moment_arm = abs(y_cg["overall"] - y_cg["pvc_tube_bottom"])
-        F_payload = s.inputs.m_payload * 9.81
-        roll_moment_payload = (F_payload * moment_arm) / (s.q_cruise * s.Sw * s.inputs.b)
+    payload_lateral_force = 0.0
+    payload_moment_arm = 0.0
+    if y_cg is not None and i.payload_lateral_angle_deg > 0.0:
+        payload_moment_arm = abs(y_cg["overall"] - y_cg["pvc_tube_bottom"])
+        payload_mass_per_drone = s.inputs.m_payload / s.inputs.n_drones
+        payload_lateral_force = (
+            payload_mass_per_drone
+            * 9.81
+            * np.tan(np.deg2rad(i.payload_lateral_angle_deg))
+        )
+        roll_moment_payload = (
+            payload_lateral_force * payload_moment_arm
+        ) / (s.q_cruise * s.Sw * s.inputs.b)
     else:
         roll_moment_payload = 0.0
 
@@ -181,6 +211,8 @@ def run(
     # Steady roll rate at the converged geometry — reported, not a sizing gate.
     P = -(cl_da / cl_p) * max_da * (2 * s.inputs.V_cruise / s.inputs.b)
     aileron_span = (i.max_y_frac - start_y_frac) * (s.inputs.b / 2)
+    cl_da_int = cl_da_integral(start_y_frac, i.max_y_frac, c_at_y_frac, s.inputs.b)
+    cl_p_int = cl_p_integral(c_at_y_frac, s.inputs.b)
     return AileronResult(
         inputs=inputs,
         start_y_frac=start_y_frac,
@@ -193,11 +225,17 @@ def run(
         roll_rate=P,
         converged=converged,
         roll_moment_payload=roll_moment_payload,
+        payload_lateral_force=payload_lateral_force,
+        payload_moment_arm=payload_moment_arm,
         driving_constraint=driving_constraint,
+        cl_da_integral=cl_da_int,
+        cl_p_integral=cl_p_int,
+        S_ref=s.Sw,
+        b_ref=s.inputs.b,
     )
 
 
-def summary(r: AileronResult) -> None:
+def _summary_legacy(r: AileronResult) -> None:
     req = max(r.inputs.roll_moment_dist, r.roll_moment_payload)
     if r.converged:
         print(f"  Roll-moment requirement met "
@@ -217,6 +255,44 @@ def summary(r: AileronResult) -> None:
     print(f"  Cl_p                    : {r.cl_p:.4f}  1/rad")
     print(f"  Roll-control moment     : {r.roll_moment:.4f}  (at δ_a_max)")
     print(f"  Steady roll rate        : {np.degrees(r.roll_rate):.2f}  °/s")
+
+
+def summary(r: AileronResult) -> None:
+    req = max(r.inputs.roll_moment_dist, r.roll_moment_payload)
+    if r.converged:
+        print(f"  Roll-moment requirement met ({r.roll_moment:.4f} >= {req:.4f})")
+    else:
+        print(f"  X Roll-moment requirement NOT met ({r.roll_moment:.4f} < {req:.4f})")
+    print(f"  Active constraint           : {r.driving_constraint}")
+    print(f"  Roll-moment (disturbance)   : {r.inputs.roll_moment_dist:.4f}")
+    print(f"  Roll-moment (payload)       : {r.roll_moment_payload:.4f}")
+    print(f"  Payload lateral angle       : {r.inputs.payload_lateral_angle_deg:.2f}  deg")
+    print(f"  Payload lateral force       : {r.payload_lateral_force:.3f}  N")
+    print(f"  Payload moment arm          : {r.payload_moment_arm:.4f}  m")
+    print(f"  Aileron inboard y/(b/2)     : {r.start_y_frac:.3f}")
+    print(f"  Aileron outboard y/(b/2)    : {r.inputs.max_y_frac:.3f}")
+    print(f"  Aileron span (per side)     : {r.aileron_span:.3f}  m")
+    print(f"  tau_a                       : {r.tau:.3f}")
+    print(f"  cd0 section used in Cl_p    : {r.cd0_section:.5f}")
+    print("  Sensitivity inputs:")
+    print(f"    cl_alpha                  : {r.inputs.cl_alpha:.4f}  1/rad")
+    print(f"    S_ref, b_ref              : {r.S_ref:.4f} m^2, {r.b_ref:.4f} m")
+    print(f"    int aileron c*y dy        : {r.cl_da_integral:.6f}  m^3")
+    print(f"    int semi-span c*y^2 dy    : {r.cl_p_integral:.6f}  m^4")
+    print(f"    delta_a_max               : {r.inputs.max_da_deg:.2f}  deg")
+    print(f"    payload lateral angle     : {r.inputs.payload_lateral_angle_deg:.2f}  deg")
+    print(f"    payload lateral force     : {r.payload_lateral_force:.3f}  N")
+    print(f"    payload moment arm        : {r.payload_moment_arm:.4f}  m")
+    print("  Formulas:")
+    print("    Cl_delta_a = 2*cl_alpha*tau_a/(S_ref*b_ref) * int_aileron(c*y dy)")
+    print("    Cl_p       = -4*(cl_alpha+cd0_section)/(S_ref*b_ref^2) * int_semispan(c*y^2 dy)")
+    print("    Cl_control = abs(Cl_delta_a * delta_a_max_rad)")
+    print("    F_payload_lat = (m_payload/n_drones)*g*tan(payload_lateral_angle)")
+    print("    Cl_payload = F_payload_lat*payload_moment_arm/(q*S_ref*b_ref)")
+    print(f"  Cl_delta_a                  : {r.cl_da:.4f}  1/rad")
+    print(f"  Cl_p                        : {r.cl_p:.4f}  1/rad")
+    print(f"  Roll-control moment         : {r.roll_moment:.4f}  (at delta_a_max)")
+    print(f"  Steady roll rate            : {np.degrees(r.roll_rate):.2f}  deg/s")
 
 
 if __name__ == "__main__":

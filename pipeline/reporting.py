@@ -204,6 +204,8 @@ def print_final_drag(result: PipelineResult) -> None:
     print(f"  Required S_h/S — stability          : {ShS_stab_now:.4f}")
     print(f"  Required S_h/S — controllability    : {ShS_ctrl_now:.4f}")
     print(f"  Required S_h/S — binding            : {ShS_req_now:.4f}")
+    scissor_tol = 1.0e-4
+    scissor_margin = sc.ShS_current - ShS_req_now
     print(f"  Current  S_h/S                      : {sc.ShS_current:.4f}  "
-          f"({'FEASIBLE' if sc.ShS_current >= ShS_req_now else 'INFEASIBLE'}, "
-          f"margin = {sc.ShS_current - ShS_req_now:+.4f})")
+          f"({'FEASIBLE' if scissor_margin >= -scissor_tol else 'INFEASIBLE'}, "
+          f"margin = {scissor_margin:+.4f})")

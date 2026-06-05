@@ -309,7 +309,7 @@ def run(
 # Console summary
 # ---------------------------------------------------------------------------
 
-def summary(r: RudderResult) -> None:
+def _summary_legacy(r: RudderResult) -> None:
     g = r.geometry
     i = r.inputs
     hm = r.hinge_moment
@@ -332,3 +332,45 @@ def summary(r: RudderResult) -> None:
     print(f"  Hinge moment (cruise, δ_max)")
     print(f"    Chi                       : {hm.Chi:.4f}")
     print(f"    H                         : {hm.H:.4f}  N·m  (boom torsion input)")
+def summary(r: RudderResult) -> None:
+    g = r.geometry
+    i = r.inputs
+    hm = r.hinge_moment
+    Vv = abs(r.Cndr) / (r.CLalphav * i.eta_v * r.tau_r * g.bR_bV)
+    Sv_S = -r.Cyb / (i.Kf2 * r.CLalphav * i.eta_v)
+    lv_b = Vv / Sv_S if Sv_S > 0.0 else float("nan")
+    bR_bV_dist = i.Cn_dist / (r.CLalphav * Vv * i.eta_v * r.tau_r * r.delta_R)
+
+    print("  Rudder geometry")
+    print(f"    cR/cV                     : {g.cR_cV:.4f}  (designer input)")
+    print(f"    tau_r                     : {r.tau_r:.4f}")
+    print(f"    bR/bV                     : {g.bR_bV:.4f}  (from sizing)")
+    print(f"    SR/SV                     : {g.SR_SV:.4f}")
+    print(f"    S_rudder                  : {g.S_rudder:.4f}  m^2")
+    print(f"    c_rudder                  : {g.c_rudder:.4f}  m")
+    print("  Sensitivity inputs:")
+    print(f"    CL_alpha_v                : {r.CLalphav:.4f}  1/rad")
+    print(f"    CL_alpha_v unit check     : {r.CLalphav * np.pi / 180.0:.5f}  1/deg")
+    print(f"    eta_v                     : {i.eta_v:.4f}")
+    print(f"    Vv = Sv*lv/(S*b)          : {Vv:.4f}")
+    print(f"    Sv/S                      : {Sv_S:.4f}")
+    print(f"    lv/b                      : {lv_b:.4f}")
+    print(f"    bR/bV, SR/SV              : {g.bR_bV:.4f}, {g.SR_SV:.4f}")
+    print(f"    delta_R                   : {np.degrees(r.delta_R):.2f}  deg")
+    print(f"    bR/bV from Cn_dist        : {bR_bV_dist:.4f}")
+    print("  Formulas:")
+    print("    Cn_beta    =  Kf1*CL_alpha_v*eta_v*Sv/S*lv/b")
+    print("    Cy_beta    = -Kf2*CL_alpha_v*eta_v*Sv/S")
+    print("    Cn_delta_r = -CL_alpha_v*Vv*eta_v*tau_r*bR/bV")
+    print("    Cy_delta_r =  CL_alpha_v*eta_v*tau_r*SR/SV")
+    print(f"  Cn_beta                     : {r.Cnb:.4f}  1/rad")
+    print(f"  Cy_beta                     : {r.Cyb:.4f}  1/rad")
+    print(f"  Cn_delta_r                  : {r.Cndr:.4f}  1/rad")
+    print(f"  Cy_delta_r                  : {r.Cydr:.4f}  1/rad")
+    print(f"  Gust sideslip beta          : {np.degrees(r.beta_gust):.2f}  deg")
+    print(f"  Weathercock sideslip sigma  : {np.degrees(r.sigma):.2f}  deg")
+    print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  deg  (= limit)")
+    print(f"  Active sizing constraint    : {r.active_constraint}")
+    print("  Hinge moment (cruise, delta_max)")
+    print(f"    Chi                       : {hm.Chi:.4f}")
+    print(f"    H                         : {hm.H:.4f}  N*m  (boom torsion input)")

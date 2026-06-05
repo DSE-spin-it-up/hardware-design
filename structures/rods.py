@@ -125,8 +125,12 @@ class RodResult:
     defl_control_vt: float
     fail_mode_control_vt: str
     f_n_wing: float = 0.0
+    V_structural: float = 0.0
+    q_structural: float = 0.0
     CL_h_structural: float = 0.0
     F_tail_structural: float = 0.0
+    V_tail_structural: float = 0.0
+    q_tail_structural: float = 0.0
     # Tail rod torsion results (populated by apply_torsion_check)
     tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
     sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
@@ -456,8 +460,11 @@ def run(
     tail_airfoil = AirfoilGeometry(tail_airfoil_path)
 
     # Total wing lift and span (shared by both wing rods). The structural
-    # case is one-drone failure at cruise speed plus the configured gust speed.
-    L_lift = s.CL_one_drone_failure * s.q_structural * s.Sw
+    # case uses the larger of climb/cruise, with the configured gust speed
+    # added on top.
+    V_structural = max(propulsion.V_climb, si.V_cruise) + si.gust_speed
+    q_structural = 0.5 * s.rho * V_structural ** 2
+    L_lift = s.CL_one_drone_failure * q_structural * s.Sw
     b_w = si.b
 
     # ------------------------------------------------------------------ #
@@ -516,7 +523,9 @@ def run(
     else:
         CL_h = abs(-0.35 * s.inputs.ARt ** (1.0 / 3.0))
 
-    F_tail = s.Sh * CL_h * s.q_cruise * i.Vh_V * i.safety_factor
+    V_tail_structural = i.Vh_V * V_structural
+    q_tail_structural = q_structural * i.Vh_V ** 2
+    F_tail = s.Sh * CL_h * q_tail_structural * i.safety_factor
     L_t    = s.L_boom
     M_t    = F_tail * L_t
     t_t    = i.t_t
@@ -605,7 +614,7 @@ def run(
 
     if rudder is not None and CLalphav_vt != 0.0:
         # ---- loads ----
-        q_vt        = s.q_cruise
+        q_vt        = q_tail_structural
         F_fin       = 0.5 * q_vt * s.Sv * CLalphav_vt * rudder.beta_gust
         F_thrust_vt = 0.5 * propulsion.thrust_cruise_per_prop
 
@@ -704,8 +713,12 @@ def run(
         defl_aileron=defl_aileron, fail_mode_aileron=fail_aileron,
         d_t=d_t, t_t=t_t, mass_t=mass_t, defl_t=defl_t, fail_mode_t=fail_t,
         f_n_wing=f_n_wing,
+        V_structural=V_structural,
+        q_structural=q_structural,
         CL_h_structural=CL_h,
         F_tail_structural=F_tail,
+        V_tail_structural=V_tail_structural,
+        q_tail_structural=q_tail_structural,
         Vh_V=i.Vh_V,
         d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
         defl_spar_ht=defl_spar_ht, fail_mode_spar_ht=fail_spar_ht,
@@ -738,6 +751,8 @@ def _fit_marker(fits: bool) -> str:
 
 def summary(r: RodResult) -> None:
     print("\n--- Spar rod (one of two) ---")
+    print(f"  Structural speed      : {r.V_structural:.2f}  m/s")
+    print(f"  Structural q          : {r.q_structural:.2f}  Pa")
     print(f"  Outer diameter         : {r.d_spar * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar * 1000:.2f}  mm")
@@ -756,6 +771,8 @@ def summary(r: RodResult) -> None:
 
     print("\n--- Tail rod (aileron hinge → tail TE) ---")
     print(f"  Structural CL_h       : {r.CL_h_structural:.3f}")
+    print(f"  Structural tail speed : {r.V_tail_structural:.2f}  m/s")
+    print(f"  Structural tail q     : {r.q_tail_structural:.2f}  Pa")
     print(f"  Structural tail force : {r.F_tail_structural:.2f}  N")
     print(f"  Outer diameter         : {r.d_t * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_t * 1000:.2f}  mm")

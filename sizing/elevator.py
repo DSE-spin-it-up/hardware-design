@@ -23,7 +23,7 @@ in pipeline/helpers.py.  The scissor loop therefore sizes Sh to account for
 thrust, so the elevator here is only responsible for disturbance and payload
 authority rather than compensating for an under-sized tail.
 """
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -88,6 +88,7 @@ class ElevatorResult:
     geometry:       ElevatorGeometry
     ih:             float           # tail incidence angle from trim [rad]
     Vh:             float           # tail volume coefficient [-]
+    Sh_S:           float           # horizontal-tail area ratio [-]
     alpha_h:        float           # tail angle of attack at cruise [rad]
     tau_e:          float           # elevator effectiveness [-]
     CM_deltaE:      float           # dCm/d(delta_e) [1/rad]
@@ -105,6 +106,8 @@ class ElevatorResult:
     Cm_thrust_back:  float
     Cm_thrust_total: float
     driving_constraint: str
+    bE_bh_required: float
+    bE_bh_stall_limit: float
     Cm_payload:     float
     payload_cable:  PayloadCableResult
     y_cg:           dict[str, float]
@@ -215,6 +218,26 @@ def compute_payload_cable(
     )
 
 
+def _span_limit_for_tail_stall(
+    CLh_cruise: float,
+    CLh_delta_per_span: float,
+    delta_e: float,
+    Cl_max: float,
+) -> float:
+    """Largest bE/bh allowed by |CLh_cruise + CLh_delta*delta_e*bE_bh| <= Cl_max."""
+    k = CLh_delta_per_span * delta_e
+    if abs(k) < 1.0e-12:
+        return float("inf")
+
+    lo = (-Cl_max - CLh_cruise) / k
+    hi = ( Cl_max - CLh_cruise) / k
+    if lo > hi:
+        lo, hi = hi, lo
+    if hi < 0.0:
+        return float("-inf")
+    return hi
+
+
 # ---------------------------------------------------------------------------
 # Main sizing routine
 # ---------------------------------------------------------------------------
@@ -263,9 +286,6 @@ def run(
             "elevator.trim_mode must be 'tail_incidence' or "
             "'payload_attachment'."
         )
-    inputs = replace(inputs, eta_h=scissor.Vh_V**2)
-    i = inputs
-
     # ------------------------------------------------------------------
     # Aero state from the converged design
     # ------------------------------------------------------------------
@@ -371,30 +391,61 @@ def run(
     )
     bE_bh_payload = max(bE_bh_payload_up, bE_bh_payload_down)
     driving_constraint = "payload" if bE_bh_payload > bE_bh_dist else "disturbance"
-    bE_bh = max(
+    bE_bh_required = max(
         bE_bh_dist,
         bE_bh_payload,
     )
 
-    if bE_bh > 1.0:
+    if bE_bh_required > 1.0:
         raise ValueError(
-            f"Elevator sizing failed: required bE/bh = {bE_bh:.3f} > 1.0.\n"
+            f"Elevator sizing failed: required bE/bh = {bE_bh_required:.3f} > 1.0.\n"
             "The full tail span is insufficient to counteract Cm_dist.\n"
             "Consider increasing cE/ch, increasing tail volume, or reducing Cm_dist."
         )
+
+    CLh_cruise = CLalphah * alpha_h
+    Cl_max = tail_polar.Cl_max
+    CLh_delta_per_span = CLalphah * tau_e
+    bE_bh_stall_limit = min(
+        1.0,
+        _span_limit_for_tail_stall(
+            CLh_cruise, CLh_delta_per_span, delta_e_up, Cl_max,
+        ),
+        _span_limit_for_tail_stall(
+            CLh_cruise, CLh_delta_per_span, delta_e_down, Cl_max,
+        ),
+    )
+
+    if i.enforce_tail_stall:
+        if bE_bh_stall_limit < 0.0:
+            raise ValueError(
+                "Tail sizing failed: the trimmed tail is already beyond the "
+                "tail airfoil |Cl_max| before elevator span is applied.\n"
+                f"  CLh_cruise = {CLh_cruise:.3f}\n"
+                f"  |Cl_max| = {Cl_max:.3f}"
+            )
+        if bE_bh_required > bE_bh_stall_limit + 1.0e-9:
+            raise ValueError(
+                "Elevator sizing failed: required span exceeds the largest "
+                "span that avoids tail stall at max deflection.\n"
+                f"  required bE/bh = {bE_bh_required:.3f}\n"
+                f"  stall-limited bE/bh = {bE_bh_stall_limit:.3f}\n"
+                f"  CLh_cruise = {CLh_cruise:.3f}, |Cl_max| = {Cl_max:.3f}"
+            )
+        bE_bh = bE_bh_stall_limit
+    else:
+        bE_bh = bE_bh_required
 
     # ------------------------------------------------------------------
     # Tail stall check: ensure cruise incidence plus maximum elevator deflection
     # does not demand a tail lift coefficient above the airfoil's Cl_max.
     # Elevator influence is scaled by the elevator span fraction bE/bh.
     # ------------------------------------------------------------------
-    CLh_cruise = CLalphah * alpha_h
     CLh_at_max_up = CLh_cruise + CLalphah * tau_e * delta_e_up * bE_bh
     CLh_at_max_down = CLh_cruise + CLalphah * tau_e * delta_e_down * bE_bh
-    Cl_max = tail_polar.Cl_max
     CLh_max_required = max(abs(CLh_at_max_up), abs(CLh_at_max_down))
 
-    if i.enforce_tail_stall and CLh_max_required > Cl_max:
+    if i.enforce_tail_stall and CLh_max_required > Cl_max + 1.0e-9:
         raise ValueError(
             "Tail sizing failed: required tail lift coefficient at one of the "
             "control extremes exceeds the tail airfoil |Cl_max|.\n"
@@ -415,7 +466,7 @@ def run(
     )
 
     CM_deltaE  = -CLalphah * i.eta_h * Vh * bE_bh * tau_e
-    CL_deltaE  =  CLalphah * i.eta_h * Vh * Sh_S * bE_bh * tau_e
+    CL_deltaE  =  CLalphah * i.eta_h * Sh_S * bE_bh * tau_e
     CLh_deltaE =  CLalphah * tau_e
 
     return ElevatorResult(
@@ -423,6 +474,7 @@ def run(
         geometry        = geometry,
         ih              = ih,
         Vh              = Vh,
+        Sh_S            = Sh_S,
         alpha_h         = alpha_h,
         tau_e           = tau_e,
         CM_deltaE       = CM_deltaE,
@@ -442,6 +494,8 @@ def run(
         Cm_payload      = Cm_payload,
         payload_cable   = payload_cable,
         driving_constraint = driving_constraint,
+        bE_bh_required  = bE_bh_required,
+        bE_bh_stall_limit = bE_bh_stall_limit,
         alpha           = alpha,
         epsilon         = epsilon,
         y_cg            = y_cg,
@@ -520,10 +574,28 @@ def summary(r: ElevatorResult) -> None:
 
     print("\n----- Elevator Sizing Driver -----")
     print(f"  Active constraint         : {r.driving_constraint}")
+    print(f"  Required bE/bh            : {r.bE_bh_required:.4f}")
+    print(f"  Stall-limited max bE/bh   : {r.bE_bh_stall_limit:.4f}")
     print("----- Elevator Sensitivity -----")
+    print("  Sensitivity inputs:")
+    CL_alpha_h = r.CLh_deltaE / r.tau_e
+    print(f"    CL_alpha_h              : {CL_alpha_h:.4f}  1/rad")
+    print(f"    CL_alpha_h unit check   : {CL_alpha_h * np.pi / 180.0:.5f}  1/deg")
+    print(f"    eta_h                   : {r.inputs.eta_h:.4f}")
+    print(f"    Vh = Sh*lh/(Sw*c)       : {r.Vh:.4f}")
+    print(f"    Sh/S                    : {r.Sh_S:.4f}")
+    print(f"    bE/bh                   : {g.bE_bh:.4f}")
+    print(f"    tau_e                   : {r.tau_e:.4f}")
+    print(f"    delta_e up/down         : {-r.inputs.max_deflection_up_deg:.2f}, "
+          f"{r.inputs.max_deflection_down_deg:.2f} deg")
     print(f"  CM_δe                    : {r.CM_deltaE:+.5f}  1/rad")
     print(f"  CL_δe                    : {r.CL_deltaE:+.5f}  1/rad")
     print(f"  CLh_δe                   : {r.CLh_deltaE:+.5f}  1/rad")
+
+    print("  Formulas:")
+    print("    CM_delta_e  = -CL_alpha_h*eta_h*Vh*bE/bh*tau_e")
+    print("    CL_delta_e  =  CL_alpha_h*eta_h*Sh/S*bE/bh*tau_e")
+    print("    CLh_delta_e =  CL_alpha_h*tau_e")
 
     print("\n----- Tail Extremes Check -----")
     print(f"  CLh (elevator up max)    : {r.CLh_at_max_up:+.5f}")

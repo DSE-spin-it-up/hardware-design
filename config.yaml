@@ -99,7 +99,8 @@ control_surface:
   roll_moment_dist: 0.05
   max_da_deg: 10.0
   max_y_frac: 0.8
-  c_aileron_to_c_wing: 0.3
+  payload_lateral_angle_deg: 30.0  # [deg] max payload lateral angle from vertical
+  c_aileron_to_c_wing: 0.35
 
 # ----- Elevator -----
 elevator:
@@ -107,7 +108,7 @@ elevator:
   eta_h: 0.85
   Cm_dist: 0.0
   max_deflection_up_deg: 25.0
-  max_deflection_down_deg: 20.0
+  max_deflection_down_deg: 25.0
   payload_cable_min_angle_deg: 0.0
   payload_cable_max_angle_deg: null  # null -> 2 × equilibrium cable angle
 
