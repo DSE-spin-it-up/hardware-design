@@ -14,6 +14,35 @@ from pipeline.loop import PipelineResult
 from propulsion import sizing as prop_sizing
 from sizing import aileron, elevator, fuselage, rudder, wing
 from structures import rods
+from weights.inertia import calculate_mass_moment_of_inertia
+from weights.mass import compute_y_cg
+
+
+def _print_control_authority(result: PipelineResult) -> None:
+    a = result.control_surface
+    e = result.elevator
+    r = result.rudder
+
+    da_max = np.radians(a.inputs.max_da_deg)
+    de_up = -np.radians(e.inputs.max_deflection_up_deg)
+    de_down = np.radians(e.inputs.max_deflection_down_deg)
+    dr_max = r.delta_R
+
+    cl_aileron = a.cl_da * da_max
+    cm_elevator_up = e.CM_deltaE * de_up
+    cm_elevator_down = e.CM_deltaE * de_down
+    cn_rudder = r.Cndr * dr_max
+
+    print("\n----- Maximum Control Moment Coefficients -----")
+    print(f"  Aileron max roll  Cl   : {cl_aileron:+.5f}  "
+          f"(Cl_delta_a {a.cl_da:+.5f}/rad * {a.inputs.max_da_deg:.1f} deg)")
+    print(f"  Elevator max pitch Cm  : {max(abs(cm_elevator_up), abs(cm_elevator_down)):.5f}  magnitude")
+    print(f"    up   Cm              : {cm_elevator_up:+.5f}  "
+          f"(Cm_delta_e {e.CM_deltaE:+.5f}/rad * {-e.inputs.max_deflection_up_deg:.1f} deg)")
+    print(f"    down Cm              : {cm_elevator_down:+.5f}  "
+          f"(Cm_delta_e {e.CM_deltaE:+.5f}/rad * {e.inputs.max_deflection_down_deg:.1f} deg)")
+    print(f"  Rudder max yaw    Cn   : {cn_rudder:+.5f}  "
+          f"(Cn_delta_r {r.Cndr:+.5f}/rad * {np.degrees(dr_max):.1f} deg)")
 
 
 def print_main_summary(result: PipelineResult) -> None:
@@ -35,6 +64,7 @@ def print_main_summary(result: PipelineResult) -> None:
     elevator.summary(result.elevator)
     print("Rudder:")
     rudder.summary(result.rudder)
+    _print_control_authority(result)
     print("\n========== STRUCTURE ==========")
     rods.summary(result.struct)
 
@@ -78,6 +108,28 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  PVC tubes CG    : {cg['pvc_tubes']:8.4f}  m from LEMAC")
     print(f"  Overall CG      : {cg['overall']:8.4f}  m from LEMAC")
     print(f"                    ({cg['overall'] / sizing.c_root:6.2%} of wing chord)")
+
+    z_cg = compute_y_cg(
+        sizing,
+        result.fus,
+        result.struct,
+        masses,
+        result.airfoil,
+        cg=cg,
+    )
+    inertia = calculate_mass_moment_of_inertia(
+        sizing=sizing,
+        fus=result.fus,
+        structure=result.struct,
+        masses=masses,
+        cg=cg,
+        z_cg=z_cg,
+        n_props=result.propulsion.inputs.n_props,
+    )
+    print("\n========== MASS MOMENT OF INERTIA ==========")
+    print(f"  Ixx roll  : {inertia.ixx:.4f} kg*m^2")
+    print(f"  Iyy pitch : {inertia.iyy:.4f} kg*m^2")
+    print(f"  Izz yaw   : {inertia.izz:.4f} kg*m^2")
 
     print("\n========== DRAG BUILDUP ==========")
     drag_buildup.summary(drag)
