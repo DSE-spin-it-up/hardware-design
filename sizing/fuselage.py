@@ -27,7 +27,7 @@ class FuselageInputs:
     min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
     tube_snap_force: float = 372.8/2   # [N] dynamic peak snap force reacted by tube support
     tube_snap_safety_factor: float = 1.5  # [-] safety factor on tube snap force
-    tube_gust_safety_factor: float = 1.5  # [-] safety factor on upward gust lift
+    tube_structural_safety_factor: float = 1.5  # [-] safety factor on upward structural lift
     min_tube_foam_floor: float = 0.005  # [m] minimum EPP floor below tube support
     # Raymer nose / tail fineness fractions of total aero length
     nose_fraction: float = 0.20     # [-] nose cone length / total aero length
@@ -67,15 +67,16 @@ class FuselageResult:
     pvc_floor_thickness: float = 0.0  # [m]  required foam below structural tube
     pvc_roof_thickness: float = 0.0   # [m]  required foam above structural tube
     pvc_design_force: float = 0.0     # [N]  downward snap force used for floor sizing
-    pvc_lift_force: float = 0.0       # [N]  one-drone-failure gust lift increment
-    pvc_lift_design_force: float = 0.0  # [N]  factored upward gust force for roof sizing
+    structural_lift_increment: float = 0.0  # [N] one-drone-failure structural lift increment
+    structural_lift_design_force: float = 0.0  # [N] factored upward structural lift
     pvc_bearing_area: float = 0.0     # [m²] rectangular floor contact area
-    pvc_lift_bearing_area: float = 0.0  # [m²] tube/rod contact area reacting gust lift
+    pvc_lift_bearing_area: float = 0.0  # [m²] tube/rod contact area reacting structural lift
     # Bending check
-    n_gust: float              = 0.0  # [-]   effective load factor under gust
+    n_structural: float        = 0.0  # [-]   effective structural load factor
     bending_moment: float      = 0.0  # [N·m] peak bending moment at front spar
     bending_stress: float      = 0.0  # [Pa]  max fibre stress in EPP box section
     bending_utilisation: float = 0.0  # [-]   sigma / Y  (> 1 means failure)
+    bending_required_height: float = 0.0  # [m] minimum box height from bending constraint
 
 
 def run(
@@ -91,7 +92,7 @@ def run(
     aileron_rod_diameter: float = 0.0,
     tail_rod_diameter: float = 0.0,
     wing_section_height: float | None = None,
-    pvc_lift_force: float = 0.0,
+    structural_lift_increment: float = 0.0,
     x_front_spar: float = 0.0,        # [m] from LEMAC — max thickness x position
     n_active_drones: int = 2,          # [-] drones still flying in failure case
     m_total_failure: float = 0.0,      # [kg] total flying mass in failure case
@@ -144,7 +145,7 @@ def run(
         + spar_rod_diameter * exposed_rod_width
         + aileron_rod_diameter * exposed_rod_width
     )
-    pvc_lift_design_force = 0.0
+    structural_lift_design_force = 0.0
     pvc_roof_thickness = 0.0
 
     # ------------------------------------------------------------------ 3. Structural Box
@@ -181,45 +182,71 @@ def run(
     # moment at that support.  The section is a hollow rectangle (outer box
     # minus battery cutout).
     #
-    # Load factor: the gust accelerates the whole assembly upward.  From the
-    # battery's reference frame it becomes effectively heavier by:
-    #   n = 1 + (n_active_drones × ΔL_per_drone) / (m_total_failure × g)
+    # Load factor: the one-drone-failure lift is evaluated at structural speed.
+    # From the battery's reference frame the extra lift makes it effectively
+    # heavier by:
+    #   n = 1 + (n_active_drones * Delta_L_per_drone) / (m_total_failure * g)
     # The structural load_factor is then applied on top as a safety margin.
 
     if m_total_failure > 0.0 and x_front_spar > 0.0:
-        n_gust = 1.0 + (n_active_drones * pvc_lift_force) / (m_total_failure * i.g)
+        n_structural = 1.0 + (
+            n_active_drones * structural_lift_increment
+        ) / (m_total_failure * i.g)
     else:
-        n_gust = 1.0
+        n_structural = 1.0
 
     x_batt_cg = battery_x if battery_x is not None else sizing.c_root / 2.0
     x_arm = x_batt_cg - x_front_spar   # [m] positive when battery is aft of spar
 
-    F_batt_design = battery_mass * i.g * n_gust * i.load_factor
+    F_batt_design = battery_mass * i.g * n_structural * i.load_factor
     bending_moment = F_batt_design * abs(x_arm)
 
-    # Second moment of area of the hollow rectangular cross-section
-    I_outer = (box_width * box_height ** 3) / 12.0
-    I_inner = (b_width   * b_height  ** 3) / 12.0
-    I_net   = I_outer - I_inner
-    c_bend  = box_height / 2.0
+    allowable_util = 1.0 / i.bending_safety_factor
+    allowable_stress = epp.Y * allowable_util
 
-    bending_stress      = (bending_moment * c_bend / I_net) if I_net > 0.0 else 0.0
+    def bending_stress_for_height(height: float) -> float:
+        I_outer = (box_width * height ** 3) / 12.0
+        I_inner = (b_width * b_height ** 3) / 12.0
+        I_net = I_outer - I_inner
+        c_bend = height / 2.0
+        return (bending_moment * c_bend / I_net) if I_net > 0.0 else float("inf")
+
+    bending_required_height = box_height
+    if bending_moment > 0.0 and allowable_stress > 0.0:
+        if bending_stress_for_height(box_height) > allowable_stress:
+            h_lo = box_height
+            h_hi = max(h_lo * 1.25, h_lo + 0.01)
+            while bending_stress_for_height(h_hi) > allowable_stress:
+                h_hi *= 1.5
+
+            for _ in range(80):
+                h_mid = 0.5 * (h_lo + h_hi)
+                if bending_stress_for_height(h_mid) > allowable_stress:
+                    h_lo = h_mid
+                else:
+                    h_hi = h_mid
+
+            bending_required_height = h_hi
+            box_height = max(box_height, bending_required_height)
+
+    bending_stress = bending_stress_for_height(box_height)
     bending_utilisation = bending_stress / epp.Y if epp.Y > 0.0 else 0.0
 
-    allowable_util = 1.0 / i.bending_safety_factor
     if bending_utilisation > allowable_util:
         print(f"  EPP bending: FAILS                "
               f"(σ = {bending_stress/1e3:.2f} kPa, "
               f"Y = {epp.Y/1e3:.2f} kPa, "
               f"util = {bending_utilisation:.3f}, "
-              f"n_gust = {n_gust:.3f}, "
+              f"h_req = {bending_required_height*1e3:.1f} mm, "
+              f"n_structural = {n_structural:.3f}, "
               f"x_arm = {x_arm*1e3:.1f} mm)")
     else:
         print(f"  EPP bending: OK                   "
               f"(σ = {bending_stress/1e3:.2f} kPa, "
               f"Y = {epp.Y/1e3:.2f} kPa, "
               f"util = {bending_utilisation:.3f}, "
-              f"n_gust = {n_gust:.3f}, "
+              f"h_req = {bending_required_height*1e3:.1f} mm, "
+              f"n_structural = {n_structural:.3f}, "
               f"x_arm = {x_arm*1e3:.1f} mm)")
 
     # ------------------------------------------------------------------ 4. Raymer-style Aero Body
@@ -246,11 +273,7 @@ def run(
 
     length = l_total                   # total aerodynamic length
     width  = box_width                 # max cross-section width
-    height = (
-        float(wing_section_height)
-        if wing_section_height is not None and wing_section_height > 0.0
-        else box_height
-    )
+    height = max(box_height, available_airfoil_height)
 
     # Aero nose starts forward of the structural box nose by exactly l_nose.
     x_nose = x_nose_box - l_nose
@@ -294,14 +317,15 @@ def run(
         pvc_floor_thickness=pvc_floor_thickness,
         pvc_roof_thickness=pvc_roof_thickness,
         pvc_design_force=pvc_design_force,
-        pvc_lift_force=pvc_lift_force,
-        pvc_lift_design_force=pvc_lift_design_force,
+        structural_lift_increment=structural_lift_increment,
+        structural_lift_design_force=structural_lift_design_force,
         pvc_bearing_area=pvc_bearing_area,
         pvc_lift_bearing_area=pvc_lift_bearing_area,
-        n_gust=n_gust,
+        n_structural=n_structural,
         bending_moment=bending_moment,
         bending_stress=bending_stress,
         bending_utilisation=bending_utilisation,
+        bending_required_height=bending_required_height,
     )
 
 
@@ -320,14 +344,15 @@ def summary(r: FuselageResult) -> None:
     print(f"  Foam floor thickness   : {r.foam_floor_thickness*1e3:.1f}  mm")
     print(f"  Structural tube OD     : {r.structural_tube_outer_diameter*1e3:.1f}  mm")
     print(f"  Tube tearout sizing    : disabled")
-    print(f"  Tube gust roof load    : {r.pvc_lift_force:.1f}  N")
+    print(f"  Structural lift inc.   : {r.structural_lift_increment:.1f}  N")
     print(f"  Tube bearing area      : {r.pvc_bearing_area:.6f}  m²")
     print(f"  Tube/rod contact area  : {r.pvc_lift_bearing_area:.6f}  m²")
-    print(f"  Gust load factor       : {r.n_gust:.3f}")
+    print(f"  Structural load factor : {r.n_structural:.3f}")
     print(f"  Bending moment         : {r.bending_moment:.3f}  N·m")
     print(f"  Bending stress         : {r.bending_stress/1e3:.2f}  kPa  (Y = 262 kPa)")
+    print(f"  Bending required h     : {r.bending_required_height*1e3:.1f}  mm")
     print(f"  Bending utilisation    : {r.bending_utilisation:.3f}  "
-          f"({'FAIL' if r.bending_utilisation > 1.0 else 'OK'})")
+          f"({'FAIL' if r.bending_utilisation > 1.0 / r.inputs.bending_safety_factor else 'OK'})")
 
 
 if __name__ == "__main__":

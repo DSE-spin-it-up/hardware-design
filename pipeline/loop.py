@@ -124,10 +124,12 @@ def _run_design_pass(
     q_control = 0.5 * sizing.rho * config.V_STALL ** 2
     V_structural = sizing.inputs.v_max
     q_structural = 0.5 * sizing.rho * V_structural ** 2
-    lift_one_drone_failure_gust = (
+    lift_one_drone_failure_structural = (
         sizing.CL_one_drone_failure * q_structural * sizing.Sw
     )
-    lift_gust_increment = lift_one_drone_failure_gust - sizing.lift_one_drone_failure
+    lift_structural_increment = (
+        lift_one_drone_failure_structural - sizing.lift_one_drone_failure
+    )
 
     # Aileron must be computed before rods — rods need the hinge x/c.
     control_surface = aileron.run(sizing, config.CONTROL_SURFACE, polar=polar)
@@ -177,7 +179,7 @@ def _run_design_pass(
         aileron_rod_diameter=struct.d_aileron,
         tail_rod_diameter=struct.d_t,
         wing_section_height=wing_section_height,
-        pvc_lift_force=lift_gust_increment,
+        structural_lift_increment=lift_structural_increment,
         x_front_spar=x_rod_spar,
         n_active_drones=sizing.inputs.n_drones - 1,
         m_total_failure=(
@@ -595,7 +597,7 @@ def _optimize_battery_y_for_elevator(
     propulsion: PropulsionResult,
     tol: float = 1.0e-5,
 ) -> tuple[float, dict[str, float], ScissorData, ElevatorResult, float]:
-    """Place the battery as high as possible without stalling the tail."""
+    """Place the battery at the lowest feasible vertical position."""
     elevator_inputs_unchecked = dataclasses.replace(
         config.ELEVATOR,
         enforce_tail_stall=False,
@@ -657,20 +659,6 @@ def _optimize_battery_y_for_elevator(
         )
         return y_fixed, y_cg_fixed, scissor_fixed, elevator_fixed, margin_fixed
 
-    y_cg_hi = scissor_hi = elevator_hi = None
-    margin_hi = float("-inf")
-    try:
-        y_cg_hi, scissor_hi, elevator_hi, margin_hi = evaluate(y_hi)
-        if margin_hi >= -tol:
-            elevator_hi = checked_elevator(y_cg_hi, scissor_hi)
-            margin_hi = elevator_hi.tail_CL_limit - max(
-                abs(elevator_hi.CLh_at_max_up),
-                abs(elevator_hi.CLh_at_max_down),
-            )
-            return y_hi, y_cg_hi, scissor_hi, elevator_hi, margin_hi
-    except ValueError:
-        margin_hi = float("-inf")
-
     y_cg_lo, scissor_lo, elevator_lo, margin_lo = evaluate(y_lo)
     if margin_lo < -tol:
         raise ValueError(
@@ -678,40 +666,15 @@ def _optimize_battery_y_for_elevator(
             "height violates the elevator tail-stall limit.\n"
             f"  baseline battery_y0 = {y_lo:.4f} m, "
             f"battery_y = {y_cg_lo['battery']:.4f} m, "
-            f"tail |CLh| margin = {margin_lo:+.4f}\n"
-            f"  fuselage-top battery_y0 = {y_hi:.4f} m, "
-            f"tail |CLh| margin = {margin_hi:+.4f}"
+            f"tail |CLh| margin = {margin_lo:+.4f}"
         )
 
-    best_y = y_lo
-    best = (y_cg_lo, scissor_lo, elevator_lo, margin_lo)
-    lo = y_lo
-    hi = y_hi
-    for _ in range(50):
-        mid = 0.5 * (lo + hi)
-        try:
-            y_cg_mid, scissor_mid, elevator_mid, margin_mid = evaluate(mid)
-            feasible = margin_mid >= -tol
-        except ValueError:
-            feasible = False
-
-        if feasible:
-            best_y = mid
-            best = (y_cg_mid, scissor_mid, elevator_mid, margin_mid)
-            lo = mid
-        else:
-            hi = mid
-
-        if hi - lo <= tol:
-            break
-
-    y_cg_best, scissor_best, elevator_best, margin_best = best
-    elevator_best = checked_elevator(y_cg_best, scissor_best)
-    margin_best = elevator_best.tail_CL_limit - max(
-        abs(elevator_best.CLh_at_max_up),
-        abs(elevator_best.CLh_at_max_down),
+    elevator_lo = checked_elevator(y_cg_lo, scissor_lo)
+    margin_lo = elevator_lo.tail_CL_limit - max(
+        abs(elevator_lo.CLh_at_max_up),
+        abs(elevator_lo.CLh_at_max_down),
     )
-    return best_y, y_cg_best, scissor_best, elevator_best, margin_best
+    return y_lo, y_cg_lo, scissor_lo, elevator_lo, margin_lo
 
 
 def _is_elevator_tail_margin_failure(exc: Exception) -> bool:
@@ -1129,7 +1092,7 @@ def run_pipeline(config) -> PipelineResult:
             if not _is_elevator_tail_margin_failure(exc) or tail_area_iter == 9:
                 raise
             increase_tail_area_for_margin(1.15, label="Elevator")
-    print(f"    Battery vertical tuning: battery_y0={battery_y0:.4f} m, "
+    print(f"    Battery vertical placement: battery_y0={battery_y0:.4f} m, "
           f"battery_y={y_cg['battery']:.4f} m, y_cg={y_cg['overall']:.4f} m, "
           f"tail |CLh| margin={elevator_cl_margin:+.4f}")
 

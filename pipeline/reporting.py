@@ -15,7 +15,6 @@ from propulsion import sizing as prop_sizing
 from sizing import aileron, elevator, fuselage, rudder, wing
 from structures import rods
 from weights.inertia import calculate_mass_moment_of_inertia
-from weights.mass import compute_y_cg
 
 
 def _print_control_authority(result: PipelineResult) -> None:
@@ -152,14 +151,7 @@ def print_main_summary(result: PipelineResult) -> None:
     # ------------------------------------------------------------------
     # y-CG breakdown (vertical axis)
     # ------------------------------------------------------------------
-    z_cg = compute_y_cg(
-        sizing,
-        result.fus,
-        result.struct,
-        masses,
-        result.airfoil,
-        cg=cg,
-    )
+    z_cg = result.y_cg
 
     print("\n========== CENTER OF GRAVITY (y, vertical axis) ==========")
     print("  Sign convention: +y upward from bottom of airfoil/fuselage")

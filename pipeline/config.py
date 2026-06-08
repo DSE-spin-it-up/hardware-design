@@ -60,7 +60,8 @@ if "fuselage" in _data:
     _fuselage_aliases = {
         "pvc_snap_force": "tube_snap_force",
         "pvc_snap_safety_factor": "tube_snap_safety_factor",
-        "pvc_gust_safety_factor": "tube_gust_safety_factor",
+        "pvc_gust_safety_factor": "tube_structural_safety_factor",
+        "tube_gust_safety_factor": "tube_structural_safety_factor",
         "min_pvc_foam_floor": "min_tube_foam_floor",
     }
     for _old, _new in _fuselage_aliases.items():

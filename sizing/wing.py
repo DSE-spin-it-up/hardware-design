@@ -81,8 +81,8 @@ class SizingResult:
     CL: float
     CL_one_drone_failure: float
     lift_one_drone_failure: float
-    lift_one_drone_failure_gust: float
-    lift_gust_increment: float
+    lift_one_drone_failure_structural: float
+    lift_structural_increment: float
     Cl_airfoil: float
     k: float
     Cd: float
@@ -162,8 +162,8 @@ def run(
     m_one_drone_failure = (i.n_drones * i.m_drone_empty + i.m_payload) / (i.n_drones - 1)
     CL_one_drone_failure = (m_one_drone_failure * g0) / (q_cruise * Sw)
     lift_one_drone_failure = CL_one_drone_failure * q_cruise * Sw
-    lift_one_drone_failure_gust = CL_one_drone_failure * q_structural * Sw
-    lift_gust_increment = lift_one_drone_failure_gust - lift_one_drone_failure
+    lift_one_drone_failure_structural = CL_one_drone_failure * q_structural * Sw
+    lift_structural_increment = lift_one_drone_failure_structural - lift_one_drone_failure
     Cl_airfoil = (i.AR + 2) * CL / i.AR
     k = 1 / (np.pi * e * i.AR)
     Cd = i.Cd0 + k * CL ** 2 + (i.Cd_payload * i.S_payload / (i.n_drones * Sw))
@@ -220,8 +220,8 @@ def run(
         CL=CL,
         CL_one_drone_failure=CL_one_drone_failure,
         lift_one_drone_failure=lift_one_drone_failure,
-        lift_one_drone_failure_gust=lift_one_drone_failure_gust,
-        lift_gust_increment=lift_gust_increment,
+        lift_one_drone_failure_structural=lift_one_drone_failure_structural,
+        lift_structural_increment=lift_structural_increment,
         Cl_airfoil=Cl_airfoil,
         k=k,
         Cd=Cd,
@@ -268,7 +268,7 @@ def summary(r: SizingResult) -> None:
     print(f"  Oswald efficiency    : {r.e:.4f}")
     print(f"  CL (drone)           : {r.CL:.4f}")
     print(f"  CL (1-drone failure) : {r.CL_one_drone_failure:.4f}")
-    print(f"  Gust lift increment  : {r.lift_gust_increment:.2f}  N")
+    print(f"  Structural lift inc.  : {r.lift_structural_increment:.2f}  N")
     print(f"  Cl (airfoil)         : {r.Cl_airfoil:.4f}")
     print(f"  CD                   : {r.Cd:.5f}")
     print(f"  L/D ratio            : {r.LD_ratio:.2f}")
