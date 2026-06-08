@@ -27,7 +27,17 @@ sw_tol: 1.0e-3     # m²
 V_stall: 14.0
 
 # ----- CG tuning -----
+# battery_x is an initial guess for the longitudinal trim loop. Set null to
+# start from the default rod-midpoint location; the pipeline retunes it so the
+# final CG lies on the scissor-plot stability line.
 battery_x: -0.3
+
+# Vertical battery placement when battery_y0 and battery_y_frac are unset:
+#   low    -> lowest feasible battery bottom
+#   high   -> highest feasible battery bottom inside the fuselage
+#   energy -> sample the feasible range and pick lowest cruise energy
+battery_y_mode: low
+battery_y_samples: 9
 
 # ----- Initial / wing sizing -----
 # ----- Initial / wing sizing -----

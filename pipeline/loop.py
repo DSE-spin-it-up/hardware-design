@@ -597,7 +597,7 @@ def _optimize_battery_y_for_elevator(
     propulsion: PropulsionResult,
     tol: float = 1.0e-5,
 ) -> tuple[float, dict[str, float], ScissorData, ElevatorResult, float]:
-    """Place the battery at the lowest feasible vertical position."""
+    """Place the battery within the feasible vertical range."""
     elevator_inputs_unchecked = dataclasses.replace(
         config.ELEVATOR,
         enforce_tail_stall=False,
@@ -642,6 +642,42 @@ def _optimize_battery_y_for_elevator(
             q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
         )
 
+    def checked_candidate(battery_y0: float):
+        y_cg_candidate, scissor_candidate, _, margin_candidate = evaluate(battery_y0)
+        if margin_candidate < -tol:
+            raise ValueError(
+                "Battery vertical placement failed: candidate battery height "
+                "violates the elevator tail-stall limit.\n"
+                f"  candidate battery_y0 = {battery_y0:.4f} m, "
+                f"battery_y = {y_cg_candidate['battery']:.4f} m, "
+                f"tail |CLh| margin = {margin_candidate:+.4f}"
+            )
+        elevator_candidate = checked_elevator(y_cg_candidate, scissor_candidate)
+        margin_candidate = elevator_candidate.tail_CL_limit - max(
+            abs(elevator_candidate.CLh_at_max_up),
+            abs(elevator_candidate.CLh_at_max_down),
+        )
+        return y_cg_candidate, scissor_candidate, elevator_candidate, margin_candidate
+
+    def cruise_energy_for_candidate(elevator_candidate: ElevatorResult) -> float:
+        trim_tail_loading = tail_drag_at_cruise(
+            sizing, polar, llt,
+            x_cg=p.cg["overall"],
+            tail_airfoil=config.TAIL_AIRFOIL,
+            CL_tail=elevator_candidate.CLh_cruise,
+        )
+        cd_full = full_drag_estimate(
+            sizing, p.drag, llt,
+            cd_i_tail=trim_tail_loading["CD_i_tail_wing_ref"],
+        )
+        cruise_drag = cd_full * sizing.q_cruise * sizing.Sw
+        propulsion_candidate = prop_sizing.run(
+            sizing,
+            config.PROPULSION,
+            cruise_drag=cruise_drag,
+        )
+        return float(propulsion_candidate.E_cruise)
+
     battery_y0_override = getattr(config, "BATTERY_Y0", None)
     battery_y_frac = getattr(config, "BATTERY_Y_FRAC", None)
     if battery_y0_override is not None and battery_y_frac is not None:
@@ -651,13 +687,49 @@ def _optimize_battery_y_for_elevator(
         battery_y0_override = y_lo + frac * (y_hi - y_lo)
     if battery_y0_override is not None:
         y_fixed = float(np.clip(battery_y0_override, y_lo, y_hi))
-        y_cg_fixed, scissor_fixed, _, margin_fixed = evaluate(y_fixed)
-        elevator_fixed = checked_elevator(y_cg_fixed, scissor_fixed)
-        margin_fixed = elevator_fixed.tail_CL_limit - max(
-            abs(elevator_fixed.CLh_at_max_up),
-            abs(elevator_fixed.CLh_at_max_down),
-        )
+        y_cg_fixed, scissor_fixed, elevator_fixed, margin_fixed = checked_candidate(y_fixed)
         return y_fixed, y_cg_fixed, scissor_fixed, elevator_fixed, margin_fixed
+
+    battery_y_mode = str(getattr(config, "BATTERY_Y_MODE", "low")).strip().lower()
+    if battery_y_mode not in {"low", "high", "energy"}:
+        raise ValueError(
+            "battery_y_mode must be one of 'low', 'high', or 'energy' "
+            f"(got {battery_y_mode!r})."
+        )
+
+    if battery_y_mode == "high":
+        y_cg_hi, scissor_hi, elevator_hi, margin_hi = checked_candidate(y_hi)
+        return y_hi, y_cg_hi, scissor_hi, elevator_hi, margin_hi
+
+    if battery_y_mode == "energy":
+        n_samples = max(2, int(getattr(config, "BATTERY_Y_SAMPLES", 9)))
+        candidates = []
+        last_error: Exception | None = None
+        for y_probe in np.linspace(y_lo, y_hi, n_samples):
+            y_probe = float(y_probe)
+            try:
+                y_cg_probe, scissor_probe, elevator_probe, margin_probe = checked_candidate(y_probe)
+            except ValueError as exc:
+                last_error = exc
+                continue
+            energy_probe = cruise_energy_for_candidate(elevator_probe)
+            candidates.append((
+                energy_probe,
+                y_probe,
+                y_cg_probe,
+                scissor_probe,
+                elevator_probe,
+                margin_probe,
+            ))
+        if not candidates:
+            if last_error is not None:
+                raise last_error
+            raise ValueError("Battery vertical placement failed: no feasible energy samples.")
+        _, y_best, y_cg_best, scissor_best, elevator_best, margin_best = min(
+            candidates,
+            key=lambda item: item[0],
+        )
+        return y_best, y_cg_best, scissor_best, elevator_best, margin_best
 
     y_cg_lo, scissor_lo, elevator_lo, margin_lo = evaluate(y_lo)
     if margin_lo < -tol:
