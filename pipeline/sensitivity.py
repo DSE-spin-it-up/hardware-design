@@ -15,11 +15,16 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import io
+import sys
 import types
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from pipeline import config as base_config
 from pipeline import loop
@@ -115,6 +120,7 @@ def sweep_one(
     masses: list[float] = []
     energies: list[float] = []
     for v in values:
+        print(f"    running {variable} = {v!r} ...", flush=True)
         m, e, m_pd, e_pd = evaluate(**{variable: v})
         print(f"    {variable} = {v!r:<28} "
               f"fleet: m = {m:7.3f} kg  E = {e:8.2f} Wh   "

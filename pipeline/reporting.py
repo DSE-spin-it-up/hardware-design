@@ -247,6 +247,11 @@ def print_main_summary(result: PipelineResult) -> None:
 
 
 def print_final_drag(result: PipelineResult) -> None:
+    print("\n========== FINAL SUMMARY ==========")
+    print(f"  Total mass   : {result.masses['total']:.4f}  kg")
+    print(f"  Total energy : {result.propulsion.E_total / 3600.0:.2f}  Wh")
+    return
+
     tl = result.tail_loading
     total = result.cd_full_buildup
     print(f"\nFull-buildup CD                       : {total:.5f}")

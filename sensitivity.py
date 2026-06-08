@@ -8,9 +8,9 @@ point, and the whole-fleet mass `m` and energy `E` (per-drone values ×
 energy right) — one figure per variable. Sweeping `n_drones` therefore scales
 the system totals linearly with the fleet size.
 
-By default every sweep runs. Pass a single sweep name to run just that one,
-e.g. `python sensitivity.py n_drones` or `python sensitivity.py props`.
-Use `python sensitivity.py --list` to see the available sweeps.
+Pass a single sweep name to run it, e.g. `python sensitivity.py n_drones` or
+`python sensitivity.py props`. Use `python sensitivity.py --all` to run every
+sweep, or `python sensitivity.py --list` to see the available sweeps.
 """
 from __future__ import annotations
 
@@ -112,6 +112,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="list the available sweeps and exit",
     )
     parser.add_argument(
+        "--all", action="store_true",
+        help="run all sweeps; this may take a long time",
+    )
+    parser.add_argument(
         "--no-show", action="store_true",
         help="compute the sweep without opening plot windows",
     )
@@ -124,4 +128,10 @@ if __name__ == "__main__":
         for name, spec in SWEEPS.items():
             print(f"{name:<10} {spec['title']}")
     else:
-        main(sweep=args.sweep, show_plots=not args.no_show)
+        if args.sweep is None and not args.all:
+            print("Choose a sweep to run, or pass --all for the full batch.")
+            print("Available sweeps:")
+            for name, spec in SWEEPS.items():
+                print(f"  {name:<10} {spec['title']}")
+        else:
+            main(sweep=None if args.all else args.sweep, show_plots=not args.no_show)

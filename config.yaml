@@ -34,9 +34,10 @@ battery_x: -0.3
 
 # Vertical battery placement when battery_y0 and battery_y_frac are unset:
 #   low    -> lowest feasible battery bottom
+#   middle -> battery centered vertically in the fuselage box
 #   high   -> highest feasible battery bottom inside the fuselage
 #   energy -> sample the feasible range and pick lowest cruise energy
-battery_y_mode: low
+battery_y_mode: middle
 battery_y_samples: 9
 
 # ----- Initial / wing sizing -----
@@ -59,7 +60,7 @@ sizing:
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 1.5
+  L_boom: 1.8
   ARt: 4.5
   lam_t: 1.0
   SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15
@@ -109,7 +110,7 @@ fuselage:
 control_surface:
   cl_alpha: 6.283185307179586
   cd0_section: 0.04
-  roll_moment_dist: 0.05
+  roll_moment_dist: 0.0
   max_da_deg: 10.0
   max_y_frac: 0.8
   payload_lateral_angle_deg: 30.0  # [deg] max payload lateral angle from vertical

@@ -163,7 +163,7 @@ def compute_cg(
     battery_x: float | None = None,
     pvc_tubes_mass_override: float | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
-    sensor_mass: float = 0.282,
+    sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
 ) -> dict[str, float]:
     """Compute CG x-position of all components and overall aircraft CG.
@@ -323,7 +323,7 @@ def compute_y_cg(
     airfoil_path: str | Path,
     cg: dict[str, float],
     battery_y0: float | None = None,
-    sensor_mass: float = 0.282,
+    sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
 ) -> dict[str, float]:
     """Compute vertical (y) CG position of each component and overall aircraft.
@@ -521,7 +521,7 @@ def total_mass(
     wing_thickness: float = 0.1,
     tail_thickness: float = 0.08,
     materials: PartMaterials = DEFAULT_MATERIALS,
-    sensor_mass: float = 0.282,
+    sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components.

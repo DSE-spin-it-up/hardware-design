@@ -117,6 +117,7 @@ def plot_cg_side_view(
     tail_airfoil_path: str | Path | None = None,
     propulsion: PropulsionResult | None = None,
     rudder: RudderResult | None = None,
+    y_cg: dict[str, float] | None = None,
     show: bool = True,
 ) -> plt.Figure:
     """Side-view sketch of the aircraft with component CGs and overall CG.
@@ -225,8 +226,10 @@ def plot_cg_side_view(
 
     battery_length = fus.battery_length
     battery_height = fus.battery_height
+    if y_cg is None:
+        y_cg = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     batt_x0 = x_batt - battery_length / 2.0
-    batt_y0 = fus.battery_y_min
+    batt_y0 = y_cg.get("battery_bottom", y_cg["battery"] - battery_height / 2.0)
 
     # ------------------------------------------------------------------ structural box vertical placement
     box_y0 = 0.0
@@ -372,7 +375,6 @@ def plot_cg_side_view(
     ))
 
     # --- Servos (small dots behind rods so they don't obscure rod geometry) ---
-    y_cg      = compute_y_cg(sizing, fus, struct, masses, airfoil_path, cg=cg)
     motor_y   = y_cg["motors"]
     overall_y = y_cg["overall"]
 

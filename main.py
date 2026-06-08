@@ -35,6 +35,7 @@ def main(show_plots: bool = True) -> None:
             tail_airfoil_path=result.tail_airfoil,
             propulsion=result.propulsion,
             rudder=result.rudder,
+            y_cg=result.y_cg,
         )
         plots.plot_drone_ld(
             result.cl_sweep, result.cd_drone_sweep, result.cd_full_sweep,

@@ -691,11 +691,17 @@ def _optimize_battery_y_for_elevator(
         return y_fixed, y_cg_fixed, scissor_fixed, elevator_fixed, margin_fixed
 
     battery_y_mode = str(getattr(config, "BATTERY_Y_MODE", "low")).strip().lower()
-    if battery_y_mode not in {"low", "high", "energy"}:
+    if battery_y_mode not in {"low", "middle", "high", "energy"}:
         raise ValueError(
-            "battery_y_mode must be one of 'low', 'high', or 'energy' "
+            "battery_y_mode must be one of 'low', 'middle', 'high', or 'energy' "
             f"(got {battery_y_mode!r})."
         )
+
+    if battery_y_mode == "middle":
+        y_mid = box_y0 + 0.5 * (p.fus.box_height - p.fus.battery_height)
+        y_mid = float(np.clip(y_mid, y_lo, y_hi))
+        y_cg_mid, scissor_mid, elevator_mid, margin_mid = checked_candidate(y_mid)
+        return y_mid, y_cg_mid, scissor_mid, elevator_mid, margin_mid
 
     if battery_y_mode == "high":
         y_cg_hi, scissor_hi, elevator_hi, margin_hi = checked_candidate(y_hi)
@@ -1396,6 +1402,11 @@ def run_pipeline(config) -> PipelineResult:
     scissor = final_state["scissor"]
     elevator_result = final_state["elevator"]
     elevator_cl_margin = final_state["margin"]
+
+    if mass_history:
+        mass_history[-1] = p.masses["total"]
+    if cg_history:
+        cg_history[-1] = p.cg["overall"]
 
     final_scissor_x_target, _ = _stability_x_at_ShS(
         scissor,
