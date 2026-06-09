@@ -38,9 +38,12 @@ class SizingInputs:
     # https://icas.org/icas_archive/ICAS2022/data/papers/ICAS2022_0383_paper.pdf p.5
     Vv: float = 0.04
     Vh: float = 0.50
-    # Physical tail-boom length from aileron hinge to vertical-tail trailing edge.
+    # Physical tail-boom length from the boom root to vertical-tail trailing edge.
     # run() derives lh (wing AC -> tail AC) from this and the tail geometry.
     L_boom: float = 1.50
+    # Optional x-location of the boom root from LEMAC. The pipeline updates this
+    # to the battery front face after the battery-x trim loop has a fuselage.
+    boom_root_x: float | None = None
     # Optional override for the horizontal tail area. When None, run() derives
     # it from the tail volume coefficient using the boom-derived lh.
     # The pipeline loop overwrites this with the scissor-plot result each pass.
@@ -97,7 +100,7 @@ class SizingResult:
     lh: float
     ch: float
     tt_h: float
-    # L_boom = physical tail-boom length (aileron hinge → tail TE). Used for
+    # L_boom = physical tail-boom length (boom root -> tail TE). Used for
     # the tail-rod cantilever sizing, the tail boom drag wetted area, the tail
     # mass arm, and the side-view plot. Always strictly longer than lh.
     ARt : float
@@ -179,9 +182,10 @@ def run(
     ch = bh / i.ARt
     L_boom = i.L_boom
     x_aileron_hinge = (1.0 - c_aileron_to_c_wing) * c_root
+    x_boom_root = x_aileron_hinge if i.boom_root_x is None else float(i.boom_root_x)
     x_wing_ac = 0.25 * c
     x_tail_ac_from_boom_end = 0.75 * ch
-    lh = L_boom + x_aileron_hinge - x_wing_ac - x_tail_ac_from_boom_end
+    lh = L_boom + x_boom_root - x_wing_ac - x_tail_ac_from_boom_end
     if lh <= 0.0:
         raise ValueError(
             f"Tail geometry failed: derived lh = {lh:.3f} m from "

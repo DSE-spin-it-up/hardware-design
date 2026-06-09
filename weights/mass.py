@@ -353,13 +353,13 @@ def compute_cg(
     x_pvc         = 0.5 * (tube_x0 + tube_x1)
 
     prop_radius  = propulsion.D_prop / 2.0
-    x_vt_te      = x_rod_aileron + sizing.L_boom
+    x_boom_root, x_vt_te = _tail_boom_x_bounds(sizing, fus, x_batt)
     x_vt_le      = x_vt_te - sizing.cv
     x_vt_fs      = x_vt_le + 0.25 * sizing.cv
     x_motor_back = x_vt_fs
     x_ht_te      = x_vt_fs - prop_radius
     x_ht_le      = x_ht_te - sizing.ch
-    x_tail_rod   = x_rod_aileron + 0.5 * sizing.L_boom
+    x_tail_rod   = 0.5 * (x_boom_root + x_vt_te)
     x_spar_ht    = x_ht_le + _max_tc_x(tail_airfoil_path) * sizing.ch
     x_control_ht = x_ht_le + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.ch
     x_spar_vt    = x_vt_le + _max_tc_x(tail_airfoil_path) * sizing.cv

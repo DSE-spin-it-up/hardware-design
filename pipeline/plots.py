@@ -154,7 +154,8 @@ def plot_cg_side_view(
     c_v      = sizing.cv
     ch       = sizing.ch
     L_boom   = sizing.L_boom
-    x_vt_te  = x_rod_aileron + L_boom
+    tail_start = x_batt - 0.5 * fus.battery_length
+    x_vt_te  = tail_start + L_boom
     x_vt_le  = x_vt_te - c_v
     x_vt_fs  = x_vt_le + 0.25 * c_v
     if x_motor_back is None:
@@ -362,7 +363,6 @@ def plot_cg_side_view(
     ax.add_patch(Circle((x_rod_aileron, y_rod_aileron), rod_radius_a, color="sienna", alpha=0.8, label="Aileron rod"))
 
     # --- Tail boom ---
-    tail_start = x_rod_aileron
     tail_boom_d = struct.d_t
     ax.add_patch(Rectangle(
         (tail_start, y_rod_aileron - tail_boom_d / 2.0),

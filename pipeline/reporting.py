@@ -86,6 +86,44 @@ def _fmt_cg(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:+8.4f}  m"
 
 
+def _print_vehicle_block(result: PipelineResult) -> None:
+    s = result.sizing
+    p = result.propulsion
+    cl_alpha = result.scissor.CL_alpha_w
+    cl0 = -cl_alpha * result.polar.alpha_L0
+    t_max_total = p.max_thrust_per_prop * p.inputs.n_props
+
+    print("\nvehicle:")
+    print(f"  m:           {result.masses['total']:.3f}")
+    print("  g:           9.81")
+    print(f"  rho:         {s.rho:.4f}")
+    print(f"  S:           {s.Sw:.4f}")
+    print(f"  CL0:         {cl0:.4g}")
+    print(f"  AR:          {s.inputs.AR:.4g}")
+    print(f"  e:           {s.e:.4f}")
+    print(f"  CLa:         {cl_alpha:.4g}")
+    print(f"  CD0:         {result.drag.CD0:.5f}")
+    print(f"  CD0_payload: {s.inputs.Cd_payload:.4g}")
+    print(f"  S_payload:   {s.inputs.S_payload:.4g}")
+    print(f"  m_L:         {s.inputs.m_payload:.4g}")
+    print("  cable_len:   18.0")
+    print("  cable_tol:   0.1")
+
+    print("\nlimits:")
+    print("  V_min:         14.0")
+    print(f"  V_max:         {s.inputs.v_max:.4g}")
+    print(f"  gam_max:       {np.radians(45.0):.6g}")
+    print("  T_min:         0.0")
+    print(f"  T_max:         {t_max_total:.4g}")
+    print(f"  P_max:         {p.max_power_elec:.4g}")
+    print(f"  alpha_min:     {np.radians(-15.0):.6g}")
+    print(f"  alpha_max:     {np.radians(8.0):.6g}")
+    print(f"  mu_max:        {np.radians(35.0):.6g}")
+    print("  d_min:         6.0")
+    print(f"  V_cruise:      {s.inputs.V_cruise:.4g}")
+    print("  Tc_max:        750.0")
+
+
 def print_main_summary(result: PipelineResult) -> None:
     sizing = result.sizing
     drag = result.drag
@@ -288,6 +326,7 @@ def print_final_drag(result: PipelineResult) -> None:
     print("\n========== FINAL SUMMARY ==========")
     print(f"  Total mass   : {result.masses['total']:.4f}  kg")
     print(f"  Total energy : {result.propulsion.E_total / 3600.0:.2f}  Wh")
+    _print_vehicle_block(result)
     return
 
     tl = result.tail_loading

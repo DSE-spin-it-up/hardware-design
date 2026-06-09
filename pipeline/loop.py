@@ -112,6 +112,24 @@ class _ScissorState:
     ShS_target: float
 
 
+def _boom_root_x_from_battery(battery_x: float | None, fus: FuselageResult | None) -> float | None:
+    if battery_x is None or fus is None:
+        return None
+    return float(battery_x) - 0.5 * fus.battery_length
+
+
+def _sizing_inputs_with_boom_root(
+    inputs: wing.SizingInputs,
+    battery_x: float | None,
+    fus: FuselageResult | None,
+    **replace_kwargs,
+) -> wing.SizingInputs:
+    boom_root_x = _boom_root_x_from_battery(battery_x, fus)
+    if boom_root_x is not None:
+        replace_kwargs["boom_root_x"] = boom_root_x
+    return dataclasses.replace(inputs, **replace_kwargs)
+
+
 def _run_design_pass(
     sizing: SizingResult,
     *,
@@ -528,8 +546,10 @@ def _retune_tail_area_and_battery_for_scissor(
         if abs(cg_error) <= tol_x and abs(ShS_error) <= tol_ShS:
             break
 
-        sizing_inputs = dataclasses.replace(
+        sizing_inputs = _sizing_inputs_with_boom_root(
             sizing.inputs,
+            battery_x,
+            p.fus,
             Sh=state.ShS_target * sizing.Sw,
         )
         sizing = wing.run(
@@ -956,7 +976,12 @@ def run_pipeline(config) -> PipelineResult:
 
         if config.MASS_CLOSURE:
             replace_kwargs["m_drone_empty"] = m_drone
-        sizing_inputs = dataclasses.replace(sizing_inputs, **replace_kwargs)
+        sizing_inputs = _sizing_inputs_with_boom_root(
+            sizing_inputs,
+            battery_x,
+            p.fus,
+            **replace_kwargs,
+        )
         sizing = wing.run(
             sizing_inputs,
             t_over_c_root=tc,
@@ -1125,8 +1150,10 @@ def run_pipeline(config) -> PipelineResult:
 
         Sh_old = sizing.Sh
         Sw_old = sizing.Sw
-        sizing_inputs = dataclasses.replace(
+        sizing_inputs = _sizing_inputs_with_boom_root(
             sizing.inputs,
+            battery_x,
+            p.fus,
             Sh=factor * sizing.Sh,
         )
         sizing = wing.run(
@@ -1342,6 +1369,29 @@ def run_pipeline(config) -> PipelineResult:
                 raise
             increase_tail_area_for_margin(1.10, label="Final elevator")
     for _ in range(6):
+        desired_boom_root_x = _boom_root_x_from_battery(
+            final_state["battery_x"],
+            final_state["p"].fus,
+        )
+        if desired_boom_root_x is not None and not np.isclose(
+            sizing.inputs.boom_root_x,
+            desired_boom_root_x,
+            atol=1.0e-5,
+            rtol=0.0,
+        ):
+            sizing_inputs = dataclasses.replace(
+                sizing.inputs,
+                boom_root_x=desired_boom_root_x,
+            )
+            sizing = wing.run(
+                sizing_inputs,
+                t_over_c_root=tc,
+                c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+            )
+            sizing_inputs = sizing.inputs
+            final_state = evaluate_final_scissor(final_state["battery_x"])
+            continue
+
         if (
             abs(final_state["x_error"]) <= 1.0e-4
             and final_state["ShS_error"] >= -1.0e-4
@@ -1355,8 +1405,10 @@ def run_pipeline(config) -> PipelineResult:
             continue
 
         if final_state["ShS_error"] < -1.0e-4:
-            sizing_inputs = dataclasses.replace(
+            sizing_inputs = _sizing_inputs_with_boom_root(
                 sizing.inputs,
+                final_state["battery_x"],
+                final_state["p"].fus,
                 Sh=final_state["ShS_target"] * sizing.Sw,
             )
             sizing = wing.run(

@@ -20,9 +20,9 @@ V-tail has four rods total, two per V-tail plane, each of length bt/2:
                          but each rod carries F_tail/2 (quarter of total
                          tail load).
 
-Tail rod: cantilever connecting the tail to the aileron-hinge anchor on the
-wing, with the tail download as a point load at the tip. Length = L_boom
-(aileron hinge → tail TE), strictly longer than the aero moment arm lh
+Tail rod: cantilever connecting the tail to the boom root, with the tail
+download as a point load at the tip. Length = L_boom (boom root → tail TE),
+strictly longer than the aero moment arm lh
 since it extends past the tail AC to its trailing edge.
 
 Tail rod torsion: the rudder hinge moment at cruise speed and maximum
@@ -98,7 +98,7 @@ class RodResult:
     mass_aileron: float
     defl_aileron: float
     fail_mode_aileron: str
-    # Tail rod (aileron hinge → tail TE, length = L_boom)
+    # Tail rod (boom root → tail TE, length = L_boom)
     d_t: float
     t_t: float
     mass_t: float
@@ -578,7 +578,7 @@ def run(
     mass_aileron = _tube_mass(b_w, d_aileron, t_control, rho_mat)
 
     # ------------------------------------------------------------------ #
-    # Tail rod (aileron hinge → tail TE, cantilever point load)           #
+    # Tail rod (boom root → tail TE, cantilever point load)               #
     # ------------------------------------------------------------------ #
     if tail_polar is not None:
         CL_h = _finite_tail_cl_limit_llt(s, tail_polar)
@@ -873,7 +873,7 @@ def summary(r: RodResult) -> None:
     print(f"  Mass (each)            : {r.mass_aileron:.3f}  kg")
     print(f"  Section height at x/c  : {r.section_h_aileron * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_aileron)}")
 
-    print("\n--- Tail rod (aileron hinge → tail TE) ---")
+    print("\n--- Tail rod (boom root → tail TE) ---")
     print(f"  Tail dynamic pressure ratio (η_h) : {r.eta_h:.3f}")
     print(f"  Structural tail speed  : {r.V_tail_structural:.2f}  m/s")
     print(f"  Structural tail q      : {r.q_tail_structural:.2f}  Pa")
