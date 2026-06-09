@@ -238,8 +238,9 @@ def plot_cg_side_view(
     # ------------------------------------------------------------------ structural box vertical placement
     box_y0 = 0.0
     box_yc = box_y0 + fus.box_height / 2.0
-    body_y0 = 0.0
-    body_yc = body_y0 + fus.height / 2.0
+    body_diameter = fus.d_eq
+    body_yc = box_yc
+    body_y0 = body_yc - body_diameter / 2.0
 
     # ------------------------------------------------------------------ Raymer fuselage x-coordinates
     box_x0      = fus.x_nose + fus.l_nose
@@ -247,7 +248,7 @@ def plot_cg_side_view(
     fus_nose_x  = fus.x_nose
     fus_tail_x  = box_x1 + fus.l_tail
 
-    half_h = fus.height / 2.0
+    half_h = body_diameter / 2.0
 
     # Nose cone: triangle  tip → top-left → bottom-left
     tail_exit_radius = struct.d_t / 2.0
@@ -281,7 +282,7 @@ def plot_cg_side_view(
 
     # --- Raymer fuselage body ---
     fus_kw = dict(facecolor="lightcyan", edgecolor="navy", alpha=0.5, linewidth=2)
-    ax.add_patch(Rectangle((box_x0, body_y0), fus.l_cylinder, fus.height,
+    ax.add_patch(Rectangle((box_x0, body_y0), fus.l_cylinder, body_diameter,
                             label="Fuselage cylinder", **fus_kw))
     ax.add_patch(Polygon(nose_poly, closed=True, label="Ogive nose", **fus_kw))
     ax.add_patch(Polygon(tail_poly, closed=True, label="Tail taper", **fus_kw))
@@ -455,7 +456,7 @@ def plot_cg_side_view(
     x_left  = min(fus_nose_x - 0.05, -0.05)
     x_right = max(fus_tail_x, x_tail, x_overall) + 0.2
     ax.set_xlim(x_left, x_right)
-    ax.set_ylim(min(-0.05, box_y0 - 0.05), plot_height + 0.05)
+    ax.set_ylim(min(-0.05, box_y0 - 0.05, body_y0 - 0.05), plot_height + 0.05)
     ax.set_aspect("equal", adjustable="box")
     ax.set_title("Aircraft CG side view")
     ax.set_xlabel("x [m] from LEMAC")

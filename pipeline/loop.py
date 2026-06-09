@@ -882,7 +882,7 @@ def _print_iter(
           f"t_w={p.struct.t_w * 1000:.2f}mm({p.struct.fail_mode_w[:4]})  "
           f"t_t={p.struct.t_t * 1000:.2f}mm({p.struct.fail_mode_t[:4]})  "
           f"m_batt={p.propulsion.battery_mass:.3f}  "
-          f"fus={p.fus.length:.3f}×{p.fus.width:.3f}×{p.fus.height:.3f}")
+          f"fus LxD={p.fus.length:.3f}x{p.fus.d_eq:.3f}")
 
 
 def run_pipeline(config) -> PipelineResult:
@@ -1614,3 +1614,4 @@ def run_pipeline(config) -> PipelineResult:
         battery_y0=battery_y0,
         y_cg=final_y_cg,
     )
+

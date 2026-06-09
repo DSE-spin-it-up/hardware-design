@@ -44,7 +44,7 @@ class FuselageResult:
     length: float       # [m]  total aero length (nose + cylinder + tail)
     width: float        # [m]  max outer diameter in y
     height: float       # [m]  max outer diameter in z
-    d_eq: float         # [m]  equivalent diameter sqrt(w*h)
+    d_eq: float         # [m]  circular body diameter enclosing the box
     fineness: float     # [-]  length / d_eq
     Swet: float         # [m²] wetted area (Raymer cylindrical-body formula)
     # Aero sub-section lengths
@@ -320,12 +320,12 @@ def run(
 def summary(r: FuselageResult) -> None:
     print("\n--- Fuselage (Raymer Cylindrical Body) ---")
     print(f"  Battery L × W × H     : {r.battery_length:.4f} × {r.battery_width:.4f} × {r.battery_height:.4f}  m")
-    print(f"  Internal Box           : {r.box_length:.4f} × {r.box_width:.4f} × {r.box_height:.4f}  m")
+    print(f"  Internal box length    : {r.box_length:.4f}  m")
     print(f"  Aero body total length : {r.length:.4f}  m  "
           f"(nose {r.l_nose:.4f} + cyl {r.l_cylinder:.4f} + tail {r.l_tail:.4f})")
-    print(f"  Max width × height     : {r.width:.4f} × {r.height:.4f}  m")
+    print(f"  Box width x height     : {r.width:.4f} x {r.height:.4f}  m")
+    print(f"  Surrounding diameter   : {r.d_eq:.4f}  m")
     print(f"  Nose x (from LEMAC)    : {r.x_nose:.4f}  m")
-    print(f"  Equivalent Diameter    : {r.d_eq:.4f}  m")
     print(f"  Fineness ratio (L/D)   : {r.fineness:.3f}")
     print(f"  Wetted Area (Raymer)   : {r.Swet:.4f}  m²")
     print(f"  Cylinder internal vol  : {r.volume_shell:.6f}  m³")
