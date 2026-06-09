@@ -84,6 +84,7 @@ class PipelineResult:
     cd_i_tail: float       # tail induced drag, wing-area reference
     tail_loading: dict     # CL_tail, CD_i_tail (tail ref), e_tail, AR_tail
     scissor: ScissorData   # stability-line scissor plot data
+    rib_checks: tuple[dict[str, float | str | bool], ...]
     battery_y0: float      # [m] battery bottom used for final vertical trim
     y_cg: dict[str, float] # final vertical CG breakdown
 
@@ -201,6 +202,7 @@ def _run_design_pass(
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
         materials=config.MATERIALS,
+        rib_inputs=config.RIBS,
     )
     cg = weights_mass.compute_cg(
         sizing=sizing,
@@ -212,6 +214,7 @@ def _run_design_pass(
         tail_airfoil_path=config.TAIL_AIRFOIL,
         battery_x=battery_x,
         materials=config.MATERIALS,
+        rib_inputs=config.RIBS,
     )
     y_cg_for_aileron = weights_mass.compute_y_cg(
         sizing=sizing,
@@ -220,6 +223,7 @@ def _run_design_pass(
         masses=masses,
         airfoil_path=airfoil,
         cg=cg,
+        rib_inputs=config.RIBS,
     )
     control_surface = aileron.run(
         sizing,
@@ -333,6 +337,7 @@ def _scissor_state_for_pass(
     y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
+        rib_inputs=config.RIBS,
     )
 
     y_thrust_ref = y_cg["wing_ac"]
@@ -605,6 +610,7 @@ def _optimize_battery_y_for_elevator(
     base_y_cg = weights_mass.compute_y_cg(
         sizing=sizing, fus=p.fus, structure=p.struct,
         masses=p.masses, airfoil_path=airfoil, cg=p.cg,
+        rib_inputs=config.RIBS,
     )
     box_y0 = base_y_cg["fuselage"] - 0.5 * p.fus.box_height
     y_lo = base_y_cg["battery_bottom"]
@@ -618,6 +624,7 @@ def _optimize_battery_y_for_elevator(
             sizing=sizing, fus=p.fus, structure=p.struct,
             masses=p.masses, airfoil_path=airfoil, cg=p.cg,
             battery_y0=battery_y0,
+            rib_inputs=config.RIBS,
         )
         scissor = _final_scissor_for_y_cg(
             sizing, p, config=config, llt=llt,
@@ -1456,6 +1463,46 @@ def run_pipeline(config) -> PipelineResult:
         safety_factor=config.STRUCTURE.safety_factor,
     )
 
+    final_masses = weights_mass.total_mass(
+        sizing=sizing,
+        propulsion=final_propulsion,
+        structure=struct,
+        fus=p.fus,
+        airfoil_path=airfoil,
+        tail_airfoil_path=config.TAIL_AIRFOIL,
+        materials=config.MATERIALS,
+        rib_inputs=config.RIBS,
+    )
+    final_cg = weights_mass.compute_cg(
+        sizing=sizing,
+        propulsion=final_propulsion,
+        structure=struct,
+        fus=p.fus,
+        aileron=p.control_surface,
+        airfoil_path=airfoil,
+        tail_airfoil_path=config.TAIL_AIRFOIL,
+        battery_x=battery_x,
+        materials=config.MATERIALS,
+        rib_inputs=config.RIBS,
+    )
+    final_y_cg = weights_mass.compute_y_cg(
+        sizing=sizing,
+        fus=p.fus,
+        structure=struct,
+        masses=final_masses,
+        airfoil_path=airfoil,
+        cg=final_cg,
+        battery_y0=battery_y0,
+        rib_inputs=config.RIBS,
+    )
+    final_rib_checks = weights_mass.rib_checks(
+        sizing=sizing,
+        propulsion=final_propulsion,
+        airfoil_path=airfoil,
+        rib_inputs=config.RIBS,
+        materials=config.MATERIALS,
+    )
+
     return PipelineResult(
         airfoil=airfoil,
         tail_airfoil=config.TAIL_AIRFOIL,
@@ -1471,8 +1518,8 @@ def run_pipeline(config) -> PipelineResult:
         control_surface=p.control_surface,
         elevator=elevator_result,
         rudder=rudder_result,
-        masses=p.masses,
-        cg=p.cg,
+        masses=final_masses,
+        cg=final_cg,
         cd0_history=cd0_history,
         mass_history=mass_history,
         sw_history=sw_history,
@@ -1493,6 +1540,7 @@ def run_pipeline(config) -> PipelineResult:
         cd_i_tail=cd_i_tail,
         tail_loading=tail_loading,
         scissor=scissor,
+        rib_checks=final_rib_checks,
         battery_y0=battery_y0,
-        y_cg=y_cg,
+        y_cg=final_y_cg,
     )

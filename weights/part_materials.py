@@ -29,6 +29,7 @@ class PartMaterials:
     wing: Material = field(default_factory=EPP)
     rod: Material = field(default_factory=CFRP)
     tail: Material = field(default_factory=EPP)
+    rib: Material = field(default_factory=Aluminum_6061_T6)
     # Material used for external glass-fibre skin/sheet coverings
     sheet: Material = field(default_factory=Glass_Fiber)
 

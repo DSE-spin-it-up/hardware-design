@@ -197,6 +197,9 @@ def build_components(
     wing_i = _thin_plate_xy_inertia(masses.get("wing", 0.0), sizing.c_root, sizing.inputs.b)
     _append_if_positive(components, PointMass("wing", masses.get("wing", 0.0), cg["wing"], 0.0, z_cg["wing"], *wing_i))
 
+    rib_i = _thin_plate_xy_inertia(masses.get("ribs", 0.0), sizing.c_root, 0.0)
+    _append_if_positive(components, PointMass("ribs", masses.get("ribs", 0.0), cg.get("ribs", cg["wing"]), 0.0, z_cg.get("ribs", z_cg["wing"]), *rib_i))
+
     spar_i = _rod_along_y_inertia(masses.get("rod_spar", 0.0), sizing.inputs.b)
     _append_if_positive(components, PointMass("rod_spar", masses.get("rod_spar", 0.0), cg["rod_spar"], 0.0, z_cg["rod_spar"], *spar_i))
 

@@ -18,6 +18,8 @@ DEFAULT_MATERIALS = PartMaterials()
 
 SERVO_MASS = 0.052  # [kg] per servo
 _STRUCTURAL_TUBE_SF = 1.2       # safety factor for structural tube mass estimate
+_RIB_COUNT = 4
+_RIB_FRONT_MIN_X_FRAC = 0.02
 
 
 # ==============================================================================
@@ -31,6 +33,12 @@ class WiringInputs:
     rho_signal: float = 0.0012
     bundle_overhead: float = 1.4
     signal_length_est: float = 2.0
+
+
+@dataclass
+class RibInputs:
+    thickness: float = 0.002
+    safety_factor: float = 1.2
 
 
 def _compute_wiring_masses(
@@ -109,6 +117,155 @@ def _structural_tube_mass(structure: RodResult, fus: FuselageResult, tube_length
     return tube_length * area * Aluminum_6061_T6().rho * _STRUCTURAL_TUBE_SF
 
 
+def _tail_boom_x_bounds(sizing: SizingResult, fus: FuselageResult, x_batt: float) -> tuple[float, float]:
+    """Tail boom runs from the battery front face and keeps length L_boom."""
+    x0 = x_batt - 0.5 * fus.battery_length
+    return x0, x0 + sizing.L_boom
+
+
+def _polygon_area_centroid_ixx(points: np.ndarray) -> tuple[float, float, float, float]:
+    x = points[:, 0]
+    y = points[:, 1]
+    x_next = np.roll(x, -1)
+    y_next = np.roll(y, -1)
+    cross = x * y_next - x_next * y
+    area_signed = 0.5 * float(np.sum(cross))
+    if abs(area_signed) <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0
+
+    cx = float(np.sum((x + x_next) * cross) / (6.0 * area_signed))
+    cy = float(np.sum((y + y_next) * cross) / (6.0 * area_signed))
+    ixx_origin = float(np.sum(
+        (y**2 + y * y_next + y_next**2) * cross
+    ) / 12.0)
+    area = abs(area_signed)
+    ixx_centroid = abs(ixx_origin - area_signed * cy**2)
+    return area, cx, cy, ixx_centroid
+
+
+def _rib_geometry(
+    sizing: SizingResult,
+    airfoil_path: str | Path,
+    rib_inputs: RibInputs,
+) -> dict[str, float]:
+    airfoil = AirfoilGeometry(airfoil_path)
+    root_chord = sizing.c_root
+    polygon = np.column_stack((
+        airfoil.polygon[:, 0] * root_chord,
+        airfoil.polygon[:, 1] * root_chord,
+    ))
+    y_offset = -float(np.min(polygon[:, 1]))
+    polygon[:, 1] += y_offset
+    area, x_centroid, y_centroid, ixx_side = _polygon_area_centroid_ixx(polygon)
+
+    _, x_spar_frac = airfoil.compute_maximum_thickness()
+    x_samples = np.linspace(
+        min(_RIB_FRONT_MIN_X_FRAC, x_spar_frac),
+        x_spar_frac,
+        80,
+    )
+    heights = np.array([airfoil.compute_thickness(x)[0] * root_chord for x in x_samples])
+    positive_heights = heights[heights > 0.0]
+    min_front_height = float(np.min(positive_heights)) if positive_heights.size else 0.0
+    front_tension_area = rib_inputs.thickness * min_front_height
+
+    y_rel = polygon[:, 1] - y_centroid
+    y_outer = float(np.max(np.abs(y_rel))) if y_rel.size else 0.0
+
+    return {
+        "area": area,
+        "x_centroid": x_centroid,
+        "y_centroid": y_centroid,
+        "ixx_side": ixx_side,
+        "y_outer": y_outer,
+        "front_tension_area": front_tension_area,
+        "x_spar_frac": float(x_spar_frac),
+        "min_front_height": min_front_height,
+    }
+
+
+def rib_mass(
+    sizing: SizingResult,
+    airfoil_path: str | Path,
+    rib_inputs: RibInputs | None = None,
+    materials: PartMaterials = DEFAULT_MATERIALS,
+) -> float:
+    if rib_inputs is None:
+        rib_inputs = RibInputs()
+    rib = _rib_geometry(sizing, airfoil_path, rib_inputs)
+    return materials.rib.mass(_RIB_COUNT * rib["area"] * rib_inputs.thickness)
+
+
+def rib_checks(
+    sizing: SizingResult,
+    propulsion: PropulsionResult,
+    airfoil_path: str | Path,
+    rib_inputs: RibInputs | None = None,
+    materials: PartMaterials = DEFAULT_MATERIALS,
+) -> tuple[dict[str, float | str | bool], ...]:
+    if rib_inputs is None:
+        rib_inputs = RibInputs()
+
+    rib = _rib_geometry(sizing, airfoil_path, rib_inputs)
+    mat = materials.rib
+    sf = rib_inputs.safety_factor
+    thrust = propulsion.max_thrust_per_prop
+    sigma_tension = (
+        thrust * sf / rib["front_tension_area"]
+        if rib["front_tension_area"] > 0.0 else float("inf")
+    )
+
+    v_structural = sizing.inputs.v_max
+    q_structural = 0.5 * sizing.rho * v_structural**2
+    lift_total = sizing.CL_one_drone_failure * q_structural * sizing.Sw
+    span = sizing.inputs.b
+    lift_per_span = lift_total / span if span > 0.0 else 0.0
+    half_span = span / 2.0
+    motor_y = span / 4.0
+
+    moment_fuselage = lift_per_span * half_span**2 / 2.0
+    moment_motor = lift_per_span * max(half_span - motor_y, 0.0) ** 2 / 2.0
+
+    def make_check(name: str, moment: float) -> dict[str, float | str | bool]:
+        sigma_bending = (
+            moment * sf * rib["y_outer"] / rib["ixx_side"]
+            if rib["ixx_side"] > 0.0 else float("inf")
+        )
+        sigma_vm_tension_face = np.sqrt(
+            sigma_tension**2 - sigma_tension * sigma_bending + sigma_bending**2
+        )
+        sigma_vm_compression_face = np.sqrt(
+            sigma_tension**2 + sigma_tension * sigma_bending + sigma_bending**2
+        )
+        sigma_vm = max(sigma_vm_tension_face, sigma_vm_compression_face)
+        return {
+            "name": name,
+            "count": 2,
+            "thickness": rib_inputs.thickness,
+            "mass_each": materials.rib.mass(rib["area"] * rib_inputs.thickness),
+            "thrust_per_prop": thrust,
+            "tension_area": rib["front_tension_area"],
+            "tension_stress": sigma_tension,
+            "tension_allowable": mat.s_t,
+            "tension_ok": sigma_tension <= mat.s_t,
+            "lift_moment": moment,
+            "side_ixx": rib["ixx_side"],
+            "bending_stress": sigma_bending,
+            "bending_allowable": mat.Y,
+            "bending_ok": sigma_bending <= mat.Y,
+            "combined_stress": sigma_vm,
+            "combined_allowable": mat.Y,
+            "combined_ok": sigma_vm <= mat.Y,
+            "min_front_height": rib["min_front_height"],
+            "x_spar_frac": rib["x_spar_frac"],
+        }
+
+    return (
+        make_check("fuselage_side", moment_fuselage),
+        make_check("motor_station", moment_motor),
+    )
+
+
 # ==============================================================================
 # SURFACE MASSES
 # ==============================================================================
@@ -165,6 +322,7 @@ def compute_cg(
     materials: PartMaterials = DEFAULT_MATERIALS,
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
+    rib_inputs: RibInputs | None = None,
 ) -> dict[str, float]:
     """Compute CG x-position of all components and overall aircraft CG.
 
@@ -173,12 +331,16 @@ def compute_cg(
     """
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
+    if rib_inputs is None:
+        rib_inputs = RibInputs()
 
     x_fus = _fuselage_x_centroid(fus)
 
     x_motor_front = 0.0
     x_wing        = 0.25 * sizing.c_root
     x_sensor      = x_wing
+    rib_geom      = _rib_geometry(sizing, airfoil_path, rib_inputs)
+    x_ribs        = rib_geom["x_centroid"]
 
     x_rod_spar    = _max_tc_x(airfoil_path) * sizing.c_root
     x_rod_aileron = (1.0 - aileron.inputs.c_aileron_to_c_wing) * sizing.c_root
@@ -207,6 +369,7 @@ def compute_cg(
     m_batt       = propulsion.battery_mass
     m_motor      = propulsion.total_motor_mass
     m_wing       = wing_mass(sizing, airfoil_path, materials=materials)
+    m_ribs       = rib_mass(sizing, airfoil_path, rib_inputs, materials=materials)
     m_rod_spar   = structure.mass_spar
     m_rod_aileron= structure.mass_aileron
     m_spar_ht    = structure.mass_spar_ht
@@ -261,6 +424,7 @@ def compute_cg(
         + m_spar_ht + m_control_ht
         + m_spar_vt + m_control_vt
         + m_servos_total
+        + m_ribs
         + m_glass_sheet
         + sensor_mass + w_masses['total']
     )
@@ -281,6 +445,7 @@ def compute_cg(
             + x_control_vt   * m_control_vt
             + x_pvc          * m_pvc
             + x_servo_avg    * m_servos_total
+            + x_ribs         * m_ribs
             + x_glass_sheet  * m_glass_sheet
             + sensor_mass    * x_sensor
             + w_masses['wing_power'] * x_wiring_wing
@@ -306,6 +471,7 @@ def compute_cg(
         'vt_rud':         x_control_vt,
         'pvc_tubes':      x_pvc,
         'servos':         x_servo_avg,
+        'ribs':           x_ribs,
         'sensors':        x_sensor,
         'wiring_wing':    x_wiring_wing,
         'wiring_tail':    x_wiring_tail,
@@ -325,6 +491,7 @@ def compute_y_cg(
     battery_y0: float | None = None,
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
+    rib_inputs: RibInputs | None = None,
 ) -> dict[str, float]:
     """Compute vertical (y) CG position of each component and overall aircraft.
 
@@ -338,6 +505,8 @@ def compute_y_cg(
     """
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
+    if rib_inputs is None:
+        rib_inputs = RibInputs()
 
     airfoil = AirfoilGeometry(airfoil_path)
     root_chord = sizing.c_root
@@ -346,6 +515,7 @@ def compute_y_cg(
     airfoil_y_offset = -float(np.min(y_coords))
     y_coords = y_coords + airfoil_y_offset
     airfoil_height = float(np.max(y_coords))
+    rib_geom = _rib_geometry(sizing, airfoil_path, rib_inputs)
 
     # Rods sit on the airfoil mid-thickness line at their respective x/c.
     _, y_up_s, y_lo_s = airfoil.compute_thickness(cg["rod_spar"]    / root_chord)
@@ -398,6 +568,7 @@ def compute_y_cg(
     y_fus      = box_yc
     y_sensor   = box_yc
     y_wing     = wing_y_shift + 0.5 * airfoil_height
+    y_ribs     = wing_y_shift + rib_geom["y_centroid"]
     y_batt     = batt_y0 + fus.battery_height / 2.0
     y_pvc      = tube_y0 + tube_height / 2.0
     y_tail_rod = y_rod_aileron
@@ -431,6 +602,7 @@ def compute_y_cg(
     m_vt_spar = masses.get("vt_spar", 0.0)
     m_vt_rud  = masses.get("vt_rud",  0.0)
     m_servos  = masses.get("servos",  0.0)
+    m_ribs    = masses.get("ribs",    0.0)
 
     w_masses = _compute_wiring_masses(
         sizing, wiring_inputs, cg['battery'], cg['motors'], cg['tail']
@@ -443,6 +615,7 @@ def compute_y_cg(
         + m_ht_spar + m_ht_rud
         + m_vt_spar + m_vt_rud
         + m_servos
+        + m_ribs
         + masses.get("glass_sheet_wing",   0.0)
         + masses.get("glass_sheet_tail_h", 0.0)
         + masses.get("glass_sheet_tail_v", 0.0)
@@ -466,6 +639,7 @@ def compute_y_cg(
             + y_vt_rud       * m_vt_rud
             + y_pvc          * masses["pvc_tubes"]
             + y_servo_avg    * m_servos
+            + y_ribs         * m_ribs
             + y_wing         * masses.get("glass_sheet_wing",   0.0)
             + y_tail_h       * masses.get("glass_sheet_tail_h", 0.0)
             + y_tail_v       * masses.get("glass_sheet_tail_v", 0.0)
@@ -499,6 +673,7 @@ def compute_y_cg(
         'servo_ht':           y_servo_ht,
         'servo_vt':           y_servo_vt,
         'servos':             y_servo_avg,
+        'ribs':               y_ribs,
         'sensors':            y_sensor,
         'wiring_wing':        y_wiring_wing,
         'wiring_tail':        y_wiring_tail,
@@ -523,6 +698,7 @@ def total_mass(
     materials: PartMaterials = DEFAULT_MATERIALS,
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
+    rib_inputs: RibInputs | None = None,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components.
 
@@ -534,11 +710,14 @@ def total_mass(
     """
     if wiring_inputs is None:
         wiring_inputs = WiringInputs()
+    if rib_inputs is None:
+        rib_inputs = RibInputs()
 
     m_battery     = propulsion.battery_mass
     m_motors      = propulsion.total_motor_mass
     m_props       = propulsion.inputs.n_props * propulsion.inputs.prop_mass
     m_wing        = wing_mass(sizing, airfoil_path, wing_thickness, materials=materials)
+    m_ribs        = rib_mass(sizing, airfoil_path, rib_inputs, materials=materials)
     m_tail_h      = hor_tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
     m_tail_v      = ver_tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
     m_spar_ht     = structure.mass_spar_ht
@@ -576,13 +755,14 @@ def total_mass(
         m_battery + m_motors + m_props + m_wing + m_tail_h + m_tail_v
         + m_rod_spar + m_rod_aileron + m_spar_ht + m_control_ht
         + m_spar_vt + m_control_vt + m_tail_rod + m_fuselage + m_pvc
-        + m_servos + m_glass_sheet + sensor_mass + w_masses['total']
+        + m_servos + m_ribs + m_glass_sheet + sensor_mass + w_masses['total']
     )
     return {
         'battery':            m_battery,
         'motors':             m_motors,
         'props':              m_props,
         'wing':               m_wing,
+        'ribs':               m_ribs,
         'hor_tail':           m_tail_h,
         'ver_tail':           m_tail_v,
         'rod_spar':           m_rod_spar,

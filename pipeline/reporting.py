@@ -17,6 +17,40 @@ from structures import rods
 from weights.inertia import calculate_mass_moment_of_inertia
 
 
+def _ok_marker(value: bool) -> str:
+    return "OK" if value else "FAIL"
+
+
+def _print_rib_checks(result: PipelineResult) -> None:
+    if not result.rib_checks:
+        return
+    print("\n--- Wing ribs ---")
+    print(f"  Material thickness     : {result.rib_checks[0]['thickness'] * 1e3:.2f}  mm")
+    print(f"  Mass (total)           : {result.masses.get('ribs', 0.0):.3f}  kg")
+    for check in result.rib_checks:
+        label = str(check["name"]).replace("_", " ").title()
+        print(f"  {label} ribs ({int(check['count'])}x):")
+        print(
+            f"    Thrust tension       : {check['tension_stress'] / 1e6:.2f} / "
+            f"{check['tension_allowable'] / 1e6:.2f} MPa  "
+            f"{_ok_marker(bool(check['tension_ok']))}"
+        )
+        print(
+            f"    Lift bending         : {check['bending_stress'] / 1e6:.2f} / "
+            f"{check['bending_allowable'] / 1e6:.2f} MPa  "
+            f"{_ok_marker(bool(check['bending_ok']))}"
+        )
+        print(
+            f"    Combined von Mises   : {check['combined_stress'] / 1e6:.2f} / "
+            f"{check['combined_allowable'] / 1e6:.2f} MPa  "
+            f"{_ok_marker(bool(check['combined_ok']))}"
+        )
+        print(
+            f"    Lift moment / Ixx    : {check['lift_moment']:.2f} N*m / "
+            f"{check['side_ixx']:.3e} m^4"
+        )
+
+
 def _print_control_authority(result: PipelineResult) -> None:
     a = result.control_surface
     e = result.elevator
@@ -74,6 +108,7 @@ def print_main_summary(result: PipelineResult) -> None:
     _print_control_authority(result)
     print("\n========== STRUCTURE ==========")
     rods.summary(result.struct)
+    _print_rib_checks(result)
 
     # ------------------------------------------------------------------
     # Mass breakdown
@@ -86,6 +121,7 @@ def print_main_summary(result: PipelineResult) -> None:
 
     print("  --- Airframe ---")
     print(_fmt_mass("Wing (foam)",          masses['wing']))
+    print(_fmt_mass("Wing ribs",            masses.get('ribs', 0.0)))
     print(_fmt_mass("Horizontal tail",      masses['hor_tail']))
     print(_fmt_mass("Vertical tail",        masses['ver_tail']))
     print(_fmt_mass("Fuselage (shell)",     masses['fuselage']))
@@ -124,6 +160,7 @@ def print_main_summary(result: PipelineResult) -> None:
 
     print("  --- Airframe ---")
     print(_fmt_cg("Wing",                  cg.get('wing', float('nan'))))
+    print(_fmt_cg("Wing ribs",             cg.get('ribs', float('nan'))))
     print(_fmt_cg("Horizontal tail",       cg.get('tail', float('nan'))))
     print(_fmt_cg("Fuselage",              cg['fuselage']))
     print(_fmt_cg("Structural tube",       cg['pvc_tubes']))
@@ -162,6 +199,7 @@ def print_main_summary(result: PipelineResult) -> None:
 
     print("  --- Airframe ---")
     print(_fmt_cg("Wing",                  z_cg.get('wing', float('nan'))))
+    print(_fmt_cg("Wing ribs",             z_cg.get('ribs', float('nan'))))
     print(_fmt_cg("Wing AC (thrust ref)",  z_cg.get('wing_ac', float('nan'))))
     print(_fmt_cg("Horizontal tail",       z_cg.get('hor_tail', float('nan'))))
     print(_fmt_cg("Vertical tail",         z_cg.get('ver_tail', float('nan'))))

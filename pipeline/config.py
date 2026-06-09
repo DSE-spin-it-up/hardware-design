@@ -17,6 +17,7 @@ from sizing.fuselage import FuselageInputs
 from sizing.rudder import RudderInputs
 from sizing.wing import SizingInputs
 from structures.rods import RodInputs
+from weights.mass import RibInputs
 from weights.part_materials import PartMaterials
 
 
@@ -81,6 +82,7 @@ CONTROL_SURFACE = AileronInputs(**_data["control_surface"])
 ELEVATOR = ElevatorInputs(**_data.get("elevator", {}))
 RUDDER = RudderInputs(**_data.get("rudder", {}))
 STRUCTURE = RodInputs(**_data["structure"], material=MATERIALS.rod)
+RIBS = RibInputs(**_data.get("ribs", {}))
 
 AIRFOIL: str | None = _data["airfoil"]
 TAIL_AIRFOIL: str = _data["tail_airfoil"]

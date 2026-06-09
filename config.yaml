@@ -150,3 +150,8 @@ materials:
   wing: EPP
   rod: CFRP
   tail: EPP
+  rib: Aluminum
+
+# ----- Wing ribs -----
+ribs:
+  thickness: 0.002      # [m] aluminium rib plate thickness
