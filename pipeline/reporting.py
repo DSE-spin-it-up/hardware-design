@@ -163,7 +163,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("Horizontal tail",      masses['hor_tail']))
     print(_fmt_mass("Vertical tail",        masses['ver_tail']))
     print(_fmt_mass("Fuselage (shell)",     masses['fuselage']))
-    print(_fmt_mass("Structural tube",      masses.get('pvc_tubes', 0.0)))
+    print(_fmt_mass("Structural sleeve",    masses.get('pvc_tubes', 0.0)))
 
     print("  --- Rods ---")
     print(_fmt_mass("Wing spar rod",        masses['rod_spar']))
@@ -173,6 +173,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("HT elevator rod",      masses.get('ht_rud', 0.0)))
     print(_fmt_mass("VT spar rod",          masses.get('vt_spar', 0.0)))
     print(_fmt_mass("VT rudder rod",        masses.get('vt_rud', 0.0)))
+    print(_fmt_mass("Rod connectors (3x)",  masses.get('rod_connectors', 0.0)))
 
     print("  --- Glass sheet ---")
     print(_fmt_mass("Glass sheet (wing)",   masses.get('glass_sheet_wing',   0.0)))
@@ -201,7 +202,7 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("Wing ribs",             cg.get('ribs', float('nan'))))
     print(_fmt_cg("Horizontal tail",       cg.get('tail', float('nan'))))
     print(_fmt_cg("Fuselage",              cg['fuselage']))
-    print(_fmt_cg("Structural tube",       cg['pvc_tubes']))
+    print(_fmt_cg("Tail boom ref.",        cg['pvc_tubes']))
 
     print("  --- Rods ---")
     print(_fmt_cg("Wing spar rod",         cg['rod_spar']))
@@ -211,6 +212,9 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("HT elevator rod",       cg.get('ht_rud',  float('nan'))))
     print(_fmt_cg("VT spar rod",           cg.get('vt_spar', float('nan'))))
     print(_fmt_cg("VT rudder rod",         cg.get('vt_rud',  float('nan'))))
+    print(_fmt_cg("Connector spar",        cg.get('rod_connector_spar', float('nan'))))
+    print(_fmt_cg("Connector aileron",     cg.get('rod_connector_aileron', float('nan'))))
+    print(_fmt_cg("Connector payload",     cg.get('rod_connector_payload', float('nan'))))
 
     print("  --- Other ---")
     print(_fmt_cg("Servos (avg)",          cg.get('servos',         float('nan'))))
@@ -242,8 +246,8 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("Horizontal tail",       z_cg.get('hor_tail', float('nan'))))
     print(_fmt_cg("Vertical tail",         z_cg.get('ver_tail', float('nan'))))
     print(_fmt_cg("Fuselage",              z_cg.get('fuselage', float('nan'))))
-    print(_fmt_cg("Structural tube",       z_cg.get('pvc_tubes', float('nan'))))
-    print(_fmt_cg("Tube bottom",           z_cg.get('pvc_tube_bottom', float('nan'))))
+    print(_fmt_cg("Tail boom",             z_cg.get('pvc_tubes', float('nan'))))
+    print(_fmt_cg("Tail boom bottom",      z_cg.get('pvc_tube_bottom', float('nan'))))
     print(_fmt_cg("Battery bottom",        z_cg.get('battery_bottom', float('nan'))))
 
     print("  --- Rods ---")
@@ -254,6 +258,9 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_cg("HT elevator rod",       z_cg.get('vt_rud',      float('nan'))))
     print(_fmt_cg("VT spar rod",           z_cg.get('vt_spar',     float('nan'))))
     print(_fmt_cg("VT rudder rod",         z_cg.get('vt_rud',      float('nan'))))
+    print(_fmt_cg("Connector spar",        z_cg.get('rod_connector_spar', float('nan'))))
+    print(_fmt_cg("Connector aileron",     z_cg.get('rod_connector_aileron', float('nan'))))
+    print(_fmt_cg("Connector payload",     z_cg.get('rod_connector_payload', float('nan'))))
 
     print("  --- Other ---")
     print(_fmt_cg("Servos (avg)",          z_cg.get('servos',        float('nan'))))

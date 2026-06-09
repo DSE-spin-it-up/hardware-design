@@ -235,6 +235,11 @@ def build_components(
     )
     _append_if_positive(components, PointMass("pvc_tubes", masses.get("pvc_tubes", 0.0), cg["pvc_tubes"], 0.0, z_cg["pvc_tubes"], *pvc_i))
 
+    connector_each = masses.get("rod_connector_each", 0.0)
+    _append_if_positive(components, PointMass("rod_connector_spar", connector_each, cg.get("rod_connector_spar", 0.0), 0.0, z_cg.get("rod_connector_spar", 0.0)))
+    _append_if_positive(components, PointMass("rod_connector_aileron", connector_each, cg.get("rod_connector_aileron", 0.0), 0.0, z_cg.get("rod_connector_aileron", 0.0)))
+    _append_if_positive(components, PointMass("rod_connector_payload", connector_each, cg.get("rod_connector_payload", 0.0), 0.0, z_cg.get("rod_connector_payload", 0.0)))
+
     _append_if_positive(components, PointMass("servos", masses.get("servos", 0.0), cg["servos"], 0.0, z_cg["servos"]))
     _append_if_positive(components, PointMass("sensors", masses.get("sensors", 0.0), cg["sensors"], 0.0, z_cg["sensors"]))
     _append_if_positive(components, PointMass("wiring", masses.get("wiring", 0.0), cg["wiring_signal"], 0.0, z_cg["wiring_signal"]))

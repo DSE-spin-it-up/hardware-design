@@ -78,6 +78,7 @@ class RodInputs:
     t_control: float = 0.0016256      # [m] minimum wall thickness of the aileron rod
     t_control_ht: float = 0.0014      # [m] same as t_spar, thinner than t_control
     t_t: float = 0.00079375           # [m] minimum wall thickness of the tail rod
+    rod_connector_mass: float = 0.0   # [kg] mass per wing/boom or payload connector
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
     c_ruddervator_to_c_tail: float = 0.35  # ruddervator chord / tail chord
@@ -446,11 +447,26 @@ def _d_for_von_mises(
 # Torsion check — called after rudder sizing is complete
 # ---------------------------------------------------------------------------
 
+def tail_boom_bending_length(sizing: SizingResult, aileron: AileronResult) -> float:
+    """Tail-boom structural arm from the aft wing spar to the tail TE."""
+    x_aft_wing_spar = (
+        1.0 - aileron.inputs.c_aileron_to_c_wing
+    ) * sizing.c_root
+    x_boom_root = (
+        x_aft_wing_spar
+        if sizing.inputs.boom_root_x is None
+        else float(sizing.inputs.boom_root_x)
+    )
+    x_tail_te = x_boom_root + sizing.L_boom
+    return max(x_tail_te - x_aft_wing_spar, 1.0e-6)
+
+
 def apply_torsion_check(
     rod: RodResult,
     rudder_hinge_moment: float,
     bending_force: float,
     boom_length: float,
+    tube_length: float | None = None,
     safety_factor: float = 1.2,
 ) -> RodResult:
     """Check and if necessary upsize the tail rod for combined bending + torsion."""
@@ -474,7 +490,7 @@ def apply_torsion_check(
     tau      = _tau_bredt(T, d_final, t)
     sigma_b  = _sigma_bending(M, d_final, t)
     sigma_vm = np.sqrt(sigma_b ** 2 + 3 * tau ** 2)
-    mass_t   = _tube_mass(boom_length, d_final, t, mat.rho)
+    mass_t   = _tube_mass(boom_length if tube_length is None else tube_length, d_final, t, mat.rho)
 
     return dataclasses.replace(
         rod,
@@ -590,7 +606,7 @@ def run(
     q_tail_structural = q_structural * i.eta_h
     V_tail_structural = V_structural * np.sqrt(i.eta_h)
     F_tail = s.Sh * CL_h * q_tail_structural * i.safety_factor
-    L_t    = s.L_boom
+    L_t    = tail_boom_bending_length(s, aileron)
     M_t    = F_tail * L_t
     t_t    = i.t_t
 
@@ -602,7 +618,7 @@ def run(
         d_t, fail_t = d_t_comp, "compressive"
     d_t    = _check_wall(t_t, d_t, "Tail rod")
     defl_t = _defl_cantilever_point(F_tail, L_t, E, _I_tube(t_t, d_t))
-    mass_t = _tube_mass(L_t, d_t, t_t, rho_mat)
+    mass_t = _tube_mass(s.L_boom, d_t, t_t, rho_mat)
     # Tail (boom) rod is a circular tube in free air — no airfoil section
     # constraint applies.  No geometric fit check here.
 

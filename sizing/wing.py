@@ -187,9 +187,14 @@ def run(
     x_tail_ac_from_boom_end = 0.75 * ch
     lh = L_boom + x_boom_root - x_wing_ac - x_tail_ac_from_boom_end
     if lh <= 0.0:
+        boom_root_source = "aileron hinge" if i.boom_root_x is None else "battery front"
         raise ValueError(
             f"Tail geometry failed: derived lh = {lh:.3f} m from "
-            f"L_boom = {L_boom:.3f} m. Increase L_boom or reduce tail chord."
+            f"L_boom = {L_boom:.3f} m, boom_root_x = {x_boom_root:.3f} m "
+            f"({boom_root_source}), tail_TE_x = {x_boom_root + L_boom:.3f} m, "
+            f"wing_AC_x = {x_wing_ac:.3f} m, tail_AC_offset_from_TE = "
+            f"{x_tail_ac_from_boom_end:.3f} m. Increase L_boom, move the "
+            "battery/boom root aft, or reduce tail chord."
         )
     if i.Sh is not None:
         Sh = i.Sh

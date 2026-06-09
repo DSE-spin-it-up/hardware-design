@@ -92,35 +92,29 @@ def _tube_y_bounds(
     y_rod_spar: float,
     y_rod_aileron: float,
 ) -> tuple[float, float]:
-    rod_lower = min(
-        y_rod_spar    - structure.d_spar    / 2.0,
-        y_rod_aileron - structure.d_aileron / 2.0,
-        y_rod_aileron - structure.d_t / 2.0,
-    )
-    rod_upper = max(
-        y_rod_spar    + structure.d_spar    / 2.0,
-        y_rod_aileron + structure.d_aileron / 2.0,
-        y_rod_aileron + structure.d_t / 2.0,
-    )
-    rod_height = rod_upper - rod_lower
-    tube_height = max(fus.structural_tube_outer_diameter, rod_height)
-    extra_height = tube_height - rod_height
-    y0 = rod_lower - extra_height / 2.0
-    y1 = rod_upper + extra_height / 2.0
-    return y0, y1
+    tail_boom_y = fus.inputs.min_foam_floor + structure.d_t / 2.0
+    return tail_boom_y - structure.d_t / 2.0, tail_boom_y + structure.d_t / 2.0
 
 
 def _structural_tube_mass(structure: RodResult, fus: FuselageResult, tube_length: float) -> float:
-    outer_d = fus.structural_tube_outer_diameter
-    inner_d = max(outer_d - 2.0 * structure.t_spar, 0.0)
-    area = np.pi * (outer_d**2 - inner_d**2) / 4.0
-    return tube_length * area * Aluminum_6061_T6().rho * _STRUCTURAL_TUBE_SF
+    return 0.0
 
 
 def _tail_boom_x_bounds(sizing: SizingResult, fus: FuselageResult, x_batt: float) -> tuple[float, float]:
     """Tail boom runs from the battery front face and keeps length L_boom."""
     x0 = x_batt - 0.5 * fus.battery_length
     return x0, x0 + sizing.L_boom
+
+
+def _payload_cable_angle(sizing: SizingResult) -> float:
+    n_drones = max(float(sizing.inputs.n_drones), 1.0)
+    payload_weight = sizing.inputs.m_payload / n_drones * 9.80665
+    payload_drag = sizing.q_cruise * sizing.inputs.Cd_payload * sizing.inputs.S_payload / n_drones
+    return float(np.arctan2(payload_drag, payload_weight))
+
+
+def _rod_connector_mass(structure: RodResult) -> float:
+    return max(float(getattr(structure.inputs, "rod_connector_mass", 0.0)), 0.0)
 
 
 def _polygon_area_centroid_ixx(points: np.ndarray) -> tuple[float, float, float, float]:
@@ -381,6 +375,8 @@ def compute_cg(
     m_tail_rod   = structure.mass_t
     m_pvc        = (_structural_tube_mass(structure, fus, tube_length)
                     if pvc_tubes_mass_override is None else pvc_tubes_mass_override)
+    m_connector_each = _rod_connector_mass(structure)
+    m_connectors = 3.0 * m_connector_each
 
     x_servo_front   = x_motor_front
     x_servo_aileron = x_rod_aileron
@@ -417,7 +413,7 @@ def compute_cg(
         if total_sheet_area > 0 else 0.0
     )
 
-    total_cg_mass = (
+    total_cg_mass_without_connectors = (
         m_fus + m_batt + m_motor + m_wing
         + m_rod_spar + m_rod_aileron
         + m_tail_h + m_tail_v + m_tail_rod + m_pvc
@@ -428,8 +424,7 @@ def compute_cg(
         + m_glass_sheet
         + sensor_mass + w_masses['total']
     )
-    if total_cg_mass > 0:
-        x_cg = (
+    weighted_x_without_connectors = (
             x_fus            * m_fus
             + x_batt         * m_batt
             + x_motor_front  * m_motor * 2 / 3
@@ -451,9 +446,36 @@ def compute_cg(
             + w_masses['wing_power'] * x_wiring_wing
             + w_masses['tail_power'] * x_wiring_tail
             + w_masses['signal']     * x_wiring_signal
-        ) / total_cg_mass
+    )
+    if total_cg_mass_without_connectors > 0:
+        x_cg_without_connectors = weighted_x_without_connectors / total_cg_mass_without_connectors
+    else:
+        x_cg_without_connectors = 0.0
+
+    cable_angle = _payload_cable_angle(sizing)
+    payload_connector_vertical_drop = max(0.5 * fus.box_height - fus.inputs.min_foam_floor, 0.0)
+    x_connector_spar = x_rod_spar
+    x_connector_aileron = x_rod_aileron
+    payload_connector_dx = payload_connector_vertical_drop * np.tan(cable_angle)
+    total_cg_mass = total_cg_mass_without_connectors + m_connectors
+    if total_cg_mass > 0 and m_connector_each > 0.0:
+        x_cg = (
+            weighted_x_without_connectors
+            + m_connector_each * (
+                x_connector_spar + x_connector_aileron + payload_connector_dx
+            )
+        ) / (total_cg_mass - m_connector_each)
+        x_connector_payload = x_cg + payload_connector_dx
+    elif total_cg_mass > 0:
+        x_cg = weighted_x_without_connectors / total_cg_mass_without_connectors
+        x_connector_payload = x_cg + payload_connector_dx
     else:
         x_cg = 0.0
+        x_connector_payload = payload_connector_dx
+
+    x_connectors = (
+        x_connector_spar + x_connector_aileron + x_connector_payload
+    ) / 3.0
 
     return {
         'fuselage':       x_fus,
@@ -470,6 +492,10 @@ def compute_cg(
         'vt_spar':        x_spar_vt,
         'vt_rud':         x_control_vt,
         'pvc_tubes':      x_pvc,
+        'rod_connector_spar': x_connector_spar,
+        'rod_connector_aileron': x_connector_aileron,
+        'rod_connector_payload': x_connector_payload,
+        'rod_connectors': x_connectors,
         'servos':         x_servo_avg,
         'ribs':           x_ribs,
         'sensors':        x_sensor,
@@ -538,16 +564,18 @@ def compute_y_cg(
     y_ac_norm = y_le_chord + 0.25 * (y_te_chord - y_le_chord)
     y_ac_pre_shift = y_ac_norm * root_chord + airfoil_y_offset
 
-    # Place the wing as low as possible: the root airfoil's lowest point is
-    # the fuselage bottom datum. The structural tube then sits wherever the
-    # rod centerlines put it inside the fuselage.
+    # Place the tail boom at the fuselage floor with the configured minimum
+    # material below it, then shift the wing so the lowest wing rod sits
+    # directly on top of the boom.
     tube_y0, tube_y1 = _tube_y_bounds(structure, fus, y_rod_spar, y_rod_aileron)
-    wing_y_shift = 0.0
+    lowest_wing_rod_bottom = min(
+        y_rod_spar - structure.d_spar / 2.0,
+        y_rod_aileron - structure.d_aileron / 2.0,
+    )
+    wing_y_shift = tube_y1 - lowest_wing_rod_bottom
     y_coords      += wing_y_shift
     y_rod_spar    += wing_y_shift
     y_rod_aileron += wing_y_shift
-    tube_y0       += wing_y_shift
-    tube_y1       += wing_y_shift
     tube_height    = tube_y1 - tube_y0
 
     # Apply the same shift to the AC vertical position.
@@ -571,20 +599,20 @@ def compute_y_cg(
     y_ribs     = wing_y_shift + rib_geom["y_centroid"]
     y_batt     = batt_y0 + fus.battery_height / 2.0
     y_pvc      = tube_y0 + tube_height / 2.0
-    y_tail_rod = y_rod_aileron
-    y_tail_h   = y_rod_aileron
-    y_ht_spar  = y_rod_aileron
-    y_ht_elev  = y_rod_aileron
-    y_tail_v   = y_rod_aileron + 0.5 * sizing.bv
-    y_vt_spar  = y_rod_aileron + 0.5 * sizing.bv
-    y_vt_rud   = y_rod_aileron + 0.5 * sizing.bv
-    y_motor_back = y_rod_aileron + sizing.bv
+    y_tail_rod = y_pvc
+    y_tail_h   = y_pvc
+    y_ht_spar  = y_pvc
+    y_ht_elev  = y_pvc
+    y_tail_v   = y_pvc + 0.5 * sizing.bv
+    y_vt_spar  = y_pvc + 0.5 * sizing.bv
+    y_vt_rud   = y_pvc + 0.5 * sizing.bv
+    y_motor_back = y_pvc + sizing.bv
 
     y_servo_front   = y_motor
     y_servo_aileron = y_rod_aileron
     y_servo_rear    = y_motor_back
     y_servo_ht      = y_ht_spar
-    y_servo_vt      = y_rod_aileron
+    y_servo_vt      = y_pvc
     y_servo_avg = (
         2 * y_servo_front
         + 2 * y_servo_aileron
@@ -596,6 +624,12 @@ def compute_y_cg(
     y_wiring_wing   = y_pvc
     y_wiring_tail   = y_pvc
     y_wiring_signal = box_yc
+    y_connector_spar = tube_y1
+    y_connector_aileron = tube_y1
+    y_connector_payload = tube_y0
+    y_connectors = (
+        y_connector_spar + y_connector_aileron + y_connector_payload
+    ) / 3.0
 
     m_ht_spar = masses.get("ht_spar", 0.0)
     m_ht_rud  = masses.get("ht_rud",  0.0)
@@ -603,6 +637,8 @@ def compute_y_cg(
     m_vt_rud  = masses.get("vt_rud",  0.0)
     m_servos  = masses.get("servos",  0.0)
     m_ribs    = masses.get("ribs",    0.0)
+    m_connector_each = masses.get("rod_connector_each", 0.0)
+    m_connectors = masses.get("rod_connectors", 0.0)
 
     w_masses = _compute_wiring_masses(
         sizing, wiring_inputs, cg['battery'], cg['motors'], cg['tail']
@@ -616,6 +652,7 @@ def compute_y_cg(
         + m_vt_spar + m_vt_rud
         + m_servos
         + m_ribs
+        + m_connectors
         + masses.get("glass_sheet_wing",   0.0)
         + masses.get("glass_sheet_tail_h", 0.0)
         + masses.get("glass_sheet_tail_v", 0.0)
@@ -640,6 +677,9 @@ def compute_y_cg(
             + y_pvc          * masses["pvc_tubes"]
             + y_servo_avg    * m_servos
             + y_ribs         * m_ribs
+            + m_connector_each * (
+                y_connector_spar + y_connector_aileron + y_connector_payload
+            )
             + y_wing         * masses.get("glass_sheet_wing",   0.0)
             + y_tail_h       * masses.get("glass_sheet_tail_h", 0.0)
             + y_tail_v       * masses.get("glass_sheet_tail_v", 0.0)
@@ -667,6 +707,10 @@ def compute_y_cg(
         'vt_spar':            y_vt_spar,
         'vt_rud':             y_vt_rud,
         'pvc_tubes':          y_pvc,
+        'rod_connector_spar': y_connector_spar,
+        'rod_connector_aileron': y_connector_aileron,
+        'rod_connector_payload': y_connector_payload,
+        'rod_connectors':     y_connectors,
         'servo_front':        y_servo_front,
         'servo_aileron':      y_servo_aileron,
         'servo_rear':         y_servo_rear,
@@ -733,6 +777,8 @@ def total_mass(
     tube_x1       = fus.x_nose + fus.l_nose + fus.box_length - fus.inputs.casing_thickness
     m_pvc         = _structural_tube_mass(structure, fus, tube_x1 - tube_x0)
     m_servos      = 8 * SERVO_MASS
+    m_connector_each = _rod_connector_mass(structure)
+    m_connectors  = 3.0 * m_connector_each
 
     x_batt   = 0.25 * sizing.c_root
     x_motor  = 0.0
@@ -755,7 +801,8 @@ def total_mass(
         m_battery + m_motors + m_props + m_wing + m_tail_h + m_tail_v
         + m_rod_spar + m_rod_aileron + m_spar_ht + m_control_ht
         + m_spar_vt + m_control_vt + m_tail_rod + m_fuselage + m_pvc
-        + m_servos + m_ribs + m_glass_sheet + sensor_mass + w_masses['total']
+        + m_servos + m_ribs + m_connectors + m_glass_sheet
+        + sensor_mass + w_masses['total']
     )
     return {
         'battery':            m_battery,
@@ -774,6 +821,8 @@ def total_mass(
         'vt_rud':             m_control_vt,
         'fuselage':           m_fuselage,
         'pvc_tubes':          m_pvc,
+        'rod_connector_each': m_connector_each,
+        'rod_connectors':     m_connectors,
         'servos':             m_servos,
         'sensors':            sensor_mass,
         'wiring':             w_masses['total'],

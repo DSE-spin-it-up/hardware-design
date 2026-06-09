@@ -24,7 +24,8 @@ class FuselageInputs:
     # EPP tearout prevention
     load_factor: float    = 1.5     # [-] battery tearout safety factor
     g: float              = 9.81    # [m/s²]
-    min_foam_floor: float = 0.005   # [m] absolute minimum foam floor thickness
+    min_foam_floor: float = 0.005   # [m] minimum fuselage thickness below tail boom
+    battery_top_cover_thickness: float = 0.005  # [m] fuselage cover above battery
     tube_snap_force: float = 372.8/2   # [N] dynamic peak snap force reacted by tube support
     tube_snap_safety_factor: float = 1.5  # [-] safety factor on tube snap force
     tube_structural_safety_factor: float = 1.5  # [-] safety factor on upward structural lift
@@ -85,6 +86,8 @@ def run(
     battery_volume: float = 0.0,
     battery_x: float | None = None,
     battery_mass: float = 0.0,
+    battery_bottom_y: float = 0.0,
+    tube_top_y: float = 0.0,
     tube_back_x: float | None = None,
     tube_outer_diameter: float = 0.0,
     tube_length: float = 0.0,
@@ -112,30 +115,14 @@ def run(
         b_width  = i.battery_width
         b_height = i.battery_height
 
-    # ------------------------------------------------------------------ 2. EPP tearout checks
-    epp = EPP()
-    bearing_area = b_length * b_width
-    stress = (battery_mass * i.g * i.load_factor) / bearing_area if bearing_area > 0 else 0.0
-    foam_floor_thickness = max(stress / epp.s_t, i.min_foam_floor)
-
-    if stress / epp.s_t > i.min_foam_floor:
-        print(f"  EPP floor: tearout governs        "
-              f"(required {foam_floor_thickness*1e3:.1f} mm)")
-    else:
-        print(f"  EPP floor: min thickness governs  "
-              f"(required {foam_floor_thickness*1e3:.1f} mm, "
-              f"tearout would need {stress/epp.s_t*1e3:.1f} mm)")
-
-    battery_y_min = foam_floor_thickness
+    # ------------------------------------------------------------------ 2. Battery vertical placement
+    # The battery sits directly on top of the tail boom. The fuselage only
+    # needs to cover the battery top by the configured cover thickness.
+    foam_floor_thickness = 0.0
+    battery_y_min = float(battery_bottom_y)
 
     box_width_prelim = b_width * i.casing_factor
-    largest_attached_rod_diameter = max(
-        tube_outer_diameter,
-        spar_rod_diameter,
-        aileron_rod_diameter,
-        tail_rod_diameter,
-    )
-    tube_outer_diameter = largest_attached_rod_diameter * i.tube_clearance_factor
+    tube_outer_diameter = tail_rod_diameter
     pvc_bearing_area = tube_length * box_width_prelim
     pvc_design_force = 0.0
     pvc_floor_thickness = 0.0
@@ -163,15 +150,16 @@ def run(
 
     box_length = x_aft_box - x_nose_box
     box_width  = box_width_prelim
-    tube_height = tube_outer_diameter
-    battery_floor_for_height = foam_floor_thickness
+    tube_height = tail_rod_diameter
+    battery_top_for_height = battery_y_min + b_height + i.battery_top_cover_thickness
     available_airfoil_height = (
         float(wing_section_height)
         if wing_section_height is not None and wing_section_height > 0.0
         else 0.0
     )
     box_height = max(
-        battery_floor_for_height + b_height,
+        battery_top_for_height,
+        float(tube_top_y),
         tube_height,
         available_airfoil_height,
     )
@@ -198,11 +186,11 @@ def run(
     x_batt_cg = battery_x if battery_x is not None else sizing.c_root / 2.0
     x_arm = x_batt_cg - x_front_spar   # [m] positive when battery is aft of spar
 
-    F_batt_design = battery_mass * i.g * n_structural * i.load_factor
+    F_batt_design = 0.0
     bending_moment = F_batt_design * abs(x_arm)
 
     allowable_util = 1.0 / i.bending_safety_factor
-    allowable_stress = epp.Y * allowable_util
+    allowable_stress = 0.0
 
     def bending_stress_for_height(height: float) -> float:
         I_outer = (box_width * height ** 3) / 12.0
@@ -230,9 +218,9 @@ def run(
             box_height = max(box_height, bending_required_height)
 
     bending_stress = bending_stress_for_height(box_height)
-    bending_utilisation = bending_stress / epp.Y if epp.Y > 0.0 else 0.0
+    bending_utilisation = 0.0
 
-    if bending_utilisation > allowable_util:
+    if False and bending_utilisation > allowable_util:
         print(f"  EPP bending: FAILS                "
               f"(σ = {bending_stress/1e3:.2f} kPa, "
               f"Y = {epp.Y/1e3:.2f} kPa, "
@@ -240,7 +228,7 @@ def run(
               f"h_req = {bending_required_height*1e3:.1f} mm, "
               f"n_structural = {n_structural:.3f}, "
               f"x_arm = {x_arm*1e3:.1f} mm)")
-    else:
+    elif False:
         print(f"  EPP bending: OK                   "
               f"(σ = {bending_stress/1e3:.2f} kPa, "
               f"Y = {epp.Y/1e3:.2f} kPa, "
@@ -341,18 +329,14 @@ def summary(r: FuselageResult) -> None:
     print(f"  Fineness ratio (L/D)   : {r.fineness:.3f}")
     print(f"  Wetted Area (Raymer)   : {r.Swet:.4f}  m²")
     print(f"  Cylinder internal vol  : {r.volume_shell:.6f}  m³")
-    print(f"  Foam floor thickness   : {r.foam_floor_thickness*1e3:.1f}  mm")
-    print(f"  Structural tube OD     : {r.structural_tube_outer_diameter*1e3:.1f}  mm")
+    print(f"  Battery bottom y       : {r.battery_y_min:.4f}  m")
+    print(f"  Battery top cover      : {r.inputs.battery_top_cover_thickness*1e3:.1f}  mm")
+    print(f"  Tail boom OD           : {r.structural_tube_outer_diameter*1e3:.1f}  mm")
     print(f"  Tube tearout sizing    : disabled")
     print(f"  Structural lift inc.   : {r.structural_lift_increment:.1f}  N")
     print(f"  Tube bearing area      : {r.pvc_bearing_area:.6f}  m²")
     print(f"  Tube/rod contact area  : {r.pvc_lift_bearing_area:.6f}  m²")
-    print(f"  Structural load factor : {r.n_structural:.3f}")
-    print(f"  Bending moment         : {r.bending_moment:.3f}  N·m")
-    print(f"  Bending stress         : {r.bending_stress/1e3:.2f}  kPa  (Y = 262 kPa)")
-    print(f"  Bending required h     : {r.bending_required_height*1e3:.1f}  mm")
-    print(f"  Bending utilisation    : {r.bending_utilisation:.3f}  "
-          f"({'FAIL' if r.bending_utilisation > 1.0 / r.inputs.bending_safety_factor else 'OK'})")
+    print(f"  Battery bending sizing : disabled")
 
 
 if __name__ == "__main__":

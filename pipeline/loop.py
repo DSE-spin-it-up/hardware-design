@@ -166,13 +166,9 @@ def _run_design_pass(
         tail_polar=tail_polar,
     )
 
-    # Tube geometry for fuselage sizing.
-    # The tube runs from the spar rod to the aileron hinge, then extends aft
-    # by tube_tail_overlap to grip the tail boom inside the fuselage.
-    tube_outer_diameter = (
-        max(struct.d_spar, struct.d_aileron, struct.d_t)
-        * config.FUSELAGE.tube_clearance_factor
-    )
+    # Boom/fuselage geometry. The old green structural sleeve is gone; the
+    # tail boom sits near the fuselage floor, with the wing rods directly above.
+    tube_outer_diameter = struct.d_t
     x_rod_aileron = (1.0 - control_surface.inputs.c_aileron_to_c_wing) * sizing.c_root
     wing_airfoil_geom = AirfoilGeometry(airfoil)
     _, x_max_tc = wing_airfoil_geom.compute_maximum_thickness()
@@ -181,6 +177,25 @@ def _run_design_pass(
         float(np.max(wing_airfoil_geom.polygon[:, 1]) - np.min(wing_airfoil_geom.polygon[:, 1]))
         * sizing.c_root
     )
+    airfoil_y_offset = -float(np.min(wing_airfoil_geom.polygon[:, 1])) * sizing.c_root
+    _, y_up_s, y_lo_s = wing_airfoil_geom.compute_thickness(x_rod_spar / sizing.c_root)
+    _, y_up_a, y_lo_a = wing_airfoil_geom.compute_thickness(x_rod_aileron / sizing.c_root)
+    y_rod_spar = 0.5 * (y_up_s + y_lo_s) * sizing.c_root + airfoil_y_offset
+    y_rod_aileron = 0.5 * (y_up_a + y_lo_a) * sizing.c_root + airfoil_y_offset
+    lowest_wing_rod_bottom = min(
+        y_rod_spar - struct.d_spar / 2.0,
+        y_rod_aileron - struct.d_aileron / 2.0,
+    )
+    tail_boom_bottom = config.FUSELAGE.min_foam_floor
+    tail_boom_top = tail_boom_bottom + struct.d_t
+    wing_y_shift = tail_boom_top - lowest_wing_rod_bottom
+    rod_upper = max(
+        y_rod_spar + wing_y_shift + struct.d_spar / 2.0,
+        y_rod_aileron + wing_y_shift + struct.d_aileron / 2.0,
+    )
+    wing_top_y = wing_y_shift + wing_section_height
+    tube_top_y = max(tail_boom_top, rod_upper, wing_top_y)
+    battery_bottom_y = tail_boom_top
     tube_front_x = x_rod_spar - config.FUSELAGE.tube_tail_overlap
     tube_back_x = x_rod_aileron + config.FUSELAGE.tube_tail_overlap
     tube_length = tube_back_x - tube_front_x
@@ -191,6 +206,8 @@ def _run_design_pass(
         battery_volume=propulsion.battery_volume,
         battery_x=battery_x,
         battery_mass=propulsion.battery_mass,
+        battery_bottom_y=battery_bottom_y,
+        tube_top_y=tube_top_y,
         tube_back_x=tube_back_x,
         tube_outer_diameter=tube_outer_diameter,
         tube_length=tube_length,
@@ -634,7 +651,7 @@ def _optimize_battery_y_for_elevator(
     )
     box_y0 = base_y_cg["fuselage"] - 0.5 * p.fus.box_height
     y_lo = base_y_cg["battery_bottom"]
-    y_hi = box_y0 + p.fus.box_height - p.fus.battery_height
+    y_hi = y_lo
 
     if y_hi < y_lo:
         y_hi = y_lo
@@ -1511,7 +1528,8 @@ def run_pipeline(config) -> PipelineResult:
         rod=struct,
         rudder_hinge_moment=rudder_result.hinge_moment.H,
         bending_force=struct.F_tail_structural,
-        boom_length=sizing.L_boom,
+        boom_length=rods.tail_boom_bending_length(sizing, p.control_surface),
+        tube_length=sizing.L_boom,
         safety_factor=config.STRUCTURE.safety_factor,
     )
 
