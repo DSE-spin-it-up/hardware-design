@@ -236,6 +236,8 @@ def _run_design_pass(
         fus=fus,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
+        aileron=control_surface,
+        battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
     )
@@ -1540,6 +1542,8 @@ def run_pipeline(config) -> PipelineResult:
         fus=p.fus,
         airfoil_path=airfoil,
         tail_airfoil_path=config.TAIL_AIRFOIL,
+        aileron=p.control_surface,
+        battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
     )

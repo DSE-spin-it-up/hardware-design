@@ -100,10 +100,68 @@ def _structural_tube_mass(structure: RodResult, fus: FuselageResult, tube_length
     return 0.0
 
 
+def _tube_outer_volume(length: float, diameter: float) -> float:
+    return max(float(length), 0.0) * np.pi * max(float(diameter), 0.0) ** 2 / 4.0
+
+
+def _overlap_length(a0: float, a1: float, b0: float, b1: float) -> float:
+    return max(min(float(a1), float(b1)) - max(float(a0), float(b0)), 0.0)
+
+
 def _tail_boom_x_bounds(sizing: SizingResult, fus: FuselageResult, x_batt: float) -> tuple[float, float]:
     """Tail boom runs from the battery front face and keeps length L_boom."""
     x0 = x_batt - 0.5 * fus.battery_length
     return x0, x0 + sizing.L_boom
+
+
+def _fuselage_net_foam_volume(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    structure: RodResult,
+    airfoil_path: str | Path,
+    aileron: AileronResult | None,
+    x_batt: float,
+) -> float:
+    occupied = fus.battery_length * fus.battery_width * fus.battery_height
+
+    boom_x0, boom_x1 = _tail_boom_x_bounds(sizing, fus, x_batt)
+    fus_x0 = fus.x_nose
+    fus_x1 = fus.x_nose + fus.length
+    occupied += _tube_outer_volume(
+        _overlap_length(boom_x0, boom_x1, fus_x0, fus_x1),
+        structure.d_t,
+    )
+
+    _, x_spar_frac = AirfoilGeometry(airfoil_path).compute_maximum_thickness()
+    x_rod_spar = x_spar_frac * sizing.c_root
+    if aileron is None:
+        x_rod_aileron = x_rod_spar
+    else:
+        x_rod_aileron = (1.0 - aileron.inputs.c_aileron_to_c_wing) * sizing.c_root
+
+    spar_inside = fus_x0 <= x_rod_spar <= fus_x1
+    aileron_inside = fus_x0 <= x_rod_aileron <= fus_x1
+    rod_length_inside = max(float(fus.d_eq), 0.0)
+    if spar_inside:
+        occupied += _tube_outer_volume(rod_length_inside, structure.d_spar)
+    if aileron_inside:
+        occupied += _tube_outer_volume(rod_length_inside, structure.d_aileron)
+
+    return max(fus.volume_shell - occupied, 0.0)
+
+
+def fuselage_mass(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    structure: RodResult,
+    airfoil_path: str | Path,
+    aileron: AileronResult | None,
+    x_batt: float,
+    materials: PartMaterials = DEFAULT_MATERIALS,
+) -> float:
+    return materials.fuselage.mass(
+        _fuselage_net_foam_volume(sizing, fus, structure, airfoil_path, aileron, x_batt)
+    )
 
 
 def _payload_cable_angle(sizing: SizingResult) -> float:
@@ -268,30 +326,45 @@ def wing_mass(
     sizing: SizingResult,
     airfoil_path: str | Path,
     thickness: float = 0.1,
+    structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
     airfoil_area = AirfoilGeometry(airfoil_path).compute_airfoil_area(chord=1.0)
-    return materials.wing.mass(airfoil_area * sizing.inputs.b * thickness)
+    foam_volume = airfoil_area * sizing.inputs.b * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_spar)
+        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_aileron)
+    return materials.wing.mass(max(foam_volume, 0.0))
 
 
 def hor_tail_mass(
     sizing: SizingResult,
     tail_airfoil_path: str | Path,
     thickness: float = 0.08,
+    structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
     airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
-    return materials.tail.mass(airfoil_area * sizing.bh * thickness)
+    foam_volume = airfoil_area * sizing.bh * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_spar_ht)
+        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_control_ht)
+    return materials.tail.mass(max(foam_volume, 0.0))
 
 
 def ver_tail_mass(
     sizing: SizingResult,
     tail_airfoil_path: str | Path,
     thickness: float = 0.08,
+    structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
     airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
-    return materials.tail.mass(airfoil_area * sizing.bv * thickness)
+    foam_volume = airfoil_area * sizing.bv * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_spar_vt)
+        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_control_vt)
+    return materials.tail.mass(max(foam_volume, 0.0))
 
 
 def _max_tc_x(airfoil_path: str | Path) -> float:
@@ -359,10 +432,12 @@ def compute_cg(
     x_spar_vt    = x_vt_le + _max_tc_x(tail_airfoil_path) * sizing.cv
     x_control_vt = x_vt_le + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.cv
 
-    m_fus        = materials.fuselage.mass(fus.volume_shell)
+    m_fus        = fuselage_mass(
+        sizing, fus, structure, airfoil_path, aileron, x_batt, materials=materials
+    )
     m_batt       = propulsion.battery_mass
     m_motor      = propulsion.total_motor_mass
-    m_wing       = wing_mass(sizing, airfoil_path, materials=materials)
+    m_wing       = wing_mass(sizing, airfoil_path, structure=structure, materials=materials)
     m_ribs       = rib_mass(sizing, airfoil_path, rib_inputs, materials=materials)
     m_rod_spar   = structure.mass_spar
     m_rod_aileron= structure.mass_aileron
@@ -370,8 +445,8 @@ def compute_cg(
     m_control_ht = structure.mass_control_ht
     m_spar_vt    = structure.mass_spar_vt
     m_control_vt = structure.mass_control_vt
-    m_tail_h     = hor_tail_mass(sizing, tail_airfoil_path, materials=materials)
-    m_tail_v     = ver_tail_mass(sizing, tail_airfoil_path, materials=materials)
+    m_tail_h     = hor_tail_mass(sizing, tail_airfoil_path, structure=structure, materials=materials)
+    m_tail_v     = ver_tail_mass(sizing, tail_airfoil_path, structure=structure, materials=materials)
     m_tail_rod   = structure.mass_t
     m_pvc        = (_structural_tube_mass(structure, fus, tube_length)
                     if pvc_tubes_mass_override is None else pvc_tubes_mass_override)
@@ -739,6 +814,8 @@ def total_mass(
     tail_airfoil_path: str | Path,
     wing_thickness: float = 0.1,
     tail_thickness: float = 0.08,
+    aileron: AileronResult | None = None,
+    battery_x: float | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
@@ -760,10 +837,16 @@ def total_mass(
     m_battery     = propulsion.battery_mass
     m_motors      = propulsion.total_motor_mass
     m_props       = propulsion.inputs.n_props * propulsion.inputs.prop_mass
-    m_wing        = wing_mass(sizing, airfoil_path, wing_thickness, materials=materials)
+    m_wing        = wing_mass(
+        sizing, airfoil_path, wing_thickness, structure=structure, materials=materials
+    )
     m_ribs        = rib_mass(sizing, airfoil_path, rib_inputs, materials=materials)
-    m_tail_h      = hor_tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
-    m_tail_v      = ver_tail_mass(sizing, tail_airfoil_path, tail_thickness, materials=materials)
+    m_tail_h      = hor_tail_mass(
+        sizing, tail_airfoil_path, tail_thickness, structure=structure, materials=materials
+    )
+    m_tail_v      = ver_tail_mass(
+        sizing, tail_airfoil_path, tail_thickness, structure=structure, materials=materials
+    )
     m_spar_ht     = structure.mass_spar_ht
     m_control_ht  = structure.mass_control_ht
     m_spar_vt     = structure.mass_spar_vt
@@ -771,7 +854,10 @@ def total_mass(
     m_rod_spar    = structure.mass_spar
     m_rod_aileron = structure.mass_aileron
     m_tail_rod    = structure.mass_t
-    m_fuselage    = materials.fuselage.mass(fus.volume_shell)
+    x_batt        = 0.25 * sizing.c_root if battery_x is None else battery_x
+    m_fuselage    = fuselage_mass(
+        sizing, fus, structure, airfoil_path, aileron, x_batt, materials=materials
+    )
     x_rod_spar    = _max_tc_x(airfoil_path) * sizing.c_root
     tube_x0       = x_rod_spar - fus.inputs.tube_tail_overlap
     tube_x1       = fus.x_nose + fus.l_nose + fus.box_length - fus.inputs.casing_thickness
@@ -780,7 +866,6 @@ def total_mass(
     m_connector_each = _rod_connector_mass(structure)
     m_connectors  = 3.0 * m_connector_each
 
-    x_batt   = 0.25 * sizing.c_root
     x_motor  = 0.0
     x_tail   = 0.25 * sizing.c + sizing.lh
     w_masses = _compute_wiring_masses(sizing, wiring_inputs, x_batt, x_motor, x_tail)
