@@ -60,7 +60,7 @@ sizing:
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 2.7
+  L_boom: 2.5
   ARt: 4.5
   lam_t: 1.0
   SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15

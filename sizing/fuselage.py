@@ -267,7 +267,7 @@ def run(
     x_nose = x_nose_box - l_nose
 
     # ------------------------------------------------------------------ 5. Derived Aero Data
-    d_eq     = np.sqrt(width * height)
+    d_eq = np.sqrt(width**2 + height**2)
     fineness = length / d_eq
 
     # Raymer wetted-area formula for a body of revolution with nose + cylinder + tail:
