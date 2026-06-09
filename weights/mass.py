@@ -9,6 +9,7 @@ from sizing.aileron import AileronResult
 from aerodynamics.airfoil_geometry import AirfoilGeometry
 from propulsion.sizing import PropulsionResult
 from sizing.fuselage import FuselageResult
+from sizing.rudder import RudderInputs
 from sizing.wing import SizingResult
 from structures.rods import RodResult
 from weights.part_materials import PartMaterials
@@ -92,8 +93,7 @@ def _tube_y_bounds(
     y_rod_spar: float,
     y_rod_aileron: float,
 ) -> tuple[float, float]:
-    tail_boom_y = fus.inputs.min_foam_floor + structure.d_t / 2.0
-    return tail_boom_y - structure.d_t / 2.0, tail_boom_y + structure.d_t / 2.0
+    return 0.0, structure.d_t
 
 
 def _structural_tube_mass(structure: RodResult, fus: FuselageResult, tube_length: float) -> float:
@@ -390,6 +390,7 @@ def compute_cg(
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
     rib_inputs: RibInputs | None = None,
+    rudder_inputs = None,
 ) -> dict[str, float]:
     """Compute CG x-position of all components and overall aircraft CG.
 
@@ -430,7 +431,12 @@ def compute_cg(
     x_spar_ht    = x_ht_le + _max_tc_x(tail_airfoil_path) * sizing.ch
     x_control_ht = x_ht_le + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.ch
     x_spar_vt    = x_vt_le + _max_tc_x(tail_airfoil_path) * sizing.cv
-    x_control_vt = x_vt_le + (1.0 - structure.inputs.c_ruddervator_to_c_tail) * sizing.cv
+    c_rudder_to_tail = (
+        rudder_inputs.cR_cV
+        if rudder_inputs is not None
+        else structure.inputs.c_ruddervator_to_c_tail
+    )
+    x_control_vt = x_vt_le + (1.0 - c_rudder_to_tail) * sizing.cv
 
     m_fus        = fuselage_mass(
         sizing, fus, structure, airfoil_path, aileron, x_batt, materials=materials
@@ -678,10 +684,10 @@ def compute_y_cg(
     y_tail_h   = y_pvc
     y_ht_spar  = y_pvc
     y_ht_elev  = y_pvc
-    y_tail_v   = y_pvc + 0.5 * sizing.bv
-    y_vt_spar  = y_pvc + 0.5 * sizing.bv
-    y_vt_rud   = y_pvc + 0.5 * sizing.bv
-    y_motor_back = y_pvc + sizing.bv
+    y_tail_v   = tube_y1 + 0.5 * sizing.bv
+    y_vt_spar  = tube_y0 + 0.5 * (tube_height + sizing.bv)
+    y_vt_rud   = tube_y0 + 0.5 * (tube_height + sizing.bv)
+    y_motor_back = tube_y1 + sizing.bv
 
     y_servo_front   = y_motor
     y_servo_aileron = y_rod_aileron
@@ -820,6 +826,7 @@ def total_mass(
     sensor_mass: float = 0.554,
     wiring_inputs: WiringInputs | None = None,
     rib_inputs: RibInputs | None = None,
+    rudder_inputs: RudderInputs | None = None,
 ) -> dict[str, float]:
     """Compute total aircraft mass as sum of components.
 

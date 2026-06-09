@@ -221,12 +221,15 @@ def plot_cg_side_view(
         y_rod_aileron - struct.d_aileron / 2.0,
     )
     wing_y_shift = tube_y1 - lowest_wing_rod_bottom
-    y_tail_base = tube_yc
+    y_tail_base = tube_y1
+    y_ht_center = tube_yc
+    vt_rod_y0 = tube_y0
+    vt_rod_height = tube_height + b_v_total
     airfoil_coords[:, 1] += wing_y_shift
     y_rod_spar += wing_y_shift
     y_rod_aileron += wing_y_shift
-    y_ht_spar = y_tail_base
-    y_ht_control = y_tail_base
+    y_ht_spar = y_ht_center
+    y_ht_control = y_ht_center
 
     battery_length = fus.battery_length
     battery_height = fus.battery_height
@@ -263,7 +266,7 @@ def plot_cg_side_view(
     tail_x = np.linspace(box_x1, fus_tail_x, 80)
     tail_s = (tail_x - box_x1) / max(fus.l_tail, 1.0e-9)
     smooth = 0.5 * (1.0 - np.cos(np.pi * tail_s))
-    tail_center = body_yc + (y_tail_base - body_yc) * smooth
+    tail_center = body_yc + (tube_yc - body_yc) * smooth
     tail_r = half_h + (tail_exit_radius - half_h) * smooth
     tail_poly = np.vstack((
         np.column_stack((tail_x, tail_center + tail_r)),
@@ -287,11 +290,6 @@ def plot_cg_side_view(
     ax.add_patch(Polygon(nose_poly, closed=True, label="Ogive nose", **fus_kw))
     ax.add_patch(Polygon(tail_poly, closed=True, label="Tail taper", **fus_kw))
 
-    # --- Internal structural box (dashed) ---
-    ax.add_patch(Rectangle((box_x0, box_y0), fus.box_length, fus.box_height,
-                            fill=False, linestyle="--", edgecolor="gray",
-                            linewidth=1.2, label="Structural box"))
-
     # --- Wing airfoil ---
     ax.add_patch(Polygon(airfoil_coords, closed=True,
                          facecolor="lightblue", edgecolor="navy", alpha=0.6,
@@ -313,18 +311,17 @@ def plot_cg_side_view(
         ax.plot([x_vt_hinge, x_vt_hinge], [y_tail_base, y_tail_base + rh],
                 color="darkred", linewidth=2, linestyle="--", label="Rudder hinge")
 
-    vt_rod_y0    = y_tail_base
     vt_spar_w    = struct.d_spar_vt
     vt_rud_w     = struct.d_control_vt
     ax.add_patch(Rectangle(
         (x_tail_root_v + c_v * 0.25 - vt_spar_w / 2.0, vt_rod_y0),
-        vt_spar_w, b_v_total,
+        vt_spar_w, vt_rod_height,
         facecolor="purple", alpha=0.7, label="VT spar rod",
     ))
     if x_vt_hinge is not None:
         ax.add_patch(Rectangle(
             (x_vt_hinge - vt_rud_w / 2.0, vt_rod_y0),
-            vt_rud_w, b_v_total,
+            vt_rud_w, vt_rod_height,
             facecolor="magenta", alpha=0.7, label="VT rudder rod",
         ))
 
@@ -333,14 +330,14 @@ def plot_cg_side_view(
         tc = tail_airfoil_coords.copy()
         y_mid = 0.5 * (float(np.max(tc[:, 1])) + float(np.min(tc[:, 1])))
         tc[:, 0] += x_tail_root_h
-        tc[:, 1] += y_tail_base - y_mid
+        tc[:, 1] += y_ht_center - y_mid
         ax.add_patch(Polygon(tc, closed=True,
                              facecolor="lightgray", edgecolor="darkslategray",
                              alpha=0.6, label="Tail airfoil"))
     else:
         approx_t = max(0.05 * sizing.ch, 0.02)
         ax.add_patch(Rectangle(
-            (x_tail_root_h, y_tail_base - approx_t / 2.0),
+            (x_tail_root_h, y_ht_center - approx_t / 2.0),
             sizing.ch, approx_t,
             facecolor="lightgray", edgecolor="darkslategray", alpha=0.6,
             label="Tail airfoil",
@@ -369,7 +366,7 @@ def plot_cg_side_view(
     # --- Tail boom ---
     tail_boom_d = struct.d_t
     ax.add_patch(Rectangle(
-        (tail_start, y_tail_base - tail_boom_d / 2.0),
+        (tail_start, tube_y0),
         x_tail_end - tail_start,
         tail_boom_d,
         facecolor="gray",
@@ -405,7 +402,7 @@ def plot_cg_side_view(
     x_servo_aileron = cg["rod_aileron"]
     x_servo_rear    = x_motor_back
     x_servo_ht      = cg.get("ht_rud", cg["tail"])
-    x_servo_vt      = cg.get("vt_rud", cg["tail"])
+    x_servo_vt      = x_vt_hinge if x_vt_hinge is not None else cg.get("vt_rud", cg["tail"])
     ax.scatter(
         [x_servo_front,   x_servo_front,
          x_servo_aileron, x_servo_aileron,

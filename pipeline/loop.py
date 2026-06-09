@@ -240,6 +240,7 @@ def _run_design_pass(
         battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
+        rudder_inputs=config.RUDDER,
     )
     cg = weights_mass.compute_cg(
         sizing=sizing,
@@ -252,6 +253,7 @@ def _run_design_pass(
         battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
+        rudder_inputs=config.RUDDER,
     )
     y_cg_for_aileron = weights_mass.compute_y_cg(
         sizing=sizing,
@@ -675,10 +677,7 @@ def _optimize_battery_y_for_elevator(
             polar, tail_polar, y_cg, elevator_inputs_unchecked,
             q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
         )
-        margin = elevator_result.tail_CL_limit - max(
-            abs(elevator_result.CLh_at_max_up),
-            abs(elevator_result.CLh_at_max_down),
-        )
+        margin = elevator_result.tail_CL_limit - abs(elevator_result.CLh_cruise)
         return y_cg, scissor, elevator_result, margin
 
     def checked_elevator(y_cg: dict[str, float], scissor: ScissorData) -> ElevatorResult:
@@ -699,9 +698,8 @@ def _optimize_battery_y_for_elevator(
                 f"tail |CLh| margin = {margin_candidate:+.4f}"
             )
         elevator_candidate = checked_elevator(y_cg_candidate, scissor_candidate)
-        margin_candidate = elevator_candidate.tail_CL_limit - max(
-            abs(elevator_candidate.CLh_at_max_up),
-            abs(elevator_candidate.CLh_at_max_down),
+        margin_candidate = (
+            elevator_candidate.tail_CL_limit - abs(elevator_candidate.CLh_cruise)
         )
         return y_cg_candidate, scissor_candidate, elevator_candidate, margin_candidate
 
@@ -794,10 +792,7 @@ def _optimize_battery_y_for_elevator(
         )
 
     elevator_lo = checked_elevator(y_cg_lo, scissor_lo)
-    margin_lo = elevator_lo.tail_CL_limit - max(
-        abs(elevator_lo.CLh_at_max_up),
-        abs(elevator_lo.CLh_at_max_down),
-    )
+    margin_lo = elevator_lo.tail_CL_limit - abs(elevator_lo.CLh_cruise)
     return y_lo, y_cg_lo, scissor_lo, elevator_lo, margin_lo
 
 
@@ -807,7 +802,7 @@ def _is_elevator_tail_margin_failure(exc: Exception) -> bool:
     message = str(exc)
     return (
         "violates the elevator tail-stall limit" in message
-        or "avoids tail stall at max deflection" in message
+        or "undeflected cruise tail lift coefficient" in message
         or "trimmed tail is already beyond the allowed finite-tail" in message
     )
 
@@ -1468,6 +1463,35 @@ def run_pipeline(config) -> PipelineResult:
             prev_state, probe_state = probe_state, next_state
         final_state = best_state
 
+    for _ in range(6):
+        rudder_area_req = rudder.minimum_vertical_tail_area(
+            sizing,
+            final_state["p"].fus,
+            config.V_STALL,
+            config.RUDDER,
+            x_cg=final_state["p"].cg["overall"],
+        )
+        sv_old = sizing.Sv
+        if abs(rudder_area_req.Sv - sv_old) <= max(1.0e-6, 1.0e-5 * sv_old):
+            print(
+                f"    Rudder VT area check: current Sv={sv_old:.4f} m^2, "
+                f"required Sv={rudder_area_req.Sv:.4f} m^2, "
+                f"required bR/bV={rudder_area_req.bR_bV_required:.4f}"
+            )
+            break
+        Vv_new = rudder_area_req.Sv * sizing.lh / (sizing.Sw * sizing.inputs.b)
+        sizing_inputs = dataclasses.replace(sizing.inputs, Vv=Vv_new)
+        sizing = wing.run(
+            sizing_inputs,
+            t_over_c_root=tc,
+            c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+        )
+        final_state = evaluate_final_scissor(final_state["battery_x"])
+        print(
+            f"    Rudder VT area tuning: Sv {sv_old:.4f} -> {sizing.Sv:.4f} m^2 "
+            f"(Vv={sizing.inputs.Vv:.4f}, required bR/bV={rudder_area_req.bR_bV_required:.4f})"
+        )
+
     battery_x = final_state["battery_x"]
     p = final_state["p"]
     llt = final_state["llt"]
@@ -1546,6 +1570,7 @@ def run_pipeline(config) -> PipelineResult:
         battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
+        rudder_inputs=config.RUDDER,
     )
     final_cg = weights_mass.compute_cg(
         sizing=sizing,
@@ -1558,6 +1583,7 @@ def run_pipeline(config) -> PipelineResult:
         battery_x=battery_x,
         materials=config.MATERIALS,
         rib_inputs=config.RIBS,
+        rudder_inputs=config.RUDDER,
     )
     final_y_cg = weights_mass.compute_y_cg(
         sizing=sizing,

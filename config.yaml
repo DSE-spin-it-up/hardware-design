@@ -67,7 +67,7 @@ sizing:
 
 # ----- Propulsion -----
 propulsion:
-  csv_prop: data\14x8_performance.csv
+  csv_prop: data\12x8E_performance.csv
   n_props: 3
   prop_mass: 0.1
   eff_motor: 0.8
@@ -122,17 +122,20 @@ control_surface:
 # ----- Elevator -----
 elevator:
   trim_mode: tail_incidence  # tail_incidence or payload_attachment
+  cE_ch: 0.40  # [-] elevator chord / horizontal-tail chord
   eta_h: 0.85
   Cm_dist: 0.0
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 25.0
-  payload_cable_min_angle_deg: 0.0
+  payload_cable_min_angle_deg: -75
   tail_clmax_fraction: 0.90  # [-] allowed fraction of finite-tail CL_max
-  payload_cable_max_angle_deg: null  # null -> 2 × equilibrium cable angle
+  payload_cable_max_angle_deg: 75  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----
 rudder:
-  max_deflection_deg: 30.0
+  bR_bV: 1.00  # [-] rudder span / vertical-tail span
+  cR_cV: 0.40  # [-] rudder chord / vertical-tail chord
+  max_deflection_deg: 30.0  # [deg] maximum rudder deflection
   Cn_dist: 0.0
   CDY: 0.8
   Kf1: 0.85

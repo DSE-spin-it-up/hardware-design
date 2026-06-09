@@ -40,7 +40,8 @@ from sizing.wing import SizingResult
 @dataclass
 class RudderInputs:
     """Fixed design parameters — set by the designer, never overwritten."""
-    cR_cV:              float = 0.30   # rudder chord / vertical-tail chord [-] (designer choice)
+    bR_bV:              float = 1.00   # rudder span / vertical-tail span [-] (designer choice)
+    cR_cV:              float = 0.40   # rudder chord / vertical-tail chord [-] (designer choice)
     max_deflection_deg: float = 30.0   # hard deflection limit [deg]
     Cn_dist:            float = 0.10   # max yaw-moment disturbance the rudder must
                                        # counteract at δ_R_max [-]
@@ -52,7 +53,8 @@ class RudderInputs:
     # body side area [m²]
     # None → fus.length * fus.height + Sv  (box fuselage + vertical tail)
     hinge_moment: HingeMomentInputs = field(default_factory=HingeMomentInputs)
-    # hinge-moment coefficients for the rudder surface
+
+
 
 
 @dataclass
@@ -79,7 +81,20 @@ class RudderResult:
     sigma:             float   # weathercock sideslip σ                [rad]
     delta_R:           float   # applied rudder deflection (= limit)   [rad]
     active_constraint: str     # "gust" or "Cn_dist"
+    bR_bV_required:    float   # minimum rudder span ratio required by constraints [-]
+    Sv_required:       float   # minimum vertical-tail area for configured rudder [m^2]
+    force_margin:      float   # available minus required lateral force [N]
+    moment_margin:     float   # available minus required yaw moment [N*m]
     hinge_moment:      HingeMomentResult  # rudder hinge moment at cruise, δ_R_max
+
+
+@dataclass
+class RudderAreaRequirement:
+    Sv: float
+    bR_bV_required: float
+    active_constraint: str
+    force_margin: float = 0.0
+    moment_margin: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +107,127 @@ def tau_from_chord_ratio(cf_c: float) -> float:
     Empirical 4th-order polynomial fit, valid for cf/c ∈ [0.15, 0.40].
     """
     return float(np.polyval([-6.624, 12.07, -8.292, 3.295, 0.004942], cf_c))
+
+
+def _vertical_tail_geometry_for_area(sizing: SizingResult, Sv: float) -> tuple[float, float, float]:
+    bv = np.sqrt(2.0 * sizing.inputs.ARt * Sv) / 2.0
+    ARv = bv ** 2 / Sv
+    CLalphav = 2.0 * np.pi * ARv / (ARv + 2.0)
+    Vv = Sv * sizing.lh / (sizing.Sw * sizing.inputs.b)
+    return bv, CLalphav, Vv
+
+
+def _requirement_for_area(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    v_stall: float,
+    inputs: RudderInputs,
+    x_cg: float,
+    Sv: float,
+) -> RudderAreaRequirement:
+    s = sizing
+    i = inputs
+    S = s.Sw
+    b = s.inputs.b
+    rho = s.rho
+    _, CLalphav, Vv = _vertical_tail_geometry_for_area(s, Sv)
+
+    A_fus = fus.length * fus.height
+    x_fus_lemac = fus.x_nose + fus.length / 2.0
+    x_vtail_lemac = 0.25 * s.c + s.lh
+    Ss = i.Ss if i.Ss is not None else A_fus + Sv
+    dc = (A_fus * x_fus_lemac + Sv * x_vtail_lemac) / Ss - x_cg
+
+    gust_speed = s.inputs.gust_speed
+    VT = np.sqrt(v_stall ** 2 + gust_speed ** 2)
+    beta = np.arctan(gust_speed / v_stall)
+    q_total = 0.5 * rho * VT ** 2
+    q_gust = 0.5 * rho * gust_speed ** 2
+    Fw = q_gust * Ss * i.CDY
+    delta_R_max = np.radians(i.max_deflection_deg)
+    tau_r = tau_from_chord_ratio(i.cR_cV)
+    cy_required = Fw / (q_total * S)
+    cn_required = abs(Fw * dc) / (q_total * S * b) + abs(i.Cn_dist)
+
+    cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta
+    cn_fin = i.Kf1 * CLalphav * i.eta_v * Vv * beta
+
+    cy_rudder_per_b2 = CLalphav * i.eta_v * (Sv / S) * tau_r * i.cR_cV * delta_R_max
+    cn_rudder_per_b = CLalphav * Vv * i.eta_v * tau_r * delta_R_max
+
+    bR_bV_force = (
+        float("inf") if cy_rudder_per_b2 <= 0.0
+        else np.sqrt(max(cy_required - cy_fin, 0.0) / cy_rudder_per_b2)
+    )
+    bR_bV_moment = (
+        float("inf") if cn_rudder_per_b <= 0.0
+        else max(cn_required - cn_fin, 0.0) / cn_rudder_per_b
+    )
+    bR_bV_required = max(float(bR_bV_force), float(bR_bV_moment))
+
+    bR_bV_check = min(max(i.bR_bV, 0.0), 1.0)
+    cy_available = cy_fin + cy_rudder_per_b2 * bR_bV_check ** 2
+    cn_available = cn_fin + cn_rudder_per_b * bR_bV_check
+    force_margin = q_total * S * (cy_available - cy_required)
+    moment_margin = q_total * S * b * (cn_available - cn_required)
+
+    if bR_bV_moment >= bR_bV_force:
+        active = "Cn_dist" if abs(i.Cn_dist) >= abs(Fw * dc) / (q_total * S * b) else "gust_moment"
+    else:
+        active = "gust_force"
+    return RudderAreaRequirement(
+        Sv=Sv,
+        bR_bV_required=bR_bV_required,
+        active_constraint=active,
+        force_margin=float(force_margin),
+        moment_margin=float(moment_margin),
+    )
+
+
+def minimum_vertical_tail_area(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    v_stall: float,
+    inputs: RudderInputs | None = None,
+    x_cg: float = 0.0,
+) -> RudderAreaRequirement:
+    """Smallest Sv that lets the configured rudder span/chord meet rudder constraints."""
+    if inputs is None:
+        inputs = RudderInputs()
+    if inputs.bR_bV <= 0.0 or inputs.bR_bV > 1.0:
+        raise ValueError("rudder.bR_bV must satisfy 0 < bR_bV <= 1.")
+    if inputs.cR_cV <= 0.0 or inputs.cR_cV >= 1.0:
+        raise ValueError("rudder.cR_cV must satisfy 0 < cR_cV < 1.")
+    if inputs.max_deflection_deg <= 0.0:
+        raise ValueError("rudder.max_deflection_deg must be positive.")
+
+    def requirement(Sv: float) -> RudderAreaRequirement:
+        return _requirement_for_area(sizing, fus, v_stall, inputs, x_cg, Sv)
+
+    lo = max(1.0e-6, 1.0e-6 * sizing.Sw)
+    hi = max(sizing.Sv, lo * 2.0)
+    req_hi = requirement(hi)
+    for _ in range(60):
+        if req_hi.bR_bV_required <= inputs.bR_bV:
+            break
+        hi *= 2.0
+        req_hi = requirement(hi)
+    else:
+        raise ValueError(
+            "Could not find a vertical-tail area that satisfies the rudder "
+            f"constraints with bR/bV={inputs.bR_bV:.3f}."
+        )
+
+    best = req_hi
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        req_mid = requirement(mid)
+        if req_mid.bR_bV_required <= inputs.bR_bV:
+            hi = mid
+            best = req_mid
+        else:
+            lo = mid
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +268,12 @@ def run(
         inputs = RudderInputs()
     i = inputs
     s = sizing
+    area_requirement = minimum_vertical_tail_area(
+        sizing, fus, v_stall, i, x_cg=x_cg,
+    )
+    current_requirement = _requirement_for_area(
+        sizing, fus, v_stall, i, x_cg, sizing.Sv,
+    )
 
     # ------------------------------------------------------------------
     # Aircraft / tail geometry
@@ -178,81 +320,29 @@ def run(
     tau_r = tau_from_chord_ratio(i.cR_cV)
 
     # ------------------------------------------------------------------
-    # Crosswind trim: solve (σ, bR/bV) simultaneously
-    #
-    # Control derivatives as functions of bR/bV:
-    #   Cn_δr = -CLα_v · Vv · η_v · τ_r · (bR/bV)
-    #   Cy_δr =  CLα_v · η_v · τ_r · (bR/bV) · (SR/SV)
-    #          =  CLα_v · η_v · τ_r · (bR/bV) · (cR/cV · bR/bV)
-    #          =  CLα_v · η_v · τ_r · (cR/cV) · (bR/bV)²
-    #
-    # Yaw moment balance (eq1):
-    #   q·S·b · [Cn_β·(β-σ) + Cn_δr·δ_R] + Fw·dc = 0
-    #
-    # Side-force balance (eq2):
-    #   q_gust·Ss·CDY = q_total·S · [Cy_β·(β-σ) + Cy_δr·δ_R]
+    # Active constraint from explicit VT side-force and yaw-moment capacity.
+    # The area loop does not rely on unbounded weathercock angle sigma.
     # ------------------------------------------------------------------
-    def trim_eqs(x: list[float]) -> list[float]:
-        sigma, bR_bV = x
+    bR_bV_final = current_requirement.bR_bV_required
+    active_constraint = current_requirement.active_constraint
 
-        Cndr_t = -CLalphav * Vv      * i.eta_v * tau_r * bR_bV
-        Cydr_t =  CLalphav * i.eta_v * tau_r   * i.cR_cV * bR_bV ** 2
-
+    def trim_sigma(sigma_only: list[float]) -> list[float]:
+        sigma = sigma_only[0]
+        Cndr_t = -CLalphav * Vv * i.eta_v * tau_r * min(bR_bV_final, i.bR_bV)
         eq1 = (
             q_total * S * b * (Cnb * (beta - sigma) + Cndr_t * delta_R_max)
             + Fw * dc
         )
-        eq2 = (
-            q_gust * Ss * i.CDY
-            - q_total * S * (Cyb * (beta - sigma) + Cydr_t * delta_R_max)
-        )
-        return [eq1, eq2]
+        return [eq1]
 
-    sol = fsolve(trim_eqs, [0.0, 0.5], full_output=True)
-    x_sol, _, ier, msg = sol
+    sigma_final = float(fsolve(trim_sigma, [0.0])[0])
 
-    if ier != 1:
+    if bR_bV_final > i.bR_bV + 1.0e-9:
         raise ValueError(
-            f"Rudder crosswind trim solver did not converge: {msg}\n"
-            "Check gust speed, tail geometry, or deflection limit."
-        )
-
-    sigma_gust, bR_bV_gust = x_sol
-
-    # ------------------------------------------------------------------
-    # Cn_dist constraint: bR/bV required to counteract yaw disturbance
-    #   |Cn_δr · δ_R_max| = Cn_dist
-    #   CLα_v · Vv · η_v · τ_r · δ_R_max · bR/bV = Cn_dist
-    # ------------------------------------------------------------------
-    bR_bV_dist = i.Cn_dist / (CLalphav * Vv * i.eta_v * tau_r * delta_R_max)
-
-    # ------------------------------------------------------------------
-    # Active constraint
-    # ------------------------------------------------------------------
-    if bR_bV_gust >= bR_bV_dist:
-        bR_bV_final       = bR_bV_gust
-        sigma_final       = sigma_gust
-        active_constraint = "gust"
-    else:
-        bR_bV_final       = bR_bV_dist
-        # recompute σ at the larger bR/bV (gust trim with more rudder authority)
-        def trim_sigma(sigma_only: list[float]) -> list[float]:
-            sigma  = sigma_only[0]
-            Cndr_t = -CLalphav * Vv * i.eta_v * tau_r * bR_bV_final
-            eq1    = (
-                q_total * S * b * (Cnb * (beta - sigma) + Cndr_t * delta_R_max)
-                + Fw * dc
-            )
-            return [eq1]
-
-        sigma_final       = float(fsolve(trim_sigma, [0.0])[0])
-        active_constraint = "Cn_dist"
-
-    if bR_bV_final > 1.0:
-        raise ValueError(
-            f"Rudder sizing failed: required bR/bV = {bR_bV_final:.3f} > 1.0.\n"
+            f"Rudder sizing failed: required bR/bV = {bR_bV_final:.3f} > configured bR/bV = {i.bR_bV:.3f}.\n"
             f"Active constraint: {active_constraint}.\n"
-            "Consider increasing cR/cV, increasing vertical tail size, or "
+            f"Minimum vertical-tail area for this rudder is {area_requirement.Sv:.4f} m^2.\n"
+            "Consider increasing cR/cV, increasing bR/bV, increasing vertical tail size, or "
             "reducing the gust speed / Cn_dist requirement."
         )
 
@@ -260,19 +350,19 @@ def run(
     # Final geometry and derivatives
     # ------------------------------------------------------------------
     c_v      = Sv / bv                          # mean vertical-tail chord [m]
-    S_rudder = i.cR_cV * bR_bV_final * Sv      # rudder planform area [m²]
+    S_rudder = i.cR_cV * i.bR_bV * Sv      # rudder planform area [m²]
     c_rudder = i.cR_cV * c_v                    # rudder chord [m]
 
     geometry = RudderGeometry(
-        bR_bV    = bR_bV_final,
+        bR_bV    = i.bR_bV,
         cR_cV    = i.cR_cV,
-        SR_SV    = i.cR_cV * bR_bV_final,
+        SR_SV    = i.cR_cV * i.bR_bV,
         S_rudder = S_rudder,
         c_rudder = c_rudder,
     )
 
     Cndr = -CLalphav * Vv      * i.eta_v * tau_r * geometry.bR_bV
-    Cydr =  CLalphav * i.eta_v * tau_r   * geometry.SR_SV
+    Cydr =  CLalphav * i.eta_v * (Sv / S) * tau_r * geometry.SR_SV
 
     # ------------------------------------------------------------------
     # Hinge moment at cruise q and max deflection
@@ -301,6 +391,10 @@ def run(
         sigma             = sigma_final,
         delta_R           = delta_R_max,
         active_constraint = active_constraint,
+        bR_bV_required    = bR_bV_final,
+        Sv_required       = area_requirement.Sv,
+        force_margin      = current_requirement.force_margin,
+        moment_margin     = current_requirement.moment_margin,
         hinge_moment      = hm,
     )
 
@@ -316,7 +410,9 @@ def _summary_legacy(r: RudderResult) -> None:
     print(f"  Rudder geometry")
     print(f"    cR/cV                     : {g.cR_cV:.4f}  (designer input)")
     print(f"    τ_r                       : {r.tau_r:.4f}")
-    print(f"    bR/bV                     : {g.bR_bV:.4f}  (from sizing)")
+    print(f"    bR/bV                     : {g.bR_bV:.4f}  (designer input)")
+    print(f"    required bR/bV            : {r.bR_bV_required:.4f}")
+    print(f"    required Sv               : {r.Sv_required:.4f}  m^2")
     print(f"    SR/SV                     : {g.SR_SV:.4f}")
     print(f"    S_rudder                  : {g.S_rudder:.4f}  m²")
     print(f"    c_rudder                  : {g.c_rudder:.4f}  m")
@@ -329,6 +425,8 @@ def _summary_legacy(r: RudderResult) -> None:
     print(f"  Weathercock sideslip σ      : {np.degrees(r.sigma):.2f}  °")
     print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  °  (= limit)")
     print(f"  Active sizing constraint    : {r.active_constraint}")
+    print(f"  VT lateral force margin     : {r.force_margin:+.2f}  N")
+    print(f"  VT yaw moment margin        : {r.moment_margin:+.2f}  N*m")
     print(f"  Hinge moment (cruise, δ_max)")
     print(f"    Chi                       : {hm.Chi:.4f}")
     print(f"    H                         : {hm.H:.4f}  N·m  (boom torsion input)")
@@ -344,7 +442,9 @@ def summary(r: RudderResult) -> None:
     print("  Rudder geometry")
     print(f"    cR/cV                     : {g.cR_cV:.4f}  (designer input)")
     print(f"    tau_r                     : {r.tau_r:.4f}")
-    print(f"    bR/bV                     : {g.bR_bV:.4f}  (from sizing)")
+    print(f"    bR/bV                     : {g.bR_bV:.4f}  (designer input)")
+    print(f"    required bR/bV            : {r.bR_bV_required:.4f}")
+    print(f"    required Sv               : {r.Sv_required:.4f}  m^2")
     print(f"    SR/SV                     : {g.SR_SV:.4f}")
     print(f"    S_rudder                  : {g.S_rudder:.4f}  m^2")
     print(f"    c_rudder                  : {g.c_rudder:.4f}  m")
@@ -362,7 +462,7 @@ def summary(r: RudderResult) -> None:
     print("    Cn_beta    =  Kf1*CL_alpha_v*eta_v*Sv/S*lv/b")
     print("    Cy_beta    = -Kf2*CL_alpha_v*eta_v*Sv/S")
     print("    Cn_delta_r = -CL_alpha_v*Vv*eta_v*tau_r*bR/bV")
-    print("    Cy_delta_r =  CL_alpha_v*eta_v*tau_r*SR/SV")
+    print("    Cy_delta_r =  CL_alpha_v*eta_v*Sv/S*tau_r*SR/SV")
     print(f"  Cn_beta                     : {r.Cnb:.4f}  1/rad")
     print(f"  Cy_beta                     : {r.Cyb:.4f}  1/rad")
     print(f"  Cn_delta_r                  : {r.Cndr:.4f}  1/rad")
@@ -371,6 +471,8 @@ def summary(r: RudderResult) -> None:
     print(f"  Weathercock sideslip sigma  : {np.degrees(r.sigma):.2f}  deg")
     print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  deg  (= limit)")
     print(f"  Active sizing constraint    : {r.active_constraint}")
+    print(f"  VT lateral force margin     : {r.force_margin:+.2f}  N")
+    print(f"  VT yaw moment margin        : {r.moment_margin:+.2f}  N*m")
     print("  Hinge moment (cruise, delta_max)")
     print(f"    Chi                       : {hm.Chi:.4f}")
     print(f"    H                         : {hm.H:.4f}  N*m  (boom torsion input)")

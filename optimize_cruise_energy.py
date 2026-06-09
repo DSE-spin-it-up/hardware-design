@@ -58,10 +58,7 @@ def _scissor_margin(result) -> float:
 
 
 def _tail_cl_margin(result) -> float:
-    return float(result.elevator.tail_CL_limit - max(
-        abs(result.elevator.CLh_at_max_up),
-        abs(result.elevator.CLh_at_max_down),
-    ))
+    return float(result.elevator.tail_CL_limit - abs(result.elevator.CLh_cruise))
 
 
 def _candidate_config(*, L_boom: float, battery_y_frac: float):

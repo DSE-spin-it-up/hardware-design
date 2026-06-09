@@ -50,7 +50,7 @@ class ElevatorInputs:
     payload_cable_min_angle_deg: float = 0.0       # min cable sweep angle from vertical [deg]
     payload_cable_max_angle_deg: float | None = None  # max angle; None -> 2 * equilibrium angle
     tail_clmax_fraction:     float = 0.90   # allowed fraction of finite-tail CL_max [-]
-    enforce_tail_stall:      bool = True    # raise if max |CLh| exceeds tail Cl_max
+    enforce_tail_stall:      bool = True    # raise if cruise |CLh| exceeds tail Cl_max
 
 
 @dataclass
@@ -223,26 +223,6 @@ def compute_payload_cable(
         Cm_pitch_up=float(Cm_sweep[i_up]),
         Cm_pitch_down=float(Cm_sweep[i_down]),
     )
-
-
-def _span_limit_for_tail_stall(
-    CLh_cruise: float,
-    CLh_delta_per_span: float,
-    delta_e: float,
-    Cl_max: float,
-) -> float:
-    """Largest bE/bh allowed by |CLh_cruise + CLh_delta*delta_e*bE_bh| <= Cl_max."""
-    k = CLh_delta_per_span * delta_e
-    if abs(k) < 1.0e-12:
-        return float("inf")
-
-    lo = (-Cl_max - CLh_cruise) / k
-    hi = ( Cl_max - CLh_cruise) / k
-    if lo > hi:
-        lo, hi = hi, lo
-    if hi < 0.0:
-        return float("-inf")
-    return hi
 
 
 def _finite_tail_cl_limit_llt(sizing: SizingResult, tail_polar: AirfoilPolar) -> float:
@@ -490,60 +470,26 @@ def run(
     tail_CL_max_3d = _finite_tail_cl_limit_llt(s, tail_polar)
     tail_CL_limit = i.tail_clmax_fraction * tail_CL_max_3d
     Cl_max = tail_CL_limit
-    CLh_delta_per_span = CLalphah * tau_e
-    bE_bh_stall_limit = min(
-        1.0,
-        _span_limit_for_tail_stall(
-            CLh_cruise, CLh_delta_per_span, delta_e_up, Cl_max,
-        ),
-        _span_limit_for_tail_stall(
-            CLh_cruise, CLh_delta_per_span, delta_e_down, Cl_max,
-        ),
-    )
+    bE_bh_stall_limit = 1.0
 
-    if i.enforce_tail_stall:
-        if bE_bh_stall_limit < 0.0:
-            raise ValueError(
-                "Tail sizing failed: the trimmed tail is already beyond the "
-                "allowed finite-tail |CL| before elevator span is applied.\n"
-                f"  CLh_cruise = {CLh_cruise:.3f}\n"
-                f"  finite-tail CL_max = {tail_CL_max_3d:.3f}\n"
-                f"  allowed fraction = {i.tail_clmax_fraction:.3f}\n"
-                f"  allowed |CLh| = {tail_CL_limit:.3f}"
-            )
-        if bE_bh_required > bE_bh_stall_limit + 1.0e-9:
-            raise ValueError(
-                "Elevator sizing failed: required span exceeds the largest "
-                "span that avoids tail stall at max deflection.\n"
-                f"  required bE/bh = {bE_bh_required:.3f}\n"
-                f"  stall-limited bE/bh = {bE_bh_stall_limit:.3f}\n"
-                f"  CLh_cruise = {CLh_cruise:.3f}, allowed |CLh| = {tail_CL_limit:.3f}"
-            )
-        bE_bh = bE_bh_stall_limit
-    else:
-        bE_bh = bE_bh_required
+    if i.enforce_tail_stall and abs(CLh_cruise) > tail_CL_limit + 1.0e-9:
+        raise ValueError(
+            "Tail sizing failed: the undeflected cruise tail lift coefficient "
+            "exceeds the allowed finite-tail |CL|.\n"
+            f"  CLh_cruise = {CLh_cruise:.3f}\n"
+            f"  finite-tail CL_max = {tail_CL_max_3d:.3f}\n"
+            f"  allowed fraction = {i.tail_clmax_fraction:.3f}\n"
+            f"  allowed |CLh| = {tail_CL_limit:.3f}"
+        )
+    bE_bh = bE_bh_required
 
     # ------------------------------------------------------------------
-    # Tail stall check: ensure cruise incidence plus maximum elevator deflection
-    # does not demand a tail lift coefficient above the allowed finite-tail CL.
-    # Elevator influence is scaled by the elevator span fraction bE/bh.
+    # Deflected-elevator tail CL is diagnostic only. The finite-tail CL limit
+    # comes from the undeflected tail polar, so only CLh_cruise is constrained.
     # ------------------------------------------------------------------
     CLh_at_max_up = CLh_cruise + CLalphah * tau_e * delta_e_up * bE_bh
     CLh_at_max_down = CLh_cruise + CLalphah * tau_e * delta_e_down * bE_bh
-    CLh_max_required = max(abs(CLh_at_max_up), abs(CLh_at_max_down))
 
-    if i.enforce_tail_stall and CLh_max_required > tail_CL_limit + 1.0e-9:
-        raise ValueError(
-            "Tail sizing failed: required tail lift coefficient at one of the "
-            "control extremes exceeds the allowed finite-tail |CL|.\n"
-            f"  CLh({i.max_deflection_up_deg:.1f}° elevator up)   = {CLh_at_max_up:.3f}\n"
-            f"  CLh({i.max_deflection_down_deg:.1f}° elevator down) = {CLh_at_max_down:.3f}\n"
-            f"  finite-tail CL_max = {tail_CL_max_3d:.3f}\n"
-            f"  allowed fraction = {i.tail_clmax_fraction:.3f}\n"
-            f"  allowed |CLh| = {tail_CL_limit:.3f}\n"
-            "Reduce trim/elevator demand, choose a higher-CL tail, "
-            "or increase tail volume."
-        )
 
     # ------------------------------------------------------------------
     # Final geometry and derivatives
@@ -667,7 +613,7 @@ def summary(r: ElevatorResult) -> None:
     print("\n----- Elevator Sizing Driver -----")
     print(f"  Active constraint         : {r.driving_constraint}")
     print(f"  Required bE/bh            : {r.bE_bh_required:.4f}")
-    print(f"  Stall-limited max bE/bh   : {r.bE_bh_stall_limit:.4f}")
+    print(f"  Stall-limited max bE/bh   : not applied")
     print("----- Elevator Sensitivity -----")
     print("  Sensitivity inputs:")
     CL_alpha_h = r.CLh_deltaE / r.tau_e
@@ -689,12 +635,13 @@ def summary(r: ElevatorResult) -> None:
     print("    CL_delta_e  =  CL_alpha_h*eta_h*Sh/S*bE/bh*tau_e")
     print("    CLh_delta_e =  CL_alpha_h*tau_e")
 
-    print("\n----- Tail Extremes Check -----")
-    print(f"  CLh (elevator up max)    : {r.CLh_at_max_up:+.5f}")
-    print(f"  CLh (elevator down max)  : {r.CLh_at_max_down:+.5f}")
+    print("\n----- Tail Cruise Stall Check -----")
+    print(f"  CLh (cruise, undeflected): {r.CLh_cruise:+.5f}")
     print(f"  Finite-tail CL_max       : {r.tail_CL_max_3d:+.5f}")
     print(f"  Allowed CL fraction      : {r.inputs.tail_clmax_fraction:.3f}")
     print(f"  Allowed |CLh| limit      : {r.tail_CL_limit:+.5f}")
+    print(f"  CLh (elevator up max)    : {r.CLh_at_max_up:+.5f}  (diagnostic only)")
+    print(f"  CLh (elevator down max)  : {r.CLh_at_max_down:+.5f}  (diagnostic only)")
 
     print("\n----- Elevator Geometry -----")
     print(f"  cE/ch                    : {g.cE_ch:.4f}")

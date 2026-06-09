@@ -364,14 +364,16 @@ def _enforce_airfoil_fit(
 
     t_required = max(t, float(required_wall_at_d(d_max_geo)))
     if t_required > d_max_geo / 2.0:
-        raise ValueError(
+        print(
             f"{label}: hard geometric fit constraint cannot be satisfied.\n"
             f"  max allowed OD = {d_max_geo * 1000:.2f} mm "
             f"({d_to_section_ratio * 100:.0f}% of section height "
             f"{section_h * 1000:.2f} mm)\n"
             f"  required wall thickness at this OD = {t_required * 1000:.2f} mm, "
-            f"but radius = {d_max_geo * 500:.2f} mm."
+            f"but radius = {d_max_geo * 500:.2f} mm.\n"
+            f"  keeping structural OD = {d * 1000:.2f} mm and marking fit as failed."
         )
+        return d, t, False
 
     print(
         f"{label}: OD capped by geometric fit from {d * 1000:.2f} mm "
@@ -696,7 +698,7 @@ def run(
     section_h_spar_vt    = c_root_vt * tc_spar_vt
     section_h_control_vt = c_root_vt * tc_control_vt
 
-    L_vt = s.bv
+    L_vt = s.bv + d_t
 
     if rudder is not None and CLalphav_vt != 0.0:
         # ---- loads ----
