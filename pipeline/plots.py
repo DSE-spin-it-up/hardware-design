@@ -250,19 +250,24 @@ def plot_cg_side_view(
     half_h = fus.height / 2.0
 
     # Nose cone: triangle  tip → top-left → bottom-left
-    nose_poly = np.array([
-        [fus_nose_x, body_yc],
-        [box_x0,     body_yc + half_h],
-        [box_x0,     body_yc - half_h],
-    ])
     tail_exit_radius = struct.d_t / 2.0
-    # Tail cone: top/bottom of cylinder taper to the tail-boom outer diameter.
-    tail_poly = np.array([
-        [box_x1,     body_yc + half_h],
-        [box_x1,     body_yc - half_h],
-        [fus_tail_x, y_tail_base - tail_exit_radius],
-        [fus_tail_x, y_tail_base + tail_exit_radius],
-    ])
+    nose_x = np.linspace(fus_nose_x, box_x0, 80)
+    nose_s = (nose_x - fus_nose_x) / max(fus.l_nose, 1.0e-9)
+    nose_r = half_h * np.sqrt(np.clip(2.0 * nose_s - nose_s**2, 0.0, 1.0))
+    nose_poly = np.vstack((
+        np.column_stack((nose_x, body_yc + nose_r)),
+        np.column_stack((nose_x[::-1], body_yc - nose_r[::-1])),
+    ))
+
+    tail_x = np.linspace(box_x1, fus_tail_x, 80)
+    tail_s = (tail_x - box_x1) / max(fus.l_tail, 1.0e-9)
+    smooth = 0.5 * (1.0 - np.cos(np.pi * tail_s))
+    tail_center = body_yc + (y_tail_base - body_yc) * smooth
+    tail_r = half_h + (tail_exit_radius - half_h) * smooth
+    tail_poly = np.vstack((
+        np.column_stack((tail_x, tail_center + tail_r)),
+        np.column_stack((tail_x[::-1], (tail_center - tail_r)[::-1])),
+    ))
 
     plot_height = max(
         body_yc + half_h + 0.02,
@@ -278,8 +283,8 @@ def plot_cg_side_view(
     fus_kw = dict(facecolor="lightcyan", edgecolor="navy", alpha=0.5, linewidth=2)
     ax.add_patch(Rectangle((box_x0, body_y0), fus.l_cylinder, fus.height,
                             label="Fuselage cylinder", **fus_kw))
-    ax.add_patch(Polygon(nose_poly, closed=True, label="Fuselage nose", **fus_kw))
-    ax.add_patch(Polygon(tail_poly, closed=True, label="Fuselage tail", **fus_kw))
+    ax.add_patch(Polygon(nose_poly, closed=True, label="Ogive nose", **fus_kw))
+    ax.add_patch(Polygon(tail_poly, closed=True, label="Tail taper", **fus_kw))
 
     # --- Internal structural box (dashed) ---
     ax.add_patch(Rectangle((box_x0, box_y0), fus.box_length, fus.box_height,
