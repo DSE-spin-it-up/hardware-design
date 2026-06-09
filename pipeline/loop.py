@@ -1197,6 +1197,29 @@ def run_pipeline(config) -> PipelineResult:
             f"from {Sh_old / Sw_old:.4f} to {sizing.Sh / sizing.Sw:.4f}"
         )
 
+    def set_tail_area_to_ShS(
+        ShS_target: float,
+        *,
+        battery_x_for_area: float | None = None,
+        fus_for_area: FuselageResult | None = None,
+    ):
+        nonlocal sizing, sizing_inputs
+
+        area_battery_x = battery_x if battery_x_for_area is None else battery_x_for_area
+        area_fus = p.fus if fus_for_area is None else fus_for_area
+        sizing_inputs = _sizing_inputs_with_boom_root(
+            sizing.inputs,
+            area_battery_x,
+            area_fus,
+            Sh=ShS_target * sizing.Sw,
+        )
+        sizing = wing.run(
+            sizing_inputs,
+            t_over_c_root=tc,
+            c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+        )
+        sizing_inputs = sizing.inputs
+
     # ----- Step 8: vertical battery placement + final scissor/elevator -----
     final_propulsion = p.propulsion
     for tail_area_iter in range(10):
@@ -1374,6 +1397,115 @@ def run_pipeline(config) -> PipelineResult:
             "ShS_error": sizing.Sh / sizing.Sw - ShS_target_eval,
         }
 
+    def evaluate_final_scissor_at_stability(candidate_battery_x: float | None):
+        battery_x_eval, _, _, _ = _optimize_battery_x_for_scissor(
+            sizing,
+            config=config,
+            polar=polar,
+            tail_polar=tail_polar,
+            airfoil=airfoil,
+            battery_x_initial=candidate_battery_x,
+            max_iter=3,
+        )
+        return evaluate_final_scissor(float(battery_x_eval))
+
+    def relax_tail_area_if_margin_inactive(final_state: dict) -> dict:
+        if (
+            final_state["ShS_error"] <= 1.0e-4
+            or final_state["margin"] <= 1.0e-4
+        ):
+            return final_state
+
+        old_ShS = sizing.Sh / sizing.Sw
+        old_state = final_state
+        elevator_eval = old_state["elevator"]
+        tail_limit = elevator_eval.tail_CL_limit
+        abs_CLh = abs(elevator_eval.CLh_cruise)
+        if tail_limit <= 0.0 or abs_CLh <= 0.0:
+            return final_state
+
+        stall_ShS = old_ShS * abs_CLh / tail_limit
+        target_ShS = max(final_state["ShS_target"], stall_ShS)
+        if target_ShS >= old_ShS - 1.0e-4:
+            return final_state
+
+        set_tail_area_to_ShS(
+            target_ShS,
+            battery_x_for_area=old_state["battery_x"],
+            fus_for_area=old_state["p"].fus,
+        )
+        try:
+            target_state = evaluate_final_scissor_at_stability(old_state["battery_x"])
+        except ValueError as exc:
+            if not _is_elevator_tail_margin_failure(exc):
+                raise
+            set_tail_area_to_ShS(
+                old_ShS,
+                battery_x_for_area=old_state["battery_x"],
+                fus_for_area=old_state["p"].fus,
+            )
+            return old_state
+        if target_state["margin"] < -1.0e-4 or target_state["x_error"] > 1.0e-4:
+            lo_ShS = target_ShS
+            hi_ShS = old_ShS
+            best_state = old_state
+            best_ShS = old_ShS
+            for _ in range(4):
+                mid_ShS = 0.5 * (lo_ShS + hi_ShS)
+                set_tail_area_to_ShS(
+                    mid_ShS,
+                    battery_x_for_area=old_state["battery_x"],
+                    fus_for_area=old_state["p"].fus,
+                )
+                try:
+                    mid_state = evaluate_final_scissor_at_stability(old_state["battery_x"])
+                except ValueError as exc:
+                    if not _is_elevator_tail_margin_failure(exc):
+                        raise
+                    lo_ShS = mid_ShS
+                    continue
+                if mid_state["margin"] >= -1.0e-4 and mid_state["x_error"] <= 1.0e-4:
+                    best_state = mid_state
+                    best_ShS = mid_ShS
+                    hi_ShS = mid_ShS
+                else:
+                    lo_ShS = mid_ShS
+            if best_state is not old_state:
+                set_tail_area_to_ShS(
+                    best_ShS,
+                    battery_x_for_area=best_state["battery_x"],
+                    fus_for_area=best_state["p"].fus,
+                )
+                print(
+                    f"    Final elevator tail CL margin active: reduced Sh/S "
+                    f"from {old_ShS:.4f} to {sizing.Sh / sizing.Sw:.4f}"
+                )
+                return best_state
+            set_tail_area_to_ShS(
+                old_ShS,
+                battery_x_for_area=old_state["battery_x"],
+                fus_for_area=old_state["p"].fus,
+            )
+            return old_state
+
+        label = "inactive" if target_state["ShS_error"] <= 1.0e-4 else "active"
+        print(
+            f"    Final elevator tail CL margin {label}: reduced Sh/S "
+            f"from {old_ShS:.4f} to {sizing.Sh / sizing.Sw:.4f}"
+        )
+        return target_state
+
+    def relax_tail_area_until_active_or_scissor(final_state: dict) -> dict:
+        for _ in range(2):
+            old_ShS = sizing.Sh / sizing.Sw
+            relaxed_state = relax_tail_area_if_margin_inactive(final_state)
+            if relaxed_state is final_state:
+                return final_state
+            final_state = relaxed_state
+            if abs(sizing.Sh / sizing.Sw - old_ShS) <= 1.0e-4:
+                return final_state
+        return final_state
+
     for tail_area_iter in range(10):
         try:
             final_state = evaluate_final_scissor(float(battery_x))
@@ -1403,12 +1535,21 @@ def run_pipeline(config) -> PipelineResult:
                 c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
             )
             sizing_inputs = sizing.inputs
-            final_state = evaluate_final_scissor(final_state["battery_x"])
+            try:
+                final_state = evaluate_final_scissor(final_state["battery_x"])
+            except ValueError as exc:
+                if not _is_elevator_tail_margin_failure(exc):
+                    raise
+                increase_tail_area_for_margin(1.01, label="Final elevator")
+                final_state = evaluate_final_scissor(final_state["battery_x"])
             continue
 
         if (
             abs(final_state["x_error"]) <= 1.0e-4
-            and final_state["ShS_error"] >= -1.0e-4
+            and (
+                abs(final_state["ShS_error"]) <= 1.0e-4
+                or final_state["margin"] <= 1.0e-4
+            )
             and final_state["margin"] >= -1.0e-4
         ):
             break
@@ -1431,7 +1572,13 @@ def run_pipeline(config) -> PipelineResult:
                 c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
             )
             sizing_inputs = sizing.inputs
-            final_state = evaluate_final_scissor(final_state["battery_x"])
+            try:
+                final_state = evaluate_final_scissor(final_state["battery_x"])
+            except ValueError as exc:
+                if not _is_elevator_tail_margin_failure(exc):
+                    raise
+                increase_tail_area_for_margin(1.01, label="Final elevator")
+                final_state = evaluate_final_scissor(final_state["battery_x"])
             continue
 
         prev_state = final_state
@@ -1491,6 +1638,8 @@ def run_pipeline(config) -> PipelineResult:
             f"    Rudder VT area tuning: Sv {sv_old:.4f} -> {sizing.Sv:.4f} m^2 "
             f"(Vv={sizing.inputs.Vv:.4f}, required bR/bV={rudder_area_req.bR_bV_required:.4f})"
         )
+
+    final_state = relax_tail_area_until_active_or_scissor(final_state)
 
     battery_x = final_state["battery_x"]
     p = final_state["p"]

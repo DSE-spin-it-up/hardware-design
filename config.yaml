@@ -135,7 +135,7 @@ elevator:
 rudder:
   bR_bV: 1.00  # [-] rudder span / vertical-tail span
   cR_cV: 0.40  # [-] rudder chord / vertical-tail chord
-  max_deflection_deg: 30.0  # [deg] maximum rudder deflection
+  max_deflection_deg: 15.0  # [deg] maximum rudder deflection
   Cn_dist: 0.0
   CDY: 0.8
   Kf1: 0.85
