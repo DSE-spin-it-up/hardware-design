@@ -67,7 +67,7 @@ sizing:
 
 # ----- Propulsion -----
 propulsion:
-  csv_prop: data\12x8E_performance.csv
+  csv_prop: data\13x8E_performance.csv
   n_props: 3
   prop_mass: 0.1
   eff_motor: 0.8
@@ -106,8 +106,8 @@ fuselage:
   tube_clearance_factor: 1.10 # [-] structural tube OD / largest attached rod OD
   battery_top_cover_thickness: 0.005 # [m] EPP cover above battery
   min_foam_floor: 0.005      # [m] minimum fuselage thickness below tail boom
-  nose_fraction: 0.05        # [-] nose length fraction of total aero fuselage length
-  tail_fraction: 0.30        # [-] tail taper length fraction of total aero fuselage length
+  nose_fraction: 0.15        # [-] nose length fraction of total aero fuselage length
+  tail_fraction: 0.3        # [-] tail taper length fraction of total aero fuselage length
 
 # ----- Aileron / control surface -----
 control_surface:
@@ -126,9 +126,9 @@ elevator:
   Cm_dist: 0.0
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 25.0
-  payload_cable_min_angle_deg: 0.0
+  payload_cable_min_angle_deg: -30.0
   tail_clmax_fraction: 0.90  # [-] allowed fraction of finite-tail CL_max
-  payload_cable_max_angle_deg: null  # null -> 2 × equilibrium cable angle
+  payload_cable_max_angle_deg: 30.0  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----
 rudder:
