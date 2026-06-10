@@ -134,7 +134,7 @@ elevator:
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 25.0
   payload_cable_min_angle_deg: -75
-  tail_clmax_fraction: 0.90  # [-] allowed fraction of finite-tail CL_max
+  tail_clmax_fraction: 0.2  # [-] allowed fraction of finite-tail CL_max
   payload_cable_max_angle_deg: 75  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----

@@ -451,7 +451,10 @@ def plot_cg_side_view(
 
     # ------------------------------------------------------------------ axes
     x_left  = min(fus_nose_x - 0.05, -0.05)
-    x_right = max(fus_tail_x, x_tail, x_overall) + 0.2
+    # Ensure the plot extends beyond the full vertical-tail trailing edge
+    # so the tail is not clipped. Use x_tail_end (vertical-tail TE) as one
+    # of the candidates for the right-hand limit.
+    x_right = max(fus_tail_x, x_tail_end, x_tail, x_overall) + 0.2
     ax.set_xlim(x_left, x_right)
     ax.set_ylim(min(-0.05, box_y0 - 0.05, body_y0 - 0.05), plot_height + 0.05)
     ax.set_aspect("equal", adjustable="box")
