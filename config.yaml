@@ -72,7 +72,7 @@ sizing:
 
 # ----- Propulsion -----
 propulsion:
-  csv_prop: data\13x8E_performance.csv
+  csv_prop: data\12x8E_performance.csv
   n_props: 3
   prop_mass: 0.1
   eff_motor: 0.8
@@ -120,10 +120,10 @@ control_surface:
   cd0_section: 0.04
   roll_moment_dist: 0.0
   roll_rate_req_deg_s: 47.0  # [deg/s] required steady roll rate for aileron sizing
-  max_da_deg: 10.0
-  max_y_frac: 0.8
-  payload_lateral_angle_deg: 0.0  # [deg] max payload lateral angle from vertical
-  c_aileron_to_c_wing: 0.35
+  max_da_deg: 20.0
+  max_y_frac: 0.9
+  payload_lateral_angle_deg: 30.0  # [deg] max payload lateral angle from vertical
+  c_aileron_to_c_wing: 0.3
 
 # ----- Elevator -----
 elevator:
@@ -142,7 +142,7 @@ rudder:
   bR_bV: 0.8 # [-] rudder span / vertical-tail span
   cR_cV: 0.2  # [-] rudder chord / vertical-tail chord
   max_deflection_deg: 30 # [deg] maximum rudder deflection
-  front_prop_lateral_position: 0.7 #[m] lateral arm of failed front prop for OEI yaw sizing
+  front_prop_lateral_position: 0.33204 #[m] lateral arm of failed front prop for OEI yaw sizing
   oei_failed_thrust_fraction: 0.3333333333333333  # [-] failed thrust / total drone thrust
   Cn_dist: 0.0
   Cn_beta: 0.05
@@ -167,8 +167,8 @@ materials:
   wing: EPP
   rod: CFRP
   tail: EPP
-  rib: Aluminum
+  rib: CFRP
 
 # ----- Wing ribs -----
 ribs:
-  thickness: 0.002      # [m] aluminium rib plate thickness
+  thickness: 0.0003      # [m] aluminium rib plate thickness

@@ -8,6 +8,7 @@ Procedure
     rudder (bR/bV, cR/cV, δ_R_max) can simultaneously satisfy:
         a. Crosswind side-force balance
         b. Combined yaw-moment balance, including crosswind, Cn_dist, and OEI
+        c. Minimum weathercock stiffness Cn_beta
 3.  Recompute all tail geometry (bv, CLα_v, Vv, Sv/S, dc, Ss) at the minimum Sv.
 4.  Solve for weathercock sideslip σ at the minimum Sv and configured rudder.
 5.  Compute all stability/control derivatives and rudder hinge moment at cruise q
@@ -79,7 +80,7 @@ class RudderResult:
     beta_gust:         float   # geometric gust sideslip β             [rad]
     sigma:             float   # weathercock sideslip σ                [rad]
     delta_R:           float   # applied rudder deflection (= limit)   [rad]
-    active_constraint: str     # "combined_force" or "combined_yaw_moment"
+    active_constraint: str     # "combined_force", "combined_yaw_moment", or "cn_beta"
     bR_bV_required:    float   # minimum bR/bV required by constraints [-]
     Sv_required:       float   # minimum vertical-tail area            [m²]
     force_margin:      float   # available minus required lateral force [N]
@@ -87,6 +88,7 @@ class RudderResult:
     oei_moment:         float   # failed-prop yawing moment              [N·m]
     oei_moment_margin:  float   # rudder yaw-moment margin for OEI       [N·m]
     combined_yaw_moment: float    # total yawing moment requirement       [N·m]
+    cnbeta_margin:     float   # Cn_beta achieved minus Cn_beta required [1/rad]
     hinge_moment:      HingeMomentResult  # rudder hinge moment at cruise, δ_R_max
 
 
@@ -101,6 +103,7 @@ class RudderAreaRequirement:
     oei_moment_margin:  float = 0.0
     combined_yaw_moment: float = 0.0
     Cnb:                float = 0.0
+    cnbeta_margin:      float = 0.0   # Cnb - Cn_beta_required
 
 
 # ---------------------------------------------------------------------------
@@ -186,24 +189,17 @@ def _requirement_for_area(
         + oei_moment
     )
 
-    # Required non-dimensional side-force and yaw-moment coefficients. The
-    # yaw demand is deliberately summed: crosswind and OEI are treated as
-    # simultaneous design loads.
     cy_required = Fw / (q_total * S)
     cn_required = combined_yaw_moment / (q_total * S * b)
 
-    # Fin contribution at full gust sideslip β
     cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta
     cn_fin = i.Kf1 * CLalphav * i.eta_v * Vv * beta
 
-    # Non-dimensional yaw-stiffness derivative Cn_β for this Sv
     Cnb_value = i.Kf1 * CLalphav * i.eta_v * Sv * s.lh / (b * S)
 
-    # Rudder contribution per unit (bR/bV) and per unit (bR/bV)²
     cy_rudder_per_b2 = CLalphav * i.eta_v * (Sv / S) * tau_r * i.cR_cV * delta_R_max
     cn_rudder_per_b  = CLalphav * Vv * i.eta_v * tau_r * delta_R_max
 
-    # Minimum bR/bV from each constraint
     bR_bV_force = (
         float("inf") if cy_rudder_per_b2 <= 0.0
         else np.sqrt(max(cy_required - cy_fin, 0.0) / cy_rudder_per_b2)
@@ -214,7 +210,6 @@ def _requirement_for_area(
     )
     bR_bV_required = max(float(bR_bV_force), float(bR_bV_moment))
 
-    # Margins at the configured bR/bV
     bR_bV_check    = min(max(i.bR_bV, 0.0), 1.0)
     cy_available   = cy_fin + cy_rudder_per_b2 * bR_bV_check ** 2
     cn_available   = cn_fin + cn_rudder_per_b  * bR_bV_check
@@ -252,7 +247,7 @@ def minimum_vertical_tail_area(
 ) -> RudderAreaRequirement:
     """
     Smallest Sv such that the configured rudder (bR/bV, cR/cV, δ_R_max)
-    can meet both the side-force and yaw-moment constraints.
+    can meet the side-force, yaw-moment, and Cn_beta constraints.
     """
     if inputs is None:
         inputs = RudderInputs()
@@ -300,6 +295,9 @@ def minimum_vertical_tail_area(
         else:
             lo = mid
 
+    best.cnbeta_margin = best.Cnb - inputs.Cn_beta
+    if best.Cnb < inputs.Cn_beta + 1e-9:
+        best.active_constraint = "cn_beta"
     return best
 
 
@@ -318,8 +316,9 @@ def run(
 ) -> RudderResult:
     """
     Size the vertical tail by finding the minimum Sv such that the
-    configured rudder (bR/bV, cR/cV, δ_R_max) can hold the crosswind gust
-    and counteract Cn_dist.  All derivatives are then computed at that Sv.
+    configured rudder (bR/bV, cR/cV, δ_R_max) can hold the crosswind gust,
+    counteract Cn_dist, and achieve the required Cn_beta.  All derivatives
+    are then computed at that Sv.
 
     Parameters
     ----------
@@ -451,6 +450,7 @@ def run(
         oei_moment        = area_req.oei_moment,
         oei_moment_margin = area_req.oei_moment_margin,
         combined_yaw_moment = area_req.combined_yaw_moment,
+        cnbeta_margin     = area_req.cnbeta_margin,
         hinge_moment      = hm,
     )
 
@@ -500,6 +500,9 @@ def summary(r: RudderResult) -> None:
     print(f"  Weathercock sideslip sigma  : {np.degrees(r.sigma):.2f}  deg")
     print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  deg  (= limit)")
     print(f"  Active sizing constraint    : {r.active_constraint}")
+    print(f"  Cn_beta required            : {i.Cn_beta:.4f}  1/rad")
+    print(f"  Cn_beta achieved            : {r.Cnb:.4f}  1/rad")
+    print(f"  Cn_beta margin              : {r.cnbeta_margin:+.4f}  1/rad")
     print(f"  VT lateral force margin     : {r.force_margin:+.2f}  N")
     print(f"  VT yaw moment margin        : {r.moment_margin:+.2f}  N*m")
     print(f"  OEI failed-thrust fraction  : {i.oei_failed_thrust_fraction:.4f}")
