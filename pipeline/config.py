@@ -92,6 +92,7 @@ BATTERY_Y0: float | None = _data.get("battery_y0")
 BATTERY_Y_FRAC: float | None = _data.get("battery_y_frac")
 BATTERY_Y_MODE: str = _data.get("battery_y_mode", "low")
 BATTERY_Y_SAMPLES: int = int(_data.get("battery_y_samples", 9))
+PAYLOAD_MAX_TENSION: float | None = _data.get("payload_max_tension")
 
 V_STALL: float = _data["V_stall"]
 

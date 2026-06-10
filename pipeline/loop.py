@@ -270,6 +270,7 @@ def _run_design_pass(
         polar=polar,
         y_cg=y_cg_for_aileron,
         q_sizing=q_control,
+        payload_max_tension=config.PAYLOAD_MAX_TENSION,
     )
     return _DesignPass(propulsion, fus, drag, struct, control_surface, masses, cg)
 
@@ -676,6 +677,7 @@ def _optimize_battery_y_for_elevator(
             sizing, scissor, llt, propulsion,
             polar, tail_polar, y_cg, elevator_inputs_unchecked,
             q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
+            payload_max_tension=config.PAYLOAD_MAX_TENSION,
         )
         margin = elevator_result.tail_CL_limit - abs(elevator_result.CLh_cruise)
         return y_cg, scissor, elevator_result, margin
@@ -685,6 +687,7 @@ def _optimize_battery_y_for_elevator(
             sizing, scissor, llt, propulsion,
             polar, tail_polar, y_cg, config.ELEVATOR,
             q_sizing=0.5 * sizing.rho * config.V_STALL ** 2,
+            payload_max_tension=config.PAYLOAD_MAX_TENSION,
         )
 
     def checked_candidate(battery_y0: float):
@@ -1249,6 +1252,7 @@ def run_pipeline(config) -> PipelineResult:
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
+        total_thrust=final_propulsion.thrust_cruise_per_prop * final_propulsion.inputs.n_props,
     )
 
     # ----- Step 7b: recompute tail drag at trimmed CL_tail -----
@@ -1617,6 +1621,10 @@ def run_pipeline(config) -> PipelineResult:
             config.V_STALL,
             config.RUDDER,
             x_cg=final_state["p"].cg["overall"],
+            total_thrust=(
+                final_state["propulsion"].thrust_cruise_per_prop
+                * final_state["propulsion"].inputs.n_props
+            ),
         )
         sv_old = sizing.Sv
         if abs(rudder_area_req.Sv - sv_old) <= max(1.0e-6, 1.0e-5 * sv_old):
@@ -1677,6 +1685,7 @@ def run_pipeline(config) -> PipelineResult:
     rudder_result = rudder.run(
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
+        total_thrust=final_propulsion.thrust_cruise_per_prop * final_propulsion.inputs.n_props,
     )
 
     # ----- Step 10: torsion check + physics-based VT rod sizing -----

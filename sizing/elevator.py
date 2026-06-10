@@ -135,6 +135,7 @@ def compute_payload_cable(
     *,
     Cm_trim: float = 0.0,
     q_sizing: float | None = None,
+    payload_max_tension: float | None = None,
 ) -> PayloadCableResult:
     """Compute the per-drone payload cable angle and pitch moment envelope.
 
@@ -150,13 +151,19 @@ def compute_payload_cable(
     payload_weight = payload_mass * 9.80665
     payload_drag = q_size * s.inputs.Cd_payload * s.inputs.S_payload / n_drones
     cable_angle = float(np.arctan2(payload_drag, payload_weight))
+    horizontal_tension_equilibrium = payload_drag
+    if payload_max_tension is not None and payload_max_tension < 0.0:
+        raise ValueError("payload_max_tension must be non-negative.")
 
     attachment_y = y_cg["pvc_tubes"]
     vertical_drop = max(y_cg["overall"] - attachment_y, 0.0)
     denom = q_size * s.Sw * s.c
-    if vertical_drop > 0.0 and payload_weight > 0.0 and denom > 0.0:
-        tan_attachment = np.tan(cable_angle) - (
-            Cm_trim * denom / (payload_weight * vertical_drop)
+    horizontal_trim = horizontal_tension_equilibrium
+    if vertical_drop > 0.0 and denom > 0.0:
+        horizontal_trim = horizontal_tension_equilibrium - Cm_trim * denom / vertical_drop
+        tan_attachment = (
+            horizontal_trim / payload_weight
+            if payload_weight > 0.0 else np.tan(cable_angle)
         )
     elif abs(Cm_trim) > 1.0e-12:
         raise ValueError(
@@ -183,18 +190,21 @@ def compute_payload_cable(
     cable_angles = np.linspace(sweep_min_angle, sweep_max_angle, 401)
 
     if denom > 0.0:
+        horizontal_tension = (
+            payload_weight * np.tan(cable_angles)
+            if payload_max_tension is None
+            else payload_max_tension * np.sin(cable_angles)
+        )
         Cm_absolute = (
-            payload_weight
-            * vertical_drop
-            * (np.tan(cable_angles) - tan_attachment)
+            vertical_drop
+            * (horizontal_tension - horizontal_trim)
             / denom
         )
     else:
         Cm_absolute = np.zeros_like(cable_angles)
     Cm_at_equilibrium = (
-        payload_weight
-        * vertical_drop
-        * (np.tan(cable_angle) - tan_attachment)
+        vertical_drop
+        * (horizontal_tension_equilibrium - horizontal_trim)
         / denom
         if denom > 0.0 else 0.0
     )
@@ -209,7 +219,10 @@ def compute_payload_cable(
         payload_weight_per_drone=payload_weight,
         payload_drag_per_drone=payload_drag,
         cable_angle_rad=cable_angle,
-        horizontal_tension=payload_drag,
+        horizontal_tension=(
+            payload_drag if payload_max_tension is None
+            else payload_max_tension * np.sin(sweep_max_angle)
+        ),
         vertical_load=payload_weight,
         attachment_y=attachment_y,
         vertical_drop=vertical_drop,
@@ -307,6 +320,7 @@ def run(
     inputs:       ElevatorInputs | None = None,
     *,
     q_sizing:     float | None = None,
+    payload_max_tension: float | None = None,
 ) -> ElevatorResult:
     """
     Size the elevator by:
@@ -423,6 +437,7 @@ def run(
         i,
         Cm_trim=Cm_payload_trim,
         q_sizing=q_size,
+        payload_max_tension=payload_max_tension,
     )
     Cm_payload = max(
         abs(payload_cable.Cm_pitch_up),

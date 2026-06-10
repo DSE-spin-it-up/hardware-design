@@ -40,6 +40,11 @@ battery_x: -0.3
 battery_y_mode: middle
 battery_y_samples: 9
 
+# Optional maximum payload cable tension per drone [N] used for payload
+# disturbance sizing/checks of aileron and elevator. Set null to fall back
+# to the legacy weight/drag-derived payload force model.
+payload_max_tension: 750
+
 # ----- Initial / wing sizing -----
 # ----- Initial / wing sizing -----
 sizing:
@@ -114,9 +119,10 @@ control_surface:
   cl_alpha: 6.283185307179586
   cd0_section: 0.04
   roll_moment_dist: 0.0
+  roll_rate_req_deg_s: 30.0  # [deg/s] required steady roll rate for aileron sizing
   max_da_deg: 10.0
   max_y_frac: 0.8
-  payload_lateral_angle_deg: 30.0  # [deg] max payload lateral angle from vertical
+  payload_lateral_angle_deg: 0.0  # [deg] max payload lateral angle from vertical
   c_aileron_to_c_wing: 0.35
 
 # ----- Elevator -----
@@ -135,7 +141,9 @@ elevator:
 rudder:
   bR_bV: 1.00  # [-] rudder span / vertical-tail span
   cR_cV: 0.40  # [-] rudder chord / vertical-tail chord
-  max_deflection_deg: 15.0  # [deg] maximum rudder deflection
+  max_deflection_deg: 30 # [deg] maximum rudder deflection
+  front_prop_lateral_position: 0.7 #[m] lateral arm of failed front prop for OEI yaw sizing
+  oei_failed_thrust_fraction: 0.3333333333333333  # [-] failed thrust / total drone thrust
   Cn_dist: 0.0
   CDY: 0.8
   Kf1: 0.85

@@ -6,8 +6,8 @@ Procedure
 1.  Fix bR/bV and cR/cV (designer inputs) → derive τ_r from the empirical polynomial.
 2.  Bisect on Sv to find the minimum vertical-tail area such that the configured
     rudder (bR/bV, cR/cV, δ_R_max) can simultaneously satisfy:
-        a. Side-force balance: Cy_fin + Cy_rudder >= Cy_required
-        b. Yaw-moment balance: Cn_fin + Cn_rudder >= Cn_required  (includes Cn_dist)
+        a. Crosswind side-force balance
+        b. Combined yaw-moment balance, including crosswind, Cn_dist, and OEI
 3.  Recompute all tail geometry (bv, CLα_v, Vv, Sv/S, dc, Ss) at the minimum Sv.
 4.  Solve for weathercock sideslip σ at the minimum Sv and configured rudder.
 5.  Compute all stability/control derivatives and rudder hinge moment at cruise q
@@ -44,6 +44,8 @@ class RudderInputs:
     Kf1:                float = 0.85   # fuselage correction on Cn_β [-]
     Kf2:                float = 1.0    # fuselage correction on Cy_β [-]
     eta_v:              float = 0.85   # dynamic-pressure ratio at v-tail (Vv/V)² [-]
+    front_prop_lateral_position: float = 0.0  # [m] lateral arm of the failed front prop
+    oei_failed_thrust_fraction: float = 1.0 / 3.0  # [-] failed thrust / total drone thrust
     Ss:                 float | None = None
     # body side area [m²]
     # None → fus.length * fus.height + Sv  (box fuselage + vertical tail)
@@ -76,11 +78,14 @@ class RudderResult:
     beta_gust:         float   # geometric gust sideslip β             [rad]
     sigma:             float   # weathercock sideslip σ                [rad]
     delta_R:           float   # applied rudder deflection (= limit)   [rad]
-    active_constraint: str     # "gust_force", "gust_moment", or "Cn_dist"
+    active_constraint: str     # "combined_force" or "combined_yaw_moment"
     bR_bV_required:    float   # minimum bR/bV required by constraints [-]
     Sv_required:       float   # minimum vertical-tail area            [m²]
     force_margin:      float   # available minus required lateral force [N]
     moment_margin:     float   # available minus required yaw moment    [N·m]
+    oei_moment:         float   # failed-prop yawing moment              [N·m]
+    oei_moment_margin:  float   # rudder yaw-moment margin for OEI       [N·m]
+    combined_yaw_moment: float    # total yawing moment requirement       [N·m]
     hinge_moment:      HingeMomentResult  # rudder hinge moment at cruise, δ_R_max
 
 
@@ -91,6 +96,9 @@ class RudderAreaRequirement:
     active_constraint: str
     force_margin:      float = 0.0
     moment_margin:     float = 0.0
+    oei_moment:         float = 0.0
+    oei_moment_margin:  float = 0.0
+    combined_yaw_moment: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +139,7 @@ def _requirement_for_area(
     inputs:  RudderInputs,
     x_cg:    float,
     Sv:      float,
+    total_thrust: float | None = None,
 ) -> RudderAreaRequirement:
     """
     For a given vertical-tail area Sv, compute what bR/bV is needed and
@@ -161,9 +170,25 @@ def _requirement_for_area(
     tau_r       = tau_from_chord_ratio(i.cR_cV)
     SR_SV       = i.cR_cV * i.bR_bV
 
-    # Required non-dimensional side-force and yaw-moment coefficients
+    oei_failed_thrust = (
+        (s.D if total_thrust is None else float(total_thrust))
+        * i.oei_failed_thrust_fraction
+    )
+    oei_moment = abs(oei_failed_thrust * i.front_prop_lateral_position)
+
+    gust_yaw_moment = abs(Fw * dc)
+    dist_yaw_moment = abs(i.Cn_dist) * q_total * S * b
+    combined_yaw_moment = (
+        gust_yaw_moment
+        + dist_yaw_moment
+        + oei_moment
+    )
+
+    # Required non-dimensional side-force and yaw-moment coefficients. The
+    # yaw demand is deliberately summed: crosswind and OEI are treated as
+    # simultaneous design loads.
     cy_required = Fw / (q_total * S)
-    cn_required = abs(Fw * dc) / (q_total * S * b) + abs(i.Cn_dist)
+    cn_required = combined_yaw_moment / (q_total * S * b)
 
     # Fin contribution at full gust sideslip β
     cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta
@@ -188,13 +213,12 @@ def _requirement_for_area(
     bR_bV_check    = min(max(i.bR_bV, 0.0), 1.0)
     cy_available   = cy_fin + cy_rudder_per_b2 * bR_bV_check ** 2
     cn_available   = cn_fin + cn_rudder_per_b  * bR_bV_check
+    cn_rudder_available = cn_rudder_per_b * bR_bV_check
     force_margin   = q_total * S     * (cy_available - cy_required)
     moment_margin  = q_total * S * b * (cn_available - cn_required)
+    oei_moment_margin = q_total * S * b * cn_rudder_available - oei_moment
 
-    if bR_bV_moment >= bR_bV_force:
-        active = "Cn_dist" if abs(i.Cn_dist) >= abs(Fw * dc) / (q_total * S * b) else "gust_moment"
-    else:
-        active = "gust_force"
+    active = "combined_yaw_moment" if bR_bV_moment >= bR_bV_force else "combined_force"
 
     return RudderAreaRequirement(
         Sv                = Sv,
@@ -202,6 +226,9 @@ def _requirement_for_area(
         active_constraint = active,
         force_margin      = float(force_margin),
         moment_margin     = float(moment_margin),
+        oei_moment        = float(oei_moment),
+        oei_moment_margin = float(oei_moment_margin),
+        combined_yaw_moment = float(combined_yaw_moment),
     )
 
 
@@ -215,6 +242,7 @@ def minimum_vertical_tail_area(
     v_stall: float,
     inputs:  RudderInputs | None = None,
     x_cg:    float = 0.0,
+    total_thrust: float | None = None,
 ) -> RudderAreaRequirement:
     """
     Smallest Sv such that the configured rudder (bR/bV, cR/cV, δ_R_max)
@@ -228,13 +256,18 @@ def minimum_vertical_tail_area(
         raise ValueError("rudder.cR_cV must satisfy 0 < cR_cV < 1.")
     if inputs.max_deflection_deg <= 0.0:
         raise ValueError("rudder.max_deflection_deg must be positive.")
-
+    if inputs.front_prop_lateral_position < 0.0:
+        raise ValueError("rudder.front_prop_lateral_position must be non-negative.")
+    if not (0.0 <= inputs.oei_failed_thrust_fraction <= 1.0):
+        raise ValueError("rudder.oei_failed_thrust_fraction must satisfy 0 <= value <= 1.")
     lo = max(1.0e-6, 1.0e-6 * sizing.Sw)
     hi = max(sizing.Sv, lo * 2.0)
 
     # Expand upper bound until the configured rudder is sufficient
     for _ in range(60):
-        if _requirement_for_area(sizing, fus, v_stall, inputs, x_cg, hi).bR_bV_required <= inputs.bR_bV:
+        if _requirement_for_area(
+            sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
+        ).bR_bV_required <= inputs.bR_bV:
             break
         hi *= 2.0
     else:
@@ -244,10 +277,14 @@ def minimum_vertical_tail_area(
         )
 
     # Bisect to find the minimum Sv
-    best = _requirement_for_area(sizing, fus, v_stall, inputs, x_cg, hi)
+    best = _requirement_for_area(
+        sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
+    )
     for _ in range(80):
         mid     = 0.5 * (lo + hi)
-        req_mid = _requirement_for_area(sizing, fus, v_stall, inputs, x_cg, mid)
+        req_mid = _requirement_for_area(
+            sizing, fus, v_stall, inputs, x_cg, mid, total_thrust,
+        )
         if req_mid.bR_bV_required <= inputs.bR_bV:
             hi   = mid
             best = req_mid
@@ -268,6 +305,7 @@ def run(
     v_stall: float,
     inputs:  RudderInputs | None = None,
     x_cg:    float = 0.0,
+    total_thrust: float | None = None,
 ) -> RudderResult:
     """
     Size the vertical tail by finding the minimum Sv such that the
@@ -296,7 +334,9 @@ def run(
     # ------------------------------------------------------------------
     # 1. Find minimum Sv by bisection
     # ------------------------------------------------------------------
-    area_req = minimum_vertical_tail_area(sizing, fus, v_stall, i, x_cg=x_cg)
+    area_req = minimum_vertical_tail_area(
+        sizing, fus, v_stall, i, x_cg=x_cg, total_thrust=total_thrust,
+    )
     Sv_min   = area_req.Sv
 
     # ------------------------------------------------------------------
@@ -399,6 +439,9 @@ def run(
         Sv_required       = Sv_min,
         force_margin      = area_req.force_margin,
         moment_margin     = area_req.moment_margin,
+        oei_moment        = area_req.oei_moment,
+        oei_moment_margin = area_req.oei_moment_margin,
+        combined_yaw_moment = area_req.combined_yaw_moment,
         hinge_moment      = hm,
     )
 
@@ -450,6 +493,11 @@ def summary(r: RudderResult) -> None:
     print(f"  Active sizing constraint    : {r.active_constraint}")
     print(f"  VT lateral force margin     : {r.force_margin:+.2f}  N")
     print(f"  VT yaw moment margin        : {r.moment_margin:+.2f}  N*m")
+    print(f"  OEI failed-thrust fraction  : {i.oei_failed_thrust_fraction:.4f}")
+    print(f"  OEI front prop lateral arm  : {i.front_prop_lateral_position:.4f}  m")
+    print(f"  OEI yaw moment              : {r.oei_moment:.2f}  N*m")
+    print(f"  OEI yaw moment margin       : {r.oei_moment_margin:+.2f}  N*m")
+    print(f"  Combined yaw moment demand  : {r.combined_yaw_moment:.2f}  N*m")
     print("  Hinge moment (cruise, delta_max)")
     print(f"    Chi                       : {hm.Chi:.4f}")
     print(f"    H                         : {hm.H:.4f}  N*m  (boom torsion input)")
