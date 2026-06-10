@@ -65,14 +65,14 @@ sizing:
   foam_density: 48
   Vv: 0.04
   Vh: 0.50
-  L_boom: 2.5
+  max_nose_to_tailback_length: 3.0  # [m] maximum allowed nose-tip → tail-boom-back length (None disables)
   ARt: 4.5
   lam_t: 1.0
   SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15
 
 # ----- Propulsion -----
 propulsion:
-  csv_prop: data\12x8E_performance.csv
+  csv_prop: data\13x8E_performance.csv
   n_props: 3
   prop_mass: 0.1
   eff_motor: 0.8
@@ -119,7 +119,7 @@ control_surface:
   cl_alpha: 6.283185307179586
   cd0_section: 0.04
   roll_moment_dist: 0.0
-  roll_rate_req_deg_s: 60.0  # [deg/s] required steady roll rate for aileron sizing
+  roll_rate_req_deg_s: 47.0  # [deg/s] required steady roll rate for aileron sizing
   max_da_deg: 10.0
   max_y_frac: 0.8
   payload_lateral_angle_deg: 0.0  # [deg] max payload lateral angle from vertical

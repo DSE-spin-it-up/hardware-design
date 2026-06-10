@@ -39,8 +39,13 @@ class SizingInputs:
     Vv: float = 0.04
     Vh: float = 0.50
     # Physical tail-boom length from the boom root to vertical-tail trailing edge.
-    # run() derives lh (wing AC -> tail AC) from this and the tail geometry.
-    L_boom: float = 1.50
+    # When None, the pipeline will compute and set `L_boom` from
+    # `max_nose_to_tailback_length` (config) or use an internal default.
+    L_boom: float | None = None
+    # Optional maximum allowed distance from nose tip to back of tail boom [m].
+    # When None, no enforcement is applied. If set, the pipeline will reduce
+    # `L_boom` as needed to ensure the overall nose→tail-back length ≤ this value.
+    max_nose_to_tailback_length: float | None = None
     # Optional x-location of the boom root from LEMAC. The pipeline updates this
     # to the battery front face after the battery-x trim loop has a fuselage.
     boom_root_x: float | None = None

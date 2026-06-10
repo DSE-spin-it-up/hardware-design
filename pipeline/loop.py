@@ -892,6 +892,18 @@ def run_pipeline(config) -> PipelineResult:
     tc = airfoil_thickness_to_chord(airfoil)
     print(f"Airfoil: {airfoil}  (t/c = {tc:.4f})")
     sizing_inputs = config.SIZING
+    # If the user did not supply L_boom in the config, initialize it here.
+    # Prefer a conservative default (1.5 m) but clamp to the configured
+    # maximum nose→tailback length if provided.
+    if getattr(sizing_inputs, "L_boom", None) is None:
+        max_len = getattr(sizing_inputs, "max_nose_to_tailback_length", None)
+        default_guess = 1.5
+        if max_len is not None and max_len > 0.0:
+            initial_L = min(default_guess, float(max_len))
+        else:
+            initial_L = default_guess
+        import dataclasses as _dc
+        sizing_inputs = _dc.replace(sizing_inputs, L_boom=float(initial_L))
 
     # ----- Step 1: initial sizing with guessed Cd0 -----
     sizing = wing.run(
@@ -963,6 +975,66 @@ def run_pipeline(config) -> PipelineResult:
             airfoil=airfoil,
             battery_x_initial=battery_x,
         )
+        # Enforce optional maximum nose-tip → tail-boom-back length from config.SIZING
+        max_len = getattr(config.SIZING, "max_nose_to_tailback_length", None)
+        if max_len is not None and max_len > 0.0:
+            # Compute boom-root x (matches tail_boom_bending_length logic)
+            x_aileron_hinge = (
+                1.0 - p.control_surface.inputs.c_aileron_to_c_wing
+            ) * sizing.c_root
+            x_boom_root = (
+                sizing.inputs.boom_root_x if sizing.inputs.boom_root_x is not None else x_aileron_hinge
+            )
+            tail_te_x = float(x_boom_root) + float(sizing.inputs.L_boom)
+            nose_tip_x = p.fus.x_nose
+            length_nose_to_tail = tail_te_x - nose_tip_x
+            # Compute the L_boom that would make nose→tail == max_len:
+            desired_L = float(max_len - (x_boom_root - nose_tip_x))
+            desired_L = max(0.0, desired_L)
+            # If current length is less than the allowed max, increase L_boom
+            # to 'max out' the boom (user requested behavior). If current
+            # length exceeds max, reduce it as before.
+            if length_nose_to_tail < max_len and desired_L > sizing.inputs.L_boom + 1e-9:
+                print(
+                    f"    Enforcing max nose→tail length: increasing L_boom "
+                    f"{sizing.inputs.L_boom:.3f} → {desired_L:.3f} m"
+                )
+                sizing_inputs = dataclasses.replace(sizing_inputs, L_boom=desired_L)
+                sizing = wing.run(
+                    sizing_inputs,
+                    t_over_c_root=tc,
+                    c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+                )
+                battery_x, p, scissor_state, cg_error = _optimize_battery_x_for_scissor(
+                    sizing,
+                    config=config,
+                    polar=polar,
+                    tail_polar=tail_polar,
+                    airfoil=airfoil,
+                    battery_x_initial=battery_x,
+                )
+            elif length_nose_to_tail > max_len:
+                # Reduce if it somehow exceeded the max (preserve previous behavior)
+                new_L = desired_L
+                if new_L < sizing.inputs.L_boom - 1e-9:
+                    print(
+                        f"    Enforcing max nose→tail length: reducing L_boom "
+                        f"{sizing.inputs.L_boom:.3f} → {new_L:.3f} m"
+                    )
+                    sizing_inputs = dataclasses.replace(sizing_inputs, L_boom=new_L)
+                    sizing = wing.run(
+                        sizing_inputs,
+                        t_over_c_root=tc,
+                        c_aileron_to_c_wing=config.CONTROL_SURFACE.c_aileron_to_c_wing,
+                    )
+                    battery_x, p, scissor_state, cg_error = _optimize_battery_x_for_scissor(
+                        sizing,
+                        config=config,
+                        polar=polar,
+                        tail_polar=tail_polar,
+                        airfoil=airfoil,
+                        battery_x_initial=battery_x,
+                    )
         m_drone = p.masses["total"]
         x_cg = p.cg["overall"]
         scissor = scissor_state.scissor
