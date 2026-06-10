@@ -43,7 +43,7 @@ battery_y_samples: 9
 # Optional maximum payload cable tension per drone [N] used for payload
 # disturbance sizing/checks of aileron and elevator. Set null to fall back
 # to the legacy weight/drag-derived payload force model.
-payload_max_tension: 750
+payload_max_tension: 700
 
 # ----- Initial / wing sizing -----
 # ----- Initial / wing sizing -----
@@ -68,7 +68,7 @@ sizing:
   max_nose_to_tailback_length: 3.0  # [m] maximum allowed nose-tip → tail-boom-back length (None disables)
   ARt: 4.5
   lam_t: 1.0
-  SM: 0.10          # static stability margin x_cg/c [-]; typical 0.05–0.15
+  SM: 0.05          # static stability margin x_cg/c [-]; typical 0.05–0.15
 
 # ----- Propulsion -----
 propulsion:
@@ -134,7 +134,7 @@ elevator:
   max_deflection_up_deg: 25.0
   max_deflection_down_deg: 25.0
   payload_cable_min_angle_deg: -75
-  tail_clmax_fraction: 0.2  # [-] allowed fraction of finite-tail CL_max
+  tail_clmax_fraction: 0.4  # [-] allowed fraction of finite-tail CL_max
   payload_cable_max_angle_deg: 75  # null -> 2 × equilibrium cable angle
 
 # ----- Rudder -----
