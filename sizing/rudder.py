@@ -40,6 +40,7 @@ class RudderInputs:
     max_deflection_deg: float = 30.0   # hard deflection limit [deg]
     Cn_dist:            float = 0.10   # max yaw-moment disturbance the rudder must
                                        # counteract at δ_R_max [-]
+    Cn_beta:            float = 0.0    # required yaw-stiffness derivative Cn_β [1/rad]
     CDY:                float = 0.8    # fuselage side-drag coefficient [-]
     Kf1:                float = 0.85   # fuselage correction on Cn_β [-]
     Kf2:                float = 1.0    # fuselage correction on Cy_β [-]
@@ -99,6 +100,7 @@ class RudderAreaRequirement:
     oei_moment:         float = 0.0
     oei_moment_margin:  float = 0.0
     combined_yaw_moment: float = 0.0
+    Cnb:                float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +196,9 @@ def _requirement_for_area(
     cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta
     cn_fin = i.Kf1 * CLalphav * i.eta_v * Vv * beta
 
+    # Non-dimensional yaw-stiffness derivative Cn_β for this Sv
+    Cnb_value = i.Kf1 * CLalphav * i.eta_v * Sv * s.lh / (b * S)
+
     # Rudder contribution per unit (bR/bV) and per unit (bR/bV)²
     cy_rudder_per_b2 = CLalphav * i.eta_v * (Sv / S) * tau_r * i.cR_cV * delta_R_max
     cn_rudder_per_b  = CLalphav * Vv * i.eta_v * tau_r * delta_R_max
@@ -229,6 +234,7 @@ def _requirement_for_area(
         oei_moment        = float(oei_moment),
         oei_moment_margin = float(oei_moment_margin),
         combined_yaw_moment = float(combined_yaw_moment),
+        Cnb               = float(Cnb_value),
     )
 
 
@@ -260,20 +266,23 @@ def minimum_vertical_tail_area(
         raise ValueError("rudder.front_prop_lateral_position must be non-negative.")
     if not (0.0 <= inputs.oei_failed_thrust_fraction <= 1.0):
         raise ValueError("rudder.oei_failed_thrust_fraction must satisfy 0 <= value <= 1.")
+    if inputs.Cn_beta < 0.0:
+        raise ValueError("rudder.Cn_beta must be non-negative.")
     lo = max(1.0e-6, 1.0e-6 * sizing.Sw)
     hi = max(sizing.Sv, lo * 2.0)
 
     # Expand upper bound until the configured rudder is sufficient
     for _ in range(60):
-        if _requirement_for_area(
+        req_hi = _requirement_for_area(
             sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
-        ).bR_bV_required <= inputs.bR_bV:
+        )
+        if req_hi.bR_bV_required <= inputs.bR_bV and req_hi.Cnb >= inputs.Cn_beta:
             break
         hi *= 2.0
     else:
         raise ValueError(
             "Could not find a vertical-tail area that satisfies the rudder "
-            f"constraints with bR/bV={inputs.bR_bV:.3f}."
+            f"constraints with bR/bV={inputs.bR_bV:.3f} and Cn_beta={inputs.Cn_beta:.3f}."
         )
 
     # Bisect to find the minimum Sv
@@ -285,7 +294,7 @@ def minimum_vertical_tail_area(
         req_mid = _requirement_for_area(
             sizing, fus, v_stall, inputs, x_cg, mid, total_thrust,
         )
-        if req_mid.bR_bV_required <= inputs.bR_bV:
+        if req_mid.bR_bV_required <= inputs.bR_bV and req_mid.Cnb >= inputs.Cn_beta:
             hi   = mid
             best = req_mid
         else:

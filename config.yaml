@@ -119,7 +119,7 @@ control_surface:
   cl_alpha: 6.283185307179586
   cd0_section: 0.04
   roll_moment_dist: 0.0
-  roll_rate_req_deg_s: 30.0  # [deg/s] required steady roll rate for aileron sizing
+  roll_rate_req_deg_s: 60.0  # [deg/s] required steady roll rate for aileron sizing
   max_da_deg: 10.0
   max_y_frac: 0.8
   payload_lateral_angle_deg: 0.0  # [deg] max payload lateral angle from vertical
@@ -139,15 +139,16 @@ elevator:
 
 # ----- Rudder -----
 rudder:
-  bR_bV: 1.00  # [-] rudder span / vertical-tail span
-  cR_cV: 0.40  # [-] rudder chord / vertical-tail chord
+  bR_bV: 0.8 # [-] rudder span / vertical-tail span
+  cR_cV: 0.2  # [-] rudder chord / vertical-tail chord
   max_deflection_deg: 30 # [deg] maximum rudder deflection
   front_prop_lateral_position: 0.7 #[m] lateral arm of failed front prop for OEI yaw sizing
   oei_failed_thrust_fraction: 0.3333333333333333  # [-] failed thrust / total drone thrust
   Cn_dist: 0.0
+  Cn_beta: 0.05
   CDY: 0.8
-  Kf1: 0.85
-  Kf2: 1.0
+  Kf1: 0.65
+  Kf2: 0.75
   eta_v: 0.85
   Ss: null
 

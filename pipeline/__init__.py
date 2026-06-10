@@ -1,5 +1,8 @@
-"""Top-level pipeline package: convergence loop, reporting, plots, config."""
+"""Top-level pipeline package: convergence loop, reporting, plots, config.
 
-from pipeline.loop import PipelineResult, run_pipeline
+Avoid importing heavy submodules at package import time to prevent circular
+imports when other modules import subpackages such as ``pipeline.helpers``.
+Import the specific submodules or objects where they are needed instead.
+"""
 
-__all__ = ["PipelineResult", "run_pipeline"]
+__all__ = ["config", "helpers", "loop", "plots", "reporting"]
