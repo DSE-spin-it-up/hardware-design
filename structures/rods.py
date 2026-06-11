@@ -153,6 +153,14 @@ class RodResult:
     section_h_control_ht: float = 0.0
     section_h_spar_vt: float = 0.0
     section_h_control_vt: float = 0.0
+    # Physical rod lengths used for mass/packaging reports [m]
+    length_spar: float = 0.0
+    length_aileron: float = 0.0
+    length_t: float = 0.0
+    length_spar_ht: float = 0.0
+    length_control_ht: float = 0.0
+    length_spar_vt: float = 0.0
+    length_control_vt: float = 0.0
 
     # Convenience aliases so existing callers that use .d_w / .mass_w still work.
     @property
@@ -492,12 +500,14 @@ def apply_torsion_check(
     tau      = _tau_bredt(T, d_final, t)
     sigma_b  = _sigma_bending(M, d_final, t)
     sigma_vm = np.sqrt(sigma_b ** 2 + 3 * tau ** 2)
-    mass_t   = _tube_mass(boom_length if tube_length is None else tube_length, d_final, t, mat.rho)
+    length_t = boom_length if tube_length is None else tube_length
+    mass_t   = _tube_mass(length_t, d_final, t, mat.rho)
 
     return dataclasses.replace(
         rod,
         d_t             = d_final,
         mass_t          = mass_t,
+        length_t        = length_t,
         fail_mode_t     = fail_mode,
         tau_t           = tau,
         sigma_vm_t      = sigma_vm,
@@ -864,6 +874,14 @@ def run(
         section_h_control_ht=section_h_control_ht,
         section_h_spar_vt=section_h_spar_vt,
         section_h_control_vt=section_h_control_vt,
+        # rod lengths
+        length_spar=b_w,
+        length_aileron=b_w,
+        length_t=s.L_boom,
+        length_spar_ht=L_ht,
+        length_control_ht=L_ht,
+        length_spar_vt=L_vt,
+        length_control_vt=L_vt,
     )
 
 
@@ -875,6 +893,7 @@ def summary(r: RodResult) -> None:
     print("\n--- Spar rod (one of two) ---")
     print(f"  Structural speed      : {r.V_structural:.2f}  m/s")
     print(f"  Structural q          : {r.q_structural:.2f}  Pa")
+    print(f"  Length                : {r.length_spar:.4f}  m")
     print(f"  Outer diameter         : {r.d_spar * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar * 1000:.2f}  mm")
@@ -884,6 +903,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar)}")
 
     print("\n--- Aileron rod (two of two) ---")
+    print(f"  Length                : {r.length_aileron:.4f}  m")
     print(f"  Outer diameter         : {r.d_aileron * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_aileron * 1000:.2f}  mm")
@@ -897,6 +917,7 @@ def summary(r: RodResult) -> None:
     print(f"  Structural tail q      : {r.q_tail_structural:.2f}  Pa")
     print(f"  Structural CL_h        : {r.CL_h_structural:.3f}")
     print(f"  Structural tail force  : {r.F_tail_structural:.2f}  N")
+    print(f"  Length                : {r.length_t:.4f}  m")
     print(f"  Outer diameter         : {r.d_t * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_t * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_t * 1000:.2f}  mm")
@@ -907,6 +928,7 @@ def summary(r: RodResult) -> None:
         print(f"  Von Mises stress       : {r.sigma_vm_t / 1e6:.2f}  MPa")
 
     print("\n--- Spar rod horizontal tail (one of two) ---")
+    print(f"  Length                : {r.length_spar_ht:.4f}  m")
     print(f"  Outer diameter         : {r.d_spar_ht * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar_ht * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar_ht * 1000:.2f}  mm")
@@ -915,6 +937,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar_ht * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_ht)}")
 
     print("\n--- Elevator rod (two of two) ---")
+    print(f"  Length                : {r.length_control_ht:.4f}  m")
     print(f"  Outer diameter         : {r.d_control_ht * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control_ht * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_control_ht * 1000:.2f}  mm")
@@ -924,6 +947,7 @@ def summary(r: RodResult) -> None:
 
     print("\n--- Spar rod vertical tail (one of two) ---")
     print(f"  VT dynamic pressure ratio (η_v) : {r.eta_v:.3f}")
+    print(f"  Length                : {r.length_spar_vt:.4f}  m")
     print(f"  Outer diameter         : {r.d_spar_vt * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar_vt * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar_vt * 1000:.2f}  mm")
@@ -932,6 +956,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar_vt * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_vt)}")
 
     print("\n--- Rudder rod (two of two) ---")
+    print(f"  Length                : {r.length_control_vt:.4f}  m")
     print(f"  Outer diameter         : {r.d_control_vt * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control_vt * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_control_vt * 1000:.2f}  mm")
