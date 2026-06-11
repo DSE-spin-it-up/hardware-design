@@ -74,10 +74,13 @@ class RodInputs:
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
     eta_h: float = 0.85               # tail dynamic pressure ratio q_t/q (from elevator config)
     eta_v: float = 0.85               # vertical tail dynamic pressure ratio q_v/q (from rudder config)
-    t_spar: float = 0.00079375        # [m] minimum wall thickness of the spar rod
-    t_control: float = 0.0016256      # [m] minimum wall thickness of the aileron rod
-    t_control_ht: float = 0.0014      # [m] same as t_spar, thinner than t_control
-    t_t: float = 0.00079375           # [m] minimum wall thickness of the tail rod
+    t_spar: float = 0.00079375        # [m] minimum wing spar rod wall thickness
+    t_control: float = 0.0016256      # [m] minimum wing aileron rod wall thickness
+    t_t: float = 0.00079375           # [m] minimum tail boom rod wall thickness
+    t_spar_ht: float = 0.00079375     # [m] minimum horizontal-tail spar rod wall thickness
+    t_control_ht: float = 0.0014      # [m] minimum horizontal-tail elevator rod wall thickness
+    t_spar_vt: float = 0.00079375     # [m] minimum vertical-tail spar rod wall thickness
+    t_control_vt: float = 0.0016256   # [m] minimum vertical-tail rudder rod wall thickness
     rod_connector_mass: float = 0.0   # [kg] mass per wing/boom or payload connector
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
@@ -646,7 +649,7 @@ def run(
 
     L_ht      = s.bh
     F_ht_rod  = F_tail / 2
-    t_spar_ht = i.t_spar
+    t_spar_ht = i.t_spar_ht
 
     M_spar_ht = F_ht_rod * L_ht / 16
 
@@ -720,7 +723,7 @@ def run(
         M_thrust_spar = F_thrust_vt * L_vt / 8
         M_fin_spar    = F_fin       * L_vt / 8
         M_spar_vt     = np.sqrt(M_thrust_spar ** 2 + M_fin_spar ** 2)
-        t_spar_vt     = i.t_spar
+        t_spar_vt     = i.t_spar_vt
 
         d_spar_defl_vt = _d_for_defl_half_cantilever_udl(
             F_thrust_vt + F_fin, L_vt, E, t_spar_vt, i.defl_max
@@ -754,7 +757,7 @@ def run(
         M_thrust_ctrl = F_thrust_vt_r * L_vt / 8
         M_rudder_ctrl = F_rudder      * L_vt / 8
         M_control_vt  = np.sqrt(M_thrust_ctrl ** 2 + M_rudder_ctrl ** 2)
-        t_control_vt  = i.t_control
+        t_control_vt  = i.t_control_vt
 
         d_control_defl_vt = _d_for_defl_half_cantilever_udl(
             F_thrust_vt_r + F_rudder, L_vt, E, t_control_vt, i.defl_max
@@ -782,7 +785,7 @@ def run(
         # ---- fallback: thrust load only ----
         q_vt_fallback = q_structural * i.eta_v
         F_vt_rod  = propulsion.thrust_cruise_per_prop
-        t_spar_vt = i.t_spar
+        t_spar_vt = i.t_spar_vt
 
         M_spar_vt = F_vt_rod * L_vt / 16
 
@@ -804,7 +807,7 @@ def run(
         defl_spar_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
-        t_control_vt = i.t_control
+        t_control_vt = i.t_control_vt
 
         M_control_vt = F_vt_rod * L_vt / 16
 
