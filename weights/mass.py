@@ -164,6 +164,88 @@ def fuselage_mass(
     )
 
 
+def _wing_foam_volume(
+    sizing: SizingResult,
+    airfoil_path: str | Path,
+    thickness: float = 0.1,
+    structure: RodResult | None = None,
+) -> float:
+    airfoil_area = AirfoilGeometry(airfoil_path).compute_airfoil_area(chord=1.0)
+    foam_volume = airfoil_area * sizing.inputs.b * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_spar)
+        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_aileron)
+    return max(foam_volume, 0.0)
+
+
+def _hor_tail_foam_volume(
+    sizing: SizingResult,
+    tail_airfoil_path: str | Path,
+    thickness: float = 0.08,
+    structure: RodResult | None = None,
+) -> float:
+    airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
+    foam_volume = airfoil_area * sizing.bh * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_spar_ht)
+        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_control_ht)
+    return max(foam_volume, 0.0)
+
+
+def _ver_tail_foam_volume(
+    sizing: SizingResult,
+    tail_airfoil_path: str | Path,
+    thickness: float = 0.08,
+    structure: RodResult | None = None,
+) -> float:
+    airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
+    foam_volume = airfoil_area * sizing.bv * thickness
+    if structure is not None:
+        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_spar_vt)
+        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_control_vt)
+    return max(foam_volume, 0.0)
+
+
+def epp_foam_volumes(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    structure: RodResult,
+    airfoil_path: str | Path,
+    tail_airfoil_path: str | Path,
+    wing_thickness: float = 0.1,
+    tail_thickness: float = 0.08,
+    aileron: AileronResult | None = None,
+    battery_x: float | None = None,
+    materials: PartMaterials = DEFAULT_MATERIALS,
+) -> dict[str, float]:
+    x_batt = 0.25 * sizing.c_root if battery_x is None else battery_x
+    volumes = {
+        "fuselage": _fuselage_net_foam_volume(
+            sizing, fus, structure, airfoil_path, aileron, x_batt
+        ),
+        "wing": _wing_foam_volume(sizing, airfoil_path, wing_thickness, structure),
+        "hor_tail": _hor_tail_foam_volume(
+            sizing, tail_airfoil_path, tail_thickness, structure
+        ),
+        "ver_tail": _ver_tail_foam_volume(
+            sizing, tail_airfoil_path, tail_thickness, structure
+        ),
+    }
+    part_materials = {
+        "fuselage": materials.fuselage,
+        "wing": materials.wing,
+        "hor_tail": materials.tail,
+        "ver_tail": materials.tail,
+    }
+    epp_volumes = {
+        name: volume
+        for name, volume in volumes.items()
+        if part_materials[name].__class__.__name__ == "EPP"
+    }
+    epp_volumes["total"] = sum(epp_volumes.values())
+    return epp_volumes
+
+
 def _payload_cable_angle(sizing: SizingResult) -> float:
     n_drones = max(float(sizing.inputs.n_drones), 1.0)
     payload_weight = sizing.inputs.m_payload / n_drones * 9.80665
@@ -329,12 +411,9 @@ def wing_mass(
     structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    airfoil_area = AirfoilGeometry(airfoil_path).compute_airfoil_area(chord=1.0)
-    foam_volume = airfoil_area * sizing.inputs.b * thickness
-    if structure is not None:
-        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_spar)
-        foam_volume -= _tube_outer_volume(sizing.inputs.b, structure.d_aileron)
-    return materials.wing.mass(max(foam_volume, 0.0))
+    return materials.wing.mass(
+        _wing_foam_volume(sizing, airfoil_path, thickness, structure)
+    )
 
 
 def hor_tail_mass(
@@ -344,12 +423,9 @@ def hor_tail_mass(
     structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
-    foam_volume = airfoil_area * sizing.bh * thickness
-    if structure is not None:
-        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_spar_ht)
-        foam_volume -= _tube_outer_volume(sizing.bh, structure.d_control_ht)
-    return materials.tail.mass(max(foam_volume, 0.0))
+    return materials.tail.mass(
+        _hor_tail_foam_volume(sizing, tail_airfoil_path, thickness, structure)
+    )
 
 
 def ver_tail_mass(
@@ -359,12 +435,9 @@ def ver_tail_mass(
     structure: RodResult | None = None,
     materials: PartMaterials = DEFAULT_MATERIALS,
 ) -> float:
-    airfoil_area = AirfoilGeometry(tail_airfoil_path).compute_airfoil_area(chord=1.0)
-    foam_volume = airfoil_area * sizing.bv * thickness
-    if structure is not None:
-        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_spar_vt)
-        foam_volume -= _tube_outer_volume(sizing.bv, structure.d_control_vt)
-    return materials.tail.mass(max(foam_volume, 0.0))
+    return materials.tail.mass(
+        _ver_tail_foam_volume(sizing, tail_airfoil_path, thickness, structure)
+    )
 
 
 def _max_tc_x(airfoil_path: str | Path) -> float:

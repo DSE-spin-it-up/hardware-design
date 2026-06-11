@@ -37,6 +37,7 @@ from sizing.wing import SizingResult
 from structures import rods
 from structures.rods import RodResult
 from weights import mass as weights_mass
+from weights.part_materials import PartMaterials
 
 
 @dataclass
@@ -60,6 +61,7 @@ class PipelineResult:
     rudder: RudderResult
     masses: dict[str, float]
     cg: dict[str, float]
+    materials: PartMaterials
 
     # ----- Convergence history (for plot_convergence) -----
     cd0_history: list[float]
@@ -1850,6 +1852,7 @@ def run_pipeline(config) -> PipelineResult:
         rudder=rudder_result,
         masses=final_masses,
         cg=final_cg,
+        materials=config.MATERIALS,
         cd0_history=cd0_history,
         mass_history=mass_history,
         sw_history=sw_history,

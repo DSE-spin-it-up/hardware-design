@@ -15,6 +15,7 @@ from propulsion import sizing as prop_sizing
 from sizing import aileron, elevator, fuselage, rudder, wing
 from structures import rods
 from weights.inertia import calculate_mass_moment_of_inertia
+from weights.mass import epp_foam_volumes
 
 
 def _ok_marker(value: bool) -> str:
@@ -164,6 +165,22 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("Vertical tail",        masses['ver_tail']))
     print(_fmt_mass("Fuselage (shell)",     masses['fuselage']))
     print(_fmt_mass("Structural sleeve",    masses.get('pvc_tubes', 0.0)))
+
+    foam_volumes = epp_foam_volumes(
+        sizing=result.sizing,
+        fus=result.fus,
+        structure=result.struct,
+        airfoil_path=result.airfoil,
+        tail_airfoil_path=result.tail_airfoil,
+        aileron=result.control_surface,
+        battery_x=result.cg["battery"],
+        materials=result.materials,
+    )
+    total_foam_volume = foam_volumes["total"]
+    print(
+        f"  {'Total EPP foam volume':<28}: {total_foam_volume:.6f}  m^3  "
+        f"({total_foam_volume * 1000:.2f} L)"
+    )
 
     print("  --- Rods ---")
     print(_fmt_mass("Wing spar rod",        masses['rod_spar']))
