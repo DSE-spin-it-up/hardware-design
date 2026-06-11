@@ -14,6 +14,9 @@ Returned inertias are about CG-centred axes parallel to that coordinate frame:
     Ixx: roll inertia about the longitudinal axis [kg*m^2]
     Iyy: pitch inertia about the lateral axis [kg*m^2]
     Izz: yaw inertia about the vertical axis [kg*m^2]
+    Ixy: product of inertia in the x-y plane [kg*m^2]
+    Ixz: product of inertia in the x-z plane [kg*m^2]
+    Iyz: product of inertia in the y-z plane [kg*m^2]
 """
 from __future__ import annotations
 
@@ -40,6 +43,9 @@ class PointMass:
     ixx_centroid: float = 0.0
     iyy_centroid: float = 0.0
     izz_centroid: float = 0.0
+    ixy_centroid: float = 0.0
+    ixz_centroid: float = 0.0
+    iyz_centroid: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,9 @@ class InertiaResult:
     ixx: float
     iyy: float
     izz: float
+    ixy: float
+    ixz: float
+    iyz: float
     components: tuple[PointMass, ...]
 
 
@@ -273,7 +282,7 @@ def calculate_mass_moment_of_inertia(
     z_cg: dict[str, float],
     n_props: int,
 ) -> InertiaResult:
-    """Calculate Ixx, Iyy, and Izz about the aircraft CG."""
+    """Calculate Ixx, Iyy, Izz, Ixy, Ixz, and Iyz about the aircraft CG."""
     components = build_components(
         sizing=sizing,
         fus=fus,
@@ -295,13 +304,25 @@ def calculate_mass_moment_of_inertia(
     ixx = 0.0
     iyy = 0.0
     izz = 0.0
+    ixy = 0.0
+    ixz = 0.0
+    iyz = 0.0
     for component in components:
         dx = component.x - x_cg
         dy = component.y - y_cg
         dz = component.z - z_cg_total
-        ixx += component.ixx_centroid + component.mass * (dy**2 + dz**2)
-        iyy += component.iyy_centroid + component.mass * (dx**2 + dz**2)
-        izz += component.izz_centroid + component.mass * (dx**2 + dy**2)
+        m = component.mass
+        ixx += component.ixx_centroid + m * (dy**2 + dz**2)
+        iyy += component.iyy_centroid + m * (dx**2 + dz**2)
+        izz += component.izz_centroid + m * (dx**2 + dy**2)
+        # Products of inertia use the convention Iab = -∫ab dm, so the
+        # parallel-axis term carries a minus sign: Iab = Iab_c - m*da*db.
+        # All current primitive shapes are symmetric about their own centroidal
+        # planes, making their centroidal products zero; the fields are retained
+        # so custom PointMass entries with non-zero centroidal products work too.
+        ixy += component.ixy_centroid - m * dx * dy
+        ixz += component.ixz_centroid - m * dx * dz
+        iyz += component.iyz_centroid - m * dy * dz
 
     return InertiaResult(
         mass=mass,
@@ -311,6 +332,9 @@ def calculate_mass_moment_of_inertia(
         ixx=ixx,
         iyy=iyy,
         izz=izz,
+        ixy=ixy,
+        ixz=ixz,
+        iyz=iyz,
         components=components,
     )
 
@@ -351,6 +375,9 @@ def print_inertia(result: InertiaResult, *, show_components: bool = False) -> No
     print(f"  Ixx roll  : {result.ixx:.4f} kg*m^2")
     print(f"  Iyy pitch : {result.iyy:.4f} kg*m^2")
     print(f"  Izz yaw   : {result.izz:.4f} kg*m^2")
+    print(f"  Ixy       : {result.ixy:.4f} kg*m^2")
+    print(f"  Ixz       : {result.ixz:.4f} kg*m^2")
+    print(f"  Iyz       : {result.iyz:.4f} kg*m^2")
 
     if show_components:
         print("\nComponent model")

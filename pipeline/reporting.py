@@ -292,6 +292,9 @@ def print_main_summary(result: PipelineResult) -> None:
     print(f"  Ixx roll  : {inertia.ixx:.4f} kg*m^2")
     print(f"  Iyy pitch : {inertia.iyy:.4f} kg*m^2")
     print(f"  Izz yaw   : {inertia.izz:.4f} kg*m^2")
+    print(f"  Ixy       : {inertia.ixy:.4f} kg*m^2")
+    print(f"  Ixz       : {inertia.ixz:.4f} kg*m^2")
+    print(f"  Iyz       : {inertia.iyz:.4f} kg*m^2")
 
     print("\n========== DRAG BUILDUP ==========")
     drag_buildup.summary(drag)
