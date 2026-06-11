@@ -1,10 +1,10 @@
 import numpy as np
 
-KV = 477
-n = 13375
+KV = 700
+n = 8600
 V_emf = n / KV
-Q = 1.04 
-R_w = 84/1000
+Q = 0.502
+R_w = 0.0327
 I0 = 1.8
 Kt = 60 / (2 * np.pi * KV)
 I = (Q / Kt) + I0

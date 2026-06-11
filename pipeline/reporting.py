@@ -87,6 +87,69 @@ def _fmt_cg(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:+8.4f}  m"
 
 
+def _print_bounding_boxes(result: PipelineResult) -> None:
+    s = result.sizing
+    f = result.fus
+
+    boxes = [
+        (
+            "Fuselage",
+            f.length,
+            f.width,
+            f.height,
+            1,
+            "aero body",
+        ),
+        (
+            "Half wing",
+            s.inputs.b / 2.0,
+            s.c_root,
+            s.t_over_c_root * s.c_root,
+            2,
+            "each side",
+        ),
+        (
+            "Half horizontal tail",
+            s.bh / 2.0,
+            s.ch,
+            s.tt_h,
+            2,
+            "each side",
+        ),
+        (
+            "Vertical tail",
+            s.cv,
+            s.tt_v,
+            s.bv,
+            1,
+            "single fin",
+        ),
+    ]
+
+    total_volume = 0.0
+    print("\n========== PACKAGING / BOUNDING BOXES ==========")
+    print("  Dimensions are box L x W x H envelopes for the final geometry.")
+    for name, length, width, height, count, note in boxes:
+        volume_each = length * width * height
+        volume_total = count * volume_each
+        total_volume += volume_total
+        count_label = f"{count}x " if count > 1 else ""
+        print(f"  {count_label}{name:<22}: {length:.4f} x {width:.4f} x {height:.4f}  m  ({note})")
+        print(
+            f"    Volume each          : {volume_each:.6f}  m^3  "
+            f"({volume_each * 1000:.2f} L)"
+        )
+        if count > 1:
+            print(
+                f"    Volume total         : {volume_total:.6f}  m^3  "
+                f"({volume_total * 1000:.2f} L)"
+            )
+    print(
+        f"  {'Total box volume':<26}: {total_volume:.6f}  m^3  "
+        f"({total_volume * 1000:.2f} L)"
+    )
+
+
 def _print_vehicle_block(result: PipelineResult) -> None:
     s = result.sizing
     p = result.propulsion
@@ -137,6 +200,7 @@ def print_main_summary(result: PipelineResult) -> None:
     prop_sizing.summary(result.propulsion)
     print("\n========== FUSELAGE ==========")
     fuselage.summary(result.fus)
+    _print_bounding_boxes(result)
     print("\n========== CONTROL SURFACES ==========")
     print("Aileron:")
     aileron.summary(result.control_surface)
