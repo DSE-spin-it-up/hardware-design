@@ -1782,13 +1782,22 @@ def run_pipeline(config) -> PipelineResult:
         CLalphav_vt=CLalphav_vt,
     )
 
+    rudder_side_force, tail_boom_torque = rods.rudder_side_force_torque(
+        sizing=sizing,
+        rudder=rudder_result,
+        q=struct.q_structural,
+        CLalphav_vt=CLalphav_vt,
+        eta_v=config.STRUCTURE.eta_v,
+    )
+
     struct = rods.apply_torsion_check(
         rod=struct,
-        rudder_hinge_moment=rudder_result.hinge_moment.H,
+        torque=tail_boom_torque,
         bending_force=struct.F_tail_structural,
         boom_length=rods.tail_boom_bending_length(sizing, p.control_surface),
         tube_length=sizing.L_boom,
         safety_factor=config.STRUCTURE.safety_factor,
+        side_force=rudder_side_force,
     )
 
     final_masses = weights_mass.total_mass(

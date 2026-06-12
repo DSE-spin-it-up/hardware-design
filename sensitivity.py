@@ -25,10 +25,10 @@ from pipeline import sensitivity
 # Propeller table to iterate through (paths relative to the repo root).
 CSV_PROPS = [
     # "data/10x8E_performance.csv",
+    "data/10x8E_performance.csv",
     "data/11x8E_performance.csv",
     "data/12x8E_performance.csv",
     "data/13x8E_performance.csv",
-    "data/14x8_performance.csv",
     # "data/15x8E_performance.csv",
 ]
 N_DRONES = [2, 3, 4, 5, 6]                              # [-]

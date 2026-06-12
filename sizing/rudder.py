@@ -12,7 +12,7 @@ Procedure
 3.  Recompute all tail geometry (bv, CLα_v, Vv, Sv/S, dc, Ss) at the minimum Sv.
 4.  Solve for weathercock sideslip σ at the minimum Sv and configured rudder.
 5.  Compute all stability/control derivatives and rudder hinge moment at cruise q
-    and max deflection for boom torsion sizing.
+    and max deflection for actuator/servo reporting.
 """
 from dataclasses import dataclass, field
 
@@ -417,8 +417,8 @@ def run(
     )
 
     # ------------------------------------------------------------------
-    # 7. Hinge moment at cruise q and max deflection
-    #    Critical case for boom torsion: max speed (cruise), max deflection.
+    # 7. Hinge moment at cruise q and max deflection.
+    #    This is reported for actuator/servo sizing, not rod sizing.
     #    alpha used is the gust sideslip β (AoA seen by the vertical tail).
     # ------------------------------------------------------------------
     hm = compute_hinge_moment(
@@ -512,4 +512,4 @@ def summary(r: RudderResult) -> None:
     print(f"  Combined yaw moment demand  : {r.combined_yaw_moment:.2f}  N*m")
     print("  Hinge moment (cruise, delta_max)")
     print(f"    Chi                       : {hm.Chi:.4f}")
-    print(f"    H                         : {hm.H:.4f}  N*m  (boom torsion input)")
+    print(f"    H                         : {hm.H:.4f}  N*m  (actuator/servo input)")
