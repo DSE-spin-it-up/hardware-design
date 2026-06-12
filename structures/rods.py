@@ -80,7 +80,7 @@ class RodInputs:
     t_spar_ht: float = 0.00079375     # [m] minimum horizontal-tail spar rod wall thickness
     t_control_ht: float = 0.0014      # [m] minimum horizontal-tail elevator rod wall thickness
     t_spar_vt: float = 0.00079375     # [m] minimum vertical-tail spar rod wall thickness
-    t_control_vt: float = 0.0016256   # [m] minimum vertical-tail rudder rod wall thickness
+    t_control_vt: float = 0.00079375    # [m] minimum vertical-tail rudder rod wall thickness
     rod_connector_mass: float = 0.0   # [kg] mass per wing/boom or payload connector
     # Ruddervator hinge chord fraction (analogous to c_aileron_to_c_wing).
     # x/c_hinge = 1 - c_ruddervator_to_c_tail
@@ -561,7 +561,7 @@ def run(
     section_h_spar = s.c_root * tc_spar
     t_spar = i.t_spar
 
-    M_spar = L_lift * b_w / 16   # half-cantilever UDL max bending moment
+    M_spar = L_lift * b_w / 16  # half-cantilever UDL max bending moment
 
     d_spar_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_spar, i.defl_max)
     d_spar_comp = _d_for_stress(M_spar, sigma_lim, t_spar)
@@ -648,10 +648,10 @@ def run(
     section_h_spar_ht = c_root_ht * tc_spar_ht
 
     L_ht      = s.bh
-    F_ht_rod  = F_tail / 2
+    F_ht_rod  = F_tail 
     t_spar_ht = i.t_spar_ht
 
-    M_spar_ht = F_ht_rod * L_ht / 16
+    M_spar_ht = F_ht_rod * L_ht / 8
 
     d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, i.defl_max)
     d_spar_comp_ht = _d_for_stress(M_spar_ht, sigma_lim, t_spar_ht)
@@ -680,7 +680,7 @@ def run(
 
     t_control_ht = i.t_control_ht
 
-    M_control_ht = F_ht_rod * L_ht / 16
+    M_control_ht = F_ht_rod * L_ht / 8
 
     d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, i.defl_max)
     d_control_comp_ht = _d_for_stress(M_control_ht, sigma_lim, t_control_ht)
@@ -715,18 +715,30 @@ def run(
 
     if rudder is not None and CLalphav_vt != 0.0:
         # ---- loads ----
-        q_vt        = q_structural * i.eta_v
-        F_fin       = 0.5 * q_vt * s.Sv * CLalphav_vt * rudder.beta_gust
-        F_thrust_vt = 0.5 * propulsion.thrust_cruise_per_prop
+        # Side force formula consistent with rudder.py:
+        #   F = q * Sv * CLalphav * (Kf2 * beta  +  tau_r * cR_cV * bR_bV² * delta_R)
+        # eta_v is kept separate from q so it appears only once.
+        # Thrust load is the full per-prop cruise thrust; prop sits at the
+        # tip of the VT rod so the moment arm is the full length L_vt.
+        bR_bV      = rudder.geometry.bR_bV
+        F_vt_total = (q_structural * s.Sv * CLalphav_vt * i.eta_v * (
+            rudder.inputs.Kf2 * rudder.beta_gust
+            + rudder.tau_r * rudder.delta_R
+              * rudder.inputs.cR_cV * bR_bV ** 2
+        ))
+        F_thrust_vt = propulsion.thrust_cruise_per_prop
 
         # ---- spar rod ----
-        M_thrust_spar = F_thrust_vt * L_vt / 8
-        M_fin_spar    = F_fin       * L_vt / 8
+        # Thrust: point load at tip  → M = F * L_vt
+        # Aero side force: UDL       → M = F * L_vt / 2
+        # Two moments act in perpendicular planes; RSS is exact for circular section.
+        M_thrust_spar = F_thrust_vt * L_vt
+        M_fin_spar    = F_vt_total  * L_vt / 2
         M_spar_vt     = np.sqrt(M_thrust_spar ** 2 + M_fin_spar ** 2)
         t_spar_vt     = i.t_spar_vt
 
-        d_spar_defl_vt = _d_for_defl_half_cantilever_udl(
-            F_thrust_vt + F_fin, L_vt, E, t_spar_vt, i.defl_max
+        d_spar_defl_vt = _d_for_defl_cantilever_point(
+            F_thrust_vt + F_vt_total, L_vt, E, t_spar_vt, i.defl_max
         )
         d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
         if d_spar_defl_vt >= d_spar_comp_vt:
@@ -738,29 +750,27 @@ def run(
             d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
             f"VT spar rod (x/c = {xc_spar_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_thrust_vt + F_fin, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_cantilever_point(
+                    F_thrust_vt + F_vt_total, L_vt, E, d_cap, i.defl_max
+                ),
                 _t_for_stress(M_spar_vt, sigma_lim, d_cap),
             ),
         )
-        defl_spar_vt = _defl_half_cantilever_udl(
-            F_thrust_vt + F_fin, L_vt, E, _I_tube(t_spar_vt, d_spar_vt)
+        defl_spar_vt = _defl_cantilever_point(
+            F_thrust_vt + F_vt_total, L_vt, E, _I_tube(t_spar_vt, d_spar_vt)
         )
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
         # ---- rudder rod ----
-        bR_bV         = rudder.geometry.bR_bV
-        F_rudder      = 0.5 * q_vt * s.Sv * CLalphav_vt * (
-            rudder.beta_gust + rudder.tau_r * rudder.delta_R * bR_bV
-        )
-        F_thrust_vt_r = 0.5 * propulsion.thrust_cruise_per_prop
+        # Same load model as spar rod; additionally carries hinge torque T_rudder.
         T_rudder      = abs(rudder.hinge_moment.H)
-        M_thrust_ctrl = F_thrust_vt_r * L_vt / 8
-        M_rudder_ctrl = F_rudder      * L_vt / 8
+        M_thrust_ctrl = F_thrust_vt * L_vt
+        M_rudder_ctrl = F_vt_total  * L_vt / 2
         M_control_vt  = np.sqrt(M_thrust_ctrl ** 2 + M_rudder_ctrl ** 2)
         t_control_vt  = i.t_control_vt
 
-        d_control_defl_vt = _d_for_defl_half_cantilever_udl(
-            F_thrust_vt_r + F_rudder, L_vt, E, t_control_vt, i.defl_max
+        d_control_defl_vt = _d_for_defl_cantilever_point(
+            F_thrust_vt + F_vt_total, L_vt, E, t_control_vt, i.defl_max
         )
         d_control_vm_vt = _d_for_von_mises(M_control_vt, T_rudder, sigma_lim, t_control_vt)
         if d_control_defl_vt >= d_control_vm_vt:
@@ -772,24 +782,26 @@ def run(
             d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
             f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_thrust_vt_r + F_rudder, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_cantilever_point(
+                    F_thrust_vt + F_vt_total, L_vt, E, d_cap, i.defl_max
+                ),
                 _t_for_von_mises(M_control_vt, T_rudder, sigma_lim, d_cap),
             ),
         )
-        defl_control_vt = _defl_half_cantilever_udl(
-            F_thrust_vt_r + F_rudder, L_vt, E, _I_tube(t_control_vt, d_control_vt)
+        defl_control_vt = _defl_cantilever_point(
+            F_thrust_vt + F_vt_total, L_vt, E, _I_tube(t_control_vt, d_control_vt)
         )
         mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
 
     else:
         # ---- fallback: thrust load only ----
-        q_vt_fallback = q_structural * i.eta_v
+        # Thrust is a point load at the tip → M = F * L_vt (no division).
         F_vt_rod  = propulsion.thrust_cruise_per_prop
         t_spar_vt = i.t_spar_vt
 
-        M_spar_vt = F_vt_rod * L_vt / 16
+        M_spar_vt = F_vt_rod * L_vt
 
-        d_spar_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_spar_vt, i.defl_max)
+        d_spar_defl_vt = _d_for_defl_cantilever_point(F_vt_rod, L_vt, E, t_spar_vt, i.defl_max)
         d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
         if d_spar_defl_vt >= d_spar_comp_vt:
             d_spar_vt, fail_spar_vt = d_spar_defl_vt, "deflection"
@@ -800,18 +812,18 @@ def run(
             d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
             f"VT spar rod (x/c = {xc_spar_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_cantilever_point(F_vt_rod, L_vt, E, d_cap, i.defl_max),
                 _t_for_stress(M_spar_vt, sigma_lim, d_cap),
             ),
         )
-        defl_spar_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
+        defl_spar_vt = _defl_cantilever_point(F_vt_rod, L_vt, E, _I_tube(t_spar_vt, d_spar_vt))
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
         t_control_vt = i.t_control_vt
 
-        M_control_vt = F_vt_rod * L_vt / 16
+        M_control_vt = F_vt_rod * L_vt
 
-        d_control_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_control_vt, i.defl_max)
+        d_control_defl_vt = _d_for_defl_cantilever_point(F_vt_rod, L_vt, E, t_control_vt, i.defl_max)
         d_control_comp_vt = _d_for_stress(M_control_vt, sigma_lim, t_control_vt)
         if d_control_defl_vt >= d_control_comp_vt:
             d_control_vt, fail_control_vt = d_control_defl_vt, "deflection"
@@ -822,22 +834,14 @@ def run(
             d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
             f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_cantilever_point(F_vt_rod, L_vt, E, d_cap, i.defl_max),
                 _t_for_stress(M_control_vt, sigma_lim, d_cap),
             ),
         )
-        defl_control_vt = _defl_half_cantilever_udl(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
+        defl_control_vt = _defl_cantilever_point(F_vt_rod, L_vt, E, _I_tube(t_control_vt, d_control_vt))
         mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
+        # fits_spar_vt and fits_control_vt already set by _enforce_airfoil_fit above.
 
-    # Geometric fit checks — vertical tail (same airfoil for HT and VT)
-    fits_spar_vt = _check_geometric_fit(
-        d_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
-        f"VT spar rod (x/c = {xc_spar_vt:.3f})"
-    )
-    fits_control_vt = _check_geometric_fit(
-        d_control_vt, section_h_control_vt, i.d_to_section_ratio,
-        f"VT rudder rod (x/c = {x_hinge_vt:.3f})"
-    )
 
     return RodResult(
         inputs=inputs,

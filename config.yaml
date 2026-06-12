@@ -157,13 +157,13 @@ structure:
   safety_factor: 1.2
   defl_max: 0.05
   d_to_section_ratio: 0.8  # [-] hard max rod OD / local airfoil height
-  t_spar: 0.00079375      # [m] minimum wing spar rod wall thickness
-  t_control: 0.0016256    # [m] minimum wing aileron rod wall thickness
-  t_t: 0.0015             # [m] minimum tail boom rod wall thickness
-  t_spar_ht: 0.00079375   # [m] minimum horizontal-tail spar rod wall thickness
-  t_control_ht: 0.0014    # [m] minimum horizontal-tail elevator rod wall thickness
-  t_spar_vt: 0.00079375   # [m] minimum vertical-tail spar rod wall thickness
-  t_control_vt: 0.0016256 # [m] minimum vertical-tail rudder rod wall thickness
+  t_spar: 0.002      # [m] minimum wing spar rod wall thickness
+  t_control: 0.003  # [m] minimum wing aileron rod wall thickness
+  t_t: 0.003            # [m] minimum tail boom rod wall thickness
+  t_spar_ht: 0.001   # [m] minimum horizontal-tail spar rod wall thickness
+  t_control_ht: 0.001    # [m] minimum horizontal-tail elevator rod wall thickness
+  t_spar_vt: 0.001   # [m] minimum vertical-tail spar rod wall thickness
+  t_control_vt: 0.001 # [m] minimum vertical-tail rudder rod wall thickness
   rod_connector_mass: 0.120  # [kg] mass per rod connector (3 total)
   tail_tc: 0.10
 
