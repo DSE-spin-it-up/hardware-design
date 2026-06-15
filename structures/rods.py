@@ -763,10 +763,14 @@ def run(
         M_thrust_spar = F_thrust_vt * L_vt
         M_fin_spar    = F_vt_total  * L_vt / 2
         M_spar_vt     = np.sqrt(M_thrust_spar ** 2 + M_fin_spar ** 2)
+        # Tip deflection components also act in perpendicular planes. Convert
+        # the side-force UDL to the point-load equivalent that gives the same
+        # cantilever tip deflection: F_eq*L^3/(3EI) = F_udl*L^3/(8EI).
+        F_defl_vt     = np.sqrt(F_thrust_vt ** 2 + (3.0 * F_vt_total / 8.0) ** 2)
         t_spar_vt     = i.t_spar_vt
 
         d_spar_defl_vt = _d_for_defl_cantilever_point(
-            F_thrust_vt + F_vt_total, L_vt, E, t_spar_vt, i.defl_max
+            F_defl_vt, L_vt, E, t_spar_vt, i.defl_max
         )
         d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
         if d_spar_defl_vt >= d_spar_comp_vt:
@@ -779,13 +783,13 @@ def run(
             f"VT spar rod (x/c = {xc_spar_vt:.3f})",
             lambda d_cap: max(
                 _t_for_defl_cantilever_point(
-                    F_thrust_vt + F_vt_total, L_vt, E, d_cap, i.defl_max
+                    F_defl_vt, L_vt, E, d_cap, i.defl_max
                 ),
                 _t_for_stress(M_spar_vt, sigma_lim, d_cap),
             ),
         )
         defl_spar_vt = _defl_cantilever_point(
-            F_thrust_vt + F_vt_total, L_vt, E, _I_tube(t_spar_vt, d_spar_vt)
+            F_defl_vt, L_vt, E, _I_tube(t_spar_vt, d_spar_vt)
         )
         mass_spar_vt = _tube_mass(L_vt, d_spar_vt, t_spar_vt, rho_mat)
 
@@ -798,7 +802,7 @@ def run(
         t_control_vt  = i.t_control_vt
 
         d_control_defl_vt = _d_for_defl_cantilever_point(
-            F_thrust_vt + F_vt_total, L_vt, E, t_control_vt, i.defl_max
+            F_defl_vt, L_vt, E, t_control_vt, i.defl_max
         )
         d_control_comp_vt = _d_for_stress(M_control_vt, sigma_lim, t_control_vt)
         if d_control_defl_vt >= d_control_comp_vt:
@@ -811,13 +815,13 @@ def run(
             f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
             lambda d_cap: max(
                 _t_for_defl_cantilever_point(
-                    F_thrust_vt + F_vt_total, L_vt, E, d_cap, i.defl_max
+                    F_defl_vt, L_vt, E, d_cap, i.defl_max
                 ),
                 _t_for_stress(M_control_vt, sigma_lim, d_cap),
             ),
         )
         defl_control_vt = _defl_cantilever_point(
-            F_thrust_vt + F_vt_total, L_vt, E, _I_tube(t_control_vt, d_control_vt)
+            F_defl_vt, L_vt, E, _I_tube(t_control_vt, d_control_vt)
         )
         mass_control_vt = _tube_mass(L_vt, d_control_vt, t_control_vt, rho_mat)
 

@@ -418,15 +418,38 @@ def print_final_drag(result: PipelineResult) -> None:
     print(f"  Total mass   : {result.masses['total']:.4f}  kg")
     print(f"  Total energy : {result.propulsion.E_total / 3600.0:.2f}  Wh")
     _print_vehicle_block(result)
-    return
 
     tl = result.tail_loading
-    total = result.cd_full_buildup
-    print(f"\nFull-buildup CD                       : {total:.5f}")
-    print(f"  CD0 (buildup)                       : {result.drag.CD0:.5f}  ({result.drag.CD0 / total:6.2%})")
-    print(f"  CD_i  (LLT, wing)                   : {result.llt.CD_i:.5f}  ({result.llt.CD_i / total:6.2%})")
-    print(f"  CD_i  (LLT, tail, S_w ref)          : {result.cd_i_tail:.5f}  ({result.cd_i_tail / total:6.2%})")
-    print(f"  CD_payload                          : {result.cd_payload:.5f}  ({result.cd_payload / total:6.2%})")
+    total_cd = result.cd_full_buildup
+    qS = result.sizing.q_cruise * result.sizing.Sw
+    total_drag = total_cd * qS
+
+    def print_drag_line(label: str, cd: float) -> None:
+        pct = cd / total_cd if total_cd > 0.0 else 0.0
+        print(f"  {label:<34}: CD={cd:.5f}  D={cd * qS:8.3f} N  ({pct:6.2%})")
+
+    print("\n========== CRUISE DRAG OPERATING POINT ==========")
+    print(f"  V_cruise                            : {result.sizing.inputs.V_cruise:.2f} m/s")
+    print(f"  rho                                 : {result.sizing.rho:.4f} kg/m^3")
+    print(f"  q                                   : {result.sizing.q_cruise:.3f} Pa")
+    print(f"  S_ref                               : {result.sizing.Sw:.4f} m^2")
+    print(f"  q*S_ref                             : {qS:.3f} N")
+    print(f"  Operating CL                        : {result.cl_req:.5f}")
+    print_drag_line("CD0 wing", result.drag.CD0_wing)
+    print_drag_line("CD0 horizontal tail", result.drag.CD0_tail_h)
+    print_drag_line("CD0 vertical tail", result.drag.CD0_tail_v)
+    print_drag_line("CD0 fuselage", result.drag.CD0_fus)
+    print_drag_line("CD0 tail boom", result.drag.CD0_boom)
+    print_drag_line("CD0 subtotal", result.drag.CD0)
+    print_drag_line("Wing induced", result.llt.CD_i)
+    print_drag_line("Tail induced, S_w ref", result.cd_i_tail)
+    print_drag_line("Payload", result.cd_payload)
+    print(f"  {'TOTAL cruise drag':<34}: CD={total_cd:.5f}  D={total_drag:8.3f} N  (100.00%)")
+    print(
+        f"  {'Propulsion thrust demand':<34}: "
+        f"{result.propulsion.thrust_cruise_per_prop * result.propulsion.inputs.n_props:8.3f} N"
+    )
+
     print(f"Tail trim (with elevator/downwash trim):")
     print(f"  CL_tail required (trim)             : {tl['CL_tail']:+.4f}")
     print(f"  e_tail                              : {tl['e_tail']:.4f}")
