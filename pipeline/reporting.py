@@ -83,6 +83,10 @@ def _fmt_mass(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:.4f}  kg"
 
 
+def _fmt_area(label: str, value: float, width: int = 28) -> str:
+    return f"  {label:<{width}}: {value:.4f}  m^2"
+
+
 def _fmt_cg(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:+8.4f}  m"
 
@@ -257,6 +261,16 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("Rod connectors (3x)",  masses.get('rod_connectors', 0.0)))
 
     print("  --- Glass sheet ---")
+    gfrp_thickness_mm = float(sizing.inputs.glass_sheet_thickness_mm)
+    gfrp_area_wing = 2.0 * sizing.Sw
+    gfrp_area_tail_h = 2.0 * sizing.Sh
+    gfrp_area_tail_v = 2.0 * sizing.Sv
+    gfrp_area_total = gfrp_area_wing + gfrp_area_tail_h + gfrp_area_tail_v
+    print(f"  {'GFRP thickness':<28}: {gfrp_thickness_mm:.2f}  mm")
+    print(_fmt_area("GFRP area (wing)",     gfrp_area_wing))
+    print(_fmt_area("GFRP area (HT)",       gfrp_area_tail_h))
+    print(_fmt_area("GFRP area (VT)",       gfrp_area_tail_v))
+    print(_fmt_area("GFRP area (total)",    gfrp_area_total))
     print(_fmt_mass("Glass sheet (wing)",   masses.get('glass_sheet_wing',   0.0)))
     print(_fmt_mass("Glass sheet (HT)",     masses.get('glass_sheet_tail_h', 0.0)))
     print(_fmt_mass("Glass sheet (VT)",     masses.get('glass_sheet_tail_v', 0.0)))
