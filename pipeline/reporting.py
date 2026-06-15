@@ -83,6 +83,10 @@ def _fmt_mass(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:.4f}  kg"
 
 
+def _fmt_area(label: str, value: float, width: int = 28) -> str:
+    return f"  {label:<{width}}: {value:.4f}  m^2"
+
+
 def _fmt_cg(label: str, value: float, width: int = 28) -> str:
     return f"  {label:<{width}}: {value:+8.4f}  m"
 
@@ -261,6 +265,17 @@ def print_main_summary(result: PipelineResult) -> None:
     print(_fmt_mass("Glass sheet (HT)",     masses.get('glass_sheet_tail_h', 0.0)))
     print(_fmt_mass("Glass sheet (VT)",     masses.get('glass_sheet_tail_v', 0.0)))
     print(_fmt_mass("Glass sheet (total)",  masses.get('glass_sheet',        0.0)))
+    wing_sheet_area = 2.0 * sizing.Sw
+    hor_tail_sheet_area = 2.0 * sizing.Sh
+    ver_tail_sheet_area = 2.0 * sizing.Sv
+    print(f"  {'GFRP thickness':<28}: {sizing.inputs.glass_sheet_thickness_mm:.3f}  mm")
+    print(_fmt_area("GFRP surface area (wing)", wing_sheet_area))
+    print(_fmt_area("GFRP surface area (HT)", hor_tail_sheet_area))
+    print(_fmt_area("GFRP surface area (VT)", ver_tail_sheet_area))
+    print(_fmt_area(
+        "GFRP surface area (total)",
+        wing_sheet_area + hor_tail_sheet_area + ver_tail_sheet_area,
+    ))
 
     print("  --- Other ---")
     print(_fmt_mass("Servos (total)",       masses.get('servos', 0.0)))
