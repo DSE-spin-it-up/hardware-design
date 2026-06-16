@@ -32,6 +32,11 @@ def _print_rib_checks(result: PipelineResult) -> None:
         label = str(check["name"]).replace("_", " ").title()
         print(f"  {label} ribs ({int(check['count'])}x):")
         print(
+            f"    Minimum rectangle    : {check['bbox_width'] * 1e3:.2f} x "
+            f"{check['bbox_height'] * 1e3:.2f}  mm"
+        )
+        print(f"    Rib thickness        : {check['thickness'] * 1e3:.2f}  mm")
+        print(
             f"    Thrust tension       : {check['tension_stress'] / 1e6:.2f} / "
             f"{check['tension_allowable'] / 1e6:.2f} MPa  "
             f"{_ok_marker(bool(check['tension_ok']))}"

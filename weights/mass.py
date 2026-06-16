@@ -291,6 +291,8 @@ def _rib_geometry(
     y_offset = -float(np.min(polygon[:, 1]))
     polygon[:, 1] += y_offset
     area, x_centroid, y_centroid, ixx_side = _polygon_area_centroid_ixx(polygon)
+    bbox_width = float(np.max(polygon[:, 0]) - np.min(polygon[:, 0]))
+    bbox_height = float(np.max(polygon[:, 1]) - np.min(polygon[:, 1]))
 
     _, x_spar_frac = airfoil.compute_maximum_thickness()
     x_samples = np.linspace(
@@ -315,6 +317,8 @@ def _rib_geometry(
         "front_tension_area": front_tension_area,
         "x_spar_frac": float(x_spar_frac),
         "min_front_height": min_front_height,
+        "bbox_width": bbox_width,
+        "bbox_height": bbox_height,
     }
 
 
@@ -392,6 +396,8 @@ def rib_checks(
             "combined_ok": sigma_vm <= mat.Y,
             "min_front_height": rib["min_front_height"],
             "x_spar_frac": rib["x_spar_frac"],
+            "bbox_width": rib["bbox_width"],
+            "bbox_height": rib["bbox_height"],
         }
 
     return (
