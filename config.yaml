@@ -72,7 +72,7 @@ sizing:
 
 # ----- Propulsion -----
 propulsion:
-  csv_prop: data\14x10E_performance.csv
+  csv_prop: data\12x8E_performance.csv
   n_props: 3
   prop_mass: 0.1
   eff_motor: 0.8
