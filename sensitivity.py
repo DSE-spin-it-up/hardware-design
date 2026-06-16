@@ -15,6 +15,7 @@ sweep, or `python sensitivity.py --list` to see the available sweeps.
 from __future__ import annotations
 
 import argparse
+import re
 
 import numpy as np
 from pathlib import Path
@@ -36,9 +37,13 @@ V_CRUISE = [15, 17.5, 20, 22.5, 25]                         # [m/s]
 RANGE_M = [10_000, 15_000, 20_000, 25_000, 30_000]     # [m]
 
 
-def _prop_label(path: str) -> str:
-    """`data/14x10E_performance.csv` -> `14x10E`."""
-    return Path(path).stem.replace("_performance", "")
+def _prop_diameter_in(path: str) -> float:
+    """`data/14x10E_performance.csv` -> `14.0`."""
+    label = Path(path).stem.replace("_performance", "")
+    match = re.match(r"(?P<diameter>\d+(?:\.\d+)?)x", label)
+    if not match:
+        raise ValueError(f"Could not parse propeller diameter from {path!r}")
+    return float(match.group("diameter"))
 
 
 # ----- Sweep registry -----
@@ -70,10 +75,9 @@ SWEEPS: dict[str, dict] = {
     "props": dict(
         variable="csv_prop",
         values=CSV_PROPS,
-        xlabel="Propeller",
+        xlabel="Propeller diameter  [in]",
         title="Sensitivity to propeller",
-        categorical=True,
-        x_transform=lambda xs: [_prop_label(p) for p in xs],
+        x_transform=lambda xs: [_prop_diameter_in(p) for p in xs],
     ),
 }
 
