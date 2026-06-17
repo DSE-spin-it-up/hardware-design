@@ -111,8 +111,14 @@ class ElevatorResult:
     Cm_thrust_total: float
     driving_constraint: str
     bE_bh_required: float
+    bE_bh_disturbance: float
+    bE_bh_payload: float
+    bE_bh_gust: float
     bE_bh_stall_limit: float
     Cm_payload:     float
+    Cm_gust:        float
+    gust_speed:     float
+    gust_case_speed: float
     payload_cable:  PayloadCableResult
     y_cg:           dict[str, float]
     alpha:          float   # wing cruise AoA [rad]
@@ -442,17 +448,43 @@ def run(
         control_power * delta_e_max
     )
     bE_bh_payload = max(bE_bh_payload_up, bE_bh_payload_down)
-    driving_constraint = "payload" if bE_bh_payload > bE_bh_dist else "disturbance"
+    gust_speed = max(float(s.inputs.gust_speed), 0.0)
+    gust_cases: list[tuple[float, float, float]] = []
+    for V_case in (
+        max(s.inputs.V_cruise - gust_speed, 1.0e-6),
+        s.inputs.V_cruise + gust_speed,
+    ):
+        q_ratio = (V_case / s.inputs.V_cruise) ** 2
+        dCm_wing = (q_ratio - 1.0) * Cm_wing_body
+        Cm_tail_required = -dCm_wing
+        if Cm_tail_required >= 0.0:
+            bE_bh_case = Cm_tail_required / (
+                control_power * q_ratio * delta_e_max
+            )
+        else:
+            bE_bh_case = -Cm_tail_required / (
+                control_power * q_ratio * delta_e_down
+            )
+        gust_cases.append((float(bE_bh_case), float(abs(Cm_tail_required)), float(V_case)))
+    bE_bh_gust, Cm_gust, gust_case_speed = max(gust_cases, key=lambda case: case[0])
+
+    constraint_requirements = {
+        "disturbance": bE_bh_dist,
+        "payload": bE_bh_payload,
+        "airspeed_gust": bE_bh_gust,
+    }
+    driving_constraint = max(constraint_requirements, key=constraint_requirements.get)
     bE_bh_required = max(
         bE_bh_dist,
         bE_bh_payload,
+        bE_bh_gust,
     )
 
     if bE_bh_required > 1.0:
         raise ValueError(
             f"Elevator sizing failed: required bE/bh = {bE_bh_required:.3f} > 1.0.\n"
-            "The full tail span is insufficient to counteract Cm_dist.\n"
-            "Consider increasing cE/ch, increasing tail volume, or reducing Cm_dist."
+            f"The full tail span is insufficient for the {driving_constraint} constraint.\n"
+            "Consider increasing cE/ch, increasing tail volume, or reducing the active demand."
         )
 
     CLh_cruise = CLalphah * alpha_h
@@ -518,9 +550,15 @@ def run(
         Cm_thrust_back  = Cm_thrust_back,
         Cm_thrust_total = Cm_thrust,
         Cm_payload      = Cm_payload,
+        Cm_gust         = Cm_gust,
+        gust_speed      = gust_speed,
+        gust_case_speed = gust_case_speed,
         payload_cable   = payload_cable,
         driving_constraint = driving_constraint,
         bE_bh_required  = bE_bh_required,
+        bE_bh_disturbance = bE_bh_dist,
+        bE_bh_payload   = bE_bh_payload,
+        bE_bh_gust      = bE_bh_gust,
         bE_bh_stall_limit = bE_bh_stall_limit,
         alpha           = alpha,
         epsilon         = epsilon,
@@ -597,6 +635,12 @@ def summary(r: ElevatorResult) -> None:
     print("\n----- Elevator Sizing Driver -----")
     print(f"  Active constraint         : {r.driving_constraint}")
     print(f"  Required bE/bh            : {r.bE_bh_required:.4f}")
+    print(f"    disturbance bE/bh       : {r.bE_bh_disturbance:.4f}")
+    print(f"    payload bE/bh           : {r.bE_bh_payload:.4f}")
+    print(f"    airspeed gust bE/bh     : {r.bE_bh_gust:.4f}")
+    print(f"  Airspeed gust             : +/-{r.gust_speed:.2f} m/s")
+    print(f"  Governing gust speed      : {r.gust_case_speed:.2f} m/s")
+    print(f"  Gust tail moment demand   : {r.Cm_gust:+.5f}")
     print(f"  Stall-limited max bE/bh   : not applied")
     print("----- Elevator Sensitivity -----")
     print("  Sensitivity inputs:")

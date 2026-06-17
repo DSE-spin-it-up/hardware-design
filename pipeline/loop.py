@@ -1325,6 +1325,8 @@ def run_pipeline(config) -> PipelineResult:
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
         total_thrust=final_propulsion.thrust_cruise_per_prop * final_propulsion.inputs.n_props,
+        y_cg=y_cg,
+        payload_max_tension=config.PAYLOAD_MAX_TENSION,
     )
 
     # ----- Step 7b: recompute tail drag at trimmed CL_tail -----
@@ -1697,6 +1699,8 @@ def run_pipeline(config) -> PipelineResult:
                 final_state["propulsion"].thrust_cruise_per_prop
                 * final_state["propulsion"].inputs.n_props
             ),
+            y_cg=final_state["y_cg"],
+            payload_max_tension=config.PAYLOAD_MAX_TENSION,
         )
         sv_old = sizing.Sv
         if abs(rudder_area_req.Sv - sv_old) <= max(1.0e-6, 1.0e-5 * sv_old):
@@ -1758,6 +1762,8 @@ def run_pipeline(config) -> PipelineResult:
         sizing, scissor, p.fus, config.V_STALL, config.RUDDER,
         x_cg=p.cg["overall"],
         total_thrust=final_propulsion.thrust_cruise_per_prop * final_propulsion.inputs.n_props,
+        y_cg=y_cg,
+        payload_max_tension=config.PAYLOAD_MAX_TENSION,
     )
 
     # ----- Step 10: torsion check + physics-based VT rod sizing -----
