@@ -14,7 +14,7 @@ Procedure
 5.  Compute all stability/control derivatives and rudder hinge moment at cruise q
     and max deflection for boom torsion sizing.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 from scipy.optimize import fsolve
@@ -36,7 +36,7 @@ from sizing.wing import SizingResult
 @dataclass
 class RudderInputs:
     """Fixed design parameters — set by the designer, never overwritten."""
-    bR_bV:              float = 1.00   # rudder span  / vertical-tail span  [-] (designer choice)
+    bR_bV:              float | None = 1.00  # rudder span / vertical-tail span [-]; None -> solve it
     cR_cV:              float = 0.40   # rudder chord / vertical-tail chord [-] (designer choice)
     max_deflection_deg: float = 30.0   # hard deflection limit [deg]
     Cn_dist:            float = 0.10   # max yaw-moment disturbance the rudder must
@@ -173,8 +173,6 @@ def _requirement_for_area(
 
     delta_R_max = np.radians(i.max_deflection_deg)
     tau_r       = tau_from_chord_ratio(i.cR_cV)
-    SR_SV       = i.cR_cV * i.bR_bV
-
     oei_failed_thrust = (
         (s.D if total_thrust is None else float(total_thrust))
         * i.oei_failed_thrust_fraction
@@ -210,7 +208,8 @@ def _requirement_for_area(
     )
     bR_bV_required = max(float(bR_bV_force), float(bR_bV_moment))
 
-    bR_bV_check    = min(max(i.bR_bV, 0.0), 1.0)
+    bR_bV_input    = 1.0 if i.bR_bV is None else i.bR_bV
+    bR_bV_check    = min(max(bR_bV_input, 0.0), 1.0)
     cy_available   = cy_fin + cy_rudder_per_b2 * bR_bV_check ** 2
     cn_available   = cn_fin + cn_rudder_per_b  * bR_bV_check
     cn_rudder_available = cn_rudder_per_b * bR_bV_check
@@ -251,7 +250,7 @@ def minimum_vertical_tail_area(
     """
     if inputs is None:
         inputs = RudderInputs()
-    if not (0.0 < inputs.bR_bV <= 1.0):
+    if inputs.bR_bV is not None and not (0.0 < inputs.bR_bV <= 1.0):
         raise ValueError("rudder.bR_bV must satisfy 0 < bR_bV <= 1.")
     if not (0.0 < inputs.cR_cV < 1.0):
         raise ValueError("rudder.cR_cV must satisfy 0 < cR_cV < 1.")
@@ -265,6 +264,60 @@ def minimum_vertical_tail_area(
         raise ValueError("rudder.Cn_beta must be non-negative.")
     lo = max(1.0e-6, 1.0e-6 * sizing.Sw)
     hi = max(sizing.Sv, lo * 2.0)
+
+    if inputs.bR_bV is None:
+        # Auto-span mode: keep vertical-tail area tied only to Cn_beta, then
+        # solve the rudder span ratio needed for force/yaw authority at that Sv.
+        for _ in range(60):
+            req_hi = _requirement_for_area(
+                sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
+            )
+            if req_hi.Cnb >= inputs.Cn_beta:
+                break
+            hi *= 2.0
+        else:
+            raise ValueError(
+                "Could not find a vertical-tail area that satisfies "
+                f"Cn_beta={inputs.Cn_beta:.3f}."
+            )
+
+        best = _requirement_for_area(
+            sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
+        )
+        for _ in range(80):
+            mid     = 0.5 * (lo + hi)
+            req_mid = _requirement_for_area(
+                sizing, fus, v_stall, inputs, x_cg, mid, total_thrust,
+            )
+            if req_mid.Cnb >= inputs.Cn_beta:
+                hi   = mid
+                best = req_mid
+            else:
+                lo = mid
+
+        if best.bR_bV_required > 1.0 + 1.0e-9:
+            raise ValueError(
+                "Cn_beta-only vertical-tail area is too small for the rudder "
+                "requirements: required bR/bV="
+                f"{best.bR_bV_required:.3f} > 1.000. Increase Cn_beta, "
+                "rudder chord ratio, or max deflection."
+            )
+
+        bR_bV_solved = min(max(best.bR_bV_required, 0.0), 1.0)
+        best = _requirement_for_area(
+            sizing,
+            fus,
+            v_stall,
+            replace(inputs, bR_bV=bR_bV_solved),
+            x_cg,
+            best.Sv,
+            total_thrust,
+        )
+        best.bR_bV_required = bR_bV_solved
+        best.cnbeta_margin = best.Cnb - inputs.Cn_beta
+        if best.Cnb < inputs.Cn_beta + 1e-9:
+            best.active_constraint = "cn_beta"
+        return best
 
     # Expand upper bound until the configured rudder is sufficient
     for _ in range(60):
@@ -346,6 +399,7 @@ def run(
         sizing, fus, v_stall, i, x_cg=x_cg, total_thrust=total_thrust,
     )
     Sv_min   = area_req.Sv
+    bR_bV_design = area_req.bR_bV_required if i.bR_bV is None else i.bR_bV
 
     # ------------------------------------------------------------------
     # 2. Recompute all tail geometry at Sv_min
@@ -382,9 +436,9 @@ def run(
     Cyb  = -i.Kf2 * CLalphav * i.eta_v * Sv_min / S
     Cnb  =  i.Kf1 * CLalphav * i.eta_v * Sv_min * lv / (b * S)
 
-    SR_SV = i.cR_cV * i.bR_bV
-    Cndr  = -CLalphav * Vv             * i.eta_v * tau_r * i.bR_bV
-    Cydr  =  CLalphav * i.eta_v * tau_r * i.bR_bV * SR_SV
+    SR_SV = i.cR_cV * bR_bV_design
+    Cndr  = -CLalphav * Vv             * i.eta_v * tau_r * bR_bV_design
+    Cydr  =  CLalphav * i.eta_v * tau_r * bR_bV_design * SR_SV
 
     # ------------------------------------------------------------------
     # 5. Weathercock sideslip σ at Sv_min with configured rudder
@@ -403,11 +457,11 @@ def run(
     # 6. Rudder geometry at Sv_min
     # ------------------------------------------------------------------
     c_v      = Sv_min / bv
-    S_rudder = i.cR_cV * i.bR_bV * Sv_min
+    S_rudder = i.cR_cV * bR_bV_design * Sv_min
     c_rudder = i.cR_cV * c_v
 
     geometry = RudderGeometry(
-        bR_bV    = i.bR_bV,
+        bR_bV    = bR_bV_design,
         cR_cV    = i.cR_cV,
         SR_SV    = SR_SV,
         S_rudder = S_rudder,
@@ -463,16 +517,18 @@ def summary(r: RudderResult) -> None:
     g  = r.geometry
     i  = r.inputs
     hm = r.hinge_moment
-    Vv     = abs(r.Cndr) / (r.CLalphav * i.eta_v * r.tau_r * g.bR_bV)
+    Vv     = r.Cnb / (i.Kf1 * r.CLalphav * i.eta_v)
     Sv_S   = -r.Cyb / (i.Kf2 * r.CLalphav * i.eta_v)
     lv_b   = Vv / Sv_S if Sv_S > 0.0 else float("nan")
 
-    print("  Vertical tail (sized by rudder)")
+    vt_basis = "Cn_beta" if i.bR_bV is None else "rudder"
+    bR_basis = "solved" if i.bR_bV is None else "designer input"
+    print(f"  Vertical tail (sized by {vt_basis})")
     print(f"    Sv_required               : {g.Sv:.4f}  m^2")
     print(f"    bv                        : {g.bv:.4f}  m")
     print("  Rudder geometry")
     print(f"    cR/cV                     : {g.cR_cV:.4f}  (designer input)")
-    print(f"    bR/bV                     : {g.bR_bV:.4f}  (designer input)")
+    print(f"    bR/bV                     : {g.bR_bV:.4f}  ({bR_basis})")
     print(f"    required bR/bV            : {r.bR_bV_required:.4f}")
     print(f"    tau_r                     : {r.tau_r:.4f}")
     print(f"    SR/SV                     : {g.SR_SV:.4f}")

@@ -80,7 +80,10 @@ PROPULSION = PropulsionInputs(**_data["propulsion"])
 FUSELAGE = FuselageInputs(**_data["fuselage"])
 CONTROL_SURFACE = AileronInputs(**_data["control_surface"])
 ELEVATOR = ElevatorInputs(**_data.get("elevator", {}))
-RUDDER = RudderInputs(**_data.get("rudder", {}))
+_rudder_data = dict(_data.get("rudder", {}))
+if "bR_bV" not in _rudder_data:
+    _rudder_data["bR_bV"] = None
+RUDDER = RudderInputs(**_rudder_data)
 STRUCTURE = RodInputs(**_data["structure"], material=MATERIALS.rod)
 RIBS = RibInputs(**_data.get("ribs", {}))
 
