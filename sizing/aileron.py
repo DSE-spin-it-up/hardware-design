@@ -56,14 +56,12 @@ def chord_at_y_frac(c_root: float, lam: float):
 
 
 def tau_from_ratio(c_aileron_to_c_wing: float) -> float:
-    """Aileron effectiveness τ from chord ratio (piecewise empirical fit)."""
-    if c_aileron_to_c_wing > 0.7:
+    """Aileron effectiveness τ from chord ratio (polynomial empirical fit)."""
+    if not (0.0 < c_aileron_to_c_wing < 0.7):
         raise ValueError(
-            f"c_aileron/c_wing = {c_aileron_to_c_wing} is too high (>0.7)."
+            f"c_aileron/c_wing = {c_aileron_to_c_wing} is outside valid range (0, 0.7)."
         )
-    if c_aileron_to_c_wing < 0.2:
-        return 2 * c_aileron_to_c_wing
-    return 0.4 + (0.4 / 0.5) * c_aileron_to_c_wing
+    return float(np.polyval([-6.624, 12.07, -8.292, 3.295, 0.004942], c_aileron_to_c_wing))
 
 
 def compute_cl_da(
