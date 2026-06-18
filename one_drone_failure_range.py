@@ -140,7 +140,7 @@ def plot_range(result, best: FailurePoint, *, output: str | None, show: bool) ->
     )
     ax.set_xlabel("Three-drone cruise progress [km]")
     ax.set_ylabel("Two-drone failure-cruise range [km]")
-    ax.set_title("One-drone-failure recovery range vs nominal cruise progress")
+
     ax.set_xlim(0.0, mission_km)
     ax.set_ylim(bottom=0.0)
     ax.grid(True, alpha=0.3)

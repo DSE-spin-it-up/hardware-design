@@ -155,7 +155,10 @@ rudder:
 # ----- CFRP rod sizing -----
 structure:
   safety_factor: 1.2
-  defl_max: 0.05
+  defl_max: 0.05  # [m] maximum tail-boom tip deflection
+  wing_tip_deflection_pct_semispan: 3.3333333333333335 # [%] max wing-tip deflection / wing semi-span
+  horizontal_tail_tip_deflection_pct_semispan: 3.3333333333333335 # [%] max horizontal-tail-tip deflection / horizontal-tail semi-span
+  vertical_tail_tip_deflection_pct_span: 3.3333333333333335 # [%] max vertical-tail-tip deflection / vertical-tail span
   d_to_section_ratio: 0.8  # [-] hard max rod OD / local airfoil height
   t_spar: 0.002      # [m] minimum wing spar rod wall thickness
   t_control: 0.003  # [m] minimum wing aileron rod wall thickness
