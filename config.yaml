@@ -139,8 +139,8 @@ elevator:
 
 # ----- Rudder -----
 rudder:
-  bR_bV: 0.8 # [-] rudder span / vertical-tail span
-  cR_cV: 0.2  # [-] rudder chord / vertical-tail chord
+  bR_bV:  # [-] rudder span / vertical-tail span
+  cR_cV: 0.4  # [-] rudder chord / vertical-tail chord
   max_deflection_deg: 30 # [deg] maximum rudder deflection
   front_prop_lateral_position: 0.33204 #[m] lateral arm of failed front prop for OEI yaw sizing
   oei_failed_thrust_fraction: 0.3333333333333333  # [-] failed thrust / total drone thrust
