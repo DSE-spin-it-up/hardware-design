@@ -155,7 +155,10 @@ rudder:
 # ----- CFRP rod sizing -----
 structure:
   safety_factor: 1.2
-  defl_max: 0.05
+  defl_max: 0.05  # [m] fallback/tail-boom max tip deflection
+  wing_tip_deflection_percent: 3.3333333333333335  # [%] max wing-tip deflection / wing semispan
+  horizontal_tail_tip_deflection_percent: 3.3333333333333335  # [%] max HT-tip deflection / HT semispan
+  vertical_tail_tip_deflection_percent: 3.3333333333333335  # [%] max VT-tip deflection / VT full span
   d_to_section_ratio: 0.8  # [-] hard max rod OD / local airfoil height
   t_t: 0.0015          # [m] minimum tail boom wall thickness
   rod_connector_mass: 0.120  # [kg] mass per rod connector (3 total)
