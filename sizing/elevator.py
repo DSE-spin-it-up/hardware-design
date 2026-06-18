@@ -130,9 +130,12 @@ class ElevatorResult:
 # ---------------------------------------------------------------------------
 
 def tau_from_chord_ratio(cf_c: float) -> float:
-    """Control-surface effectiveness τ from chord ratio cf/c (empirical fit)."""
+    """Aileron effectiveness τ from chord ratio cf/c (empirical polynomial fit)."""
+    if not (0.0 < cf_c < 0.7):
+        raise ValueError(
+            f"cf/c = {cf_c:.3f} out of valid range (0, 0.7)."
+        )
     return float(np.polyval([-6.624, 12.07, -8.292, 3.295, 0.004942], cf_c))
-
 
 def compute_payload_cable(
     sizing: SizingResult,
