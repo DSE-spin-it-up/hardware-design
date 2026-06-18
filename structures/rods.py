@@ -68,7 +68,10 @@ from propulsion.sizing import PropulsionResult
 class RodInputs:
     material: CFRP = field(default_factory=CFRP)
     safety_factor: float = 1.2
-    defl_max: float = 0.05            # [m] max tip deflection
+    defl_max: float = 0.05            # [m] max tail-boom tip deflection
+    wing_tip_deflection_pct_semispan: float = 3.3333333333333335
+    horizontal_tail_tip_deflection_pct_semispan: float = 3.3333333333333335
+    vertical_tail_tip_deflection_pct_span: float = 3.3333333333333335
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
@@ -134,6 +137,9 @@ class RodResult:
     F_tail_structural: float = 0.0
     V_tail_structural: float = 0.0
     q_tail_structural: float = 0.0
+    defl_max_wing: float = 0.0
+    defl_max_ht: float = 0.0
+    defl_max_vt: float = 0.0
     # Tail rod torsion results (populated by apply_torsion_check)
     tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
     sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
@@ -239,6 +245,14 @@ def _t_for_stress(M: float, sigma_lim: float, d: float) -> float:
 def _t_for_von_mises(M: float, T: float, sigma_allow: float, d: float) -> float:
     numerator = np.sqrt(16 * M ** 2 + 12 * T ** 2)
     return numerator / (np.pi * d ** 2 * sigma_allow)
+
+
+def _deflection_limit_from_percent(percent: float, reference_length: float, name: str) -> float:
+    if percent <= 0.0:
+        raise ValueError(f"{name} must be positive.")
+    if reference_length <= 0.0:
+        raise ValueError(f"{name} reference length must be positive.")
+    return percent / 100.0 * reference_length
 
 
 def _defl_half_cantilever_udl(
@@ -540,6 +554,11 @@ def run(
     q_structural = 0.5 * s.rho * V_structural ** 2
     L_lift = s.CL_one_drone_failure * q_structural * s.Sw
     b_w = si.b
+    defl_max_wing = _deflection_limit_from_percent(
+        i.wing_tip_deflection_pct_semispan,
+        b_w / 2.0,
+        "structure.wing_tip_deflection_pct_semispan",
+    )
 
     # ------------------------------------------------------------------ #
     # Spar rod — at max-thickness x/c                                     #
@@ -550,7 +569,7 @@ def run(
 
     M_spar = L_lift * b_w / 16   # half-cantilever UDL max bending moment
 
-    d_spar_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_spar, i.defl_max)
+    d_spar_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_spar, defl_max_wing)
     d_spar_comp = _d_for_stress(M_spar, sigma_lim, t_spar)
     if d_spar_defl >= d_spar_comp:
         d_spar, fail_spar = d_spar_defl, "deflection"
@@ -561,7 +580,7 @@ def run(
         d_spar, t_spar, section_h_spar, i.d_to_section_ratio,
         f"Wing spar rod (x/c = {xc_spar:.3f})",
         lambda d_cap: max(
-            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, i.defl_max),
+            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, defl_max_wing),
             _t_for_stress(M_spar, sigma_lim, d_cap),
         ),
     )
@@ -577,7 +596,7 @@ def run(
     section_h_aileron = s.c_root * tc_aileron
     t_control = i.t_control
 
-    d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_control, i.defl_max)
+    d_ail_defl = _d_for_defl_half_cantilever_udl(L_lift, b_w, E, t_control, defl_max_wing)
     d_ail_comp = _d_for_stress(M_spar, sigma_lim, t_control)
     if d_ail_defl >= d_ail_comp:
         d_aileron, fail_aileron = d_ail_defl, "deflection"
@@ -588,7 +607,7 @@ def run(
         d_aileron, t_control, section_h_aileron, i.d_to_section_ratio,
         f"Wing aileron rod (x/c = {x_hinge:.3f})",
         lambda d_cap: max(
-            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, i.defl_max),
+            _t_for_defl_half_cantilever_udl(L_lift, b_w, E, d_cap, defl_max_wing),
             _t_for_stress(M_spar, sigma_lim, d_cap),
         ),
     )
@@ -635,12 +654,17 @@ def run(
     section_h_spar_ht = c_root_ht * tc_spar_ht
 
     L_ht      = s.bh
+    defl_max_ht = _deflection_limit_from_percent(
+        i.horizontal_tail_tip_deflection_pct_semispan,
+        L_ht / 2.0,
+        "structure.horizontal_tail_tip_deflection_pct_semispan",
+    )
     F_ht_rod  = F_tail / 2
     t_spar_ht = i.t_spar
 
     M_spar_ht = F_ht_rod * L_ht / 16
 
-    d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, i.defl_max)
+    d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, defl_max_ht)
     d_spar_comp_ht = _d_for_stress(M_spar_ht, sigma_lim, t_spar_ht)
     if d_spar_defl_ht >= d_spar_comp_ht:
         d_spar_ht, fail_spar_ht = d_spar_defl_ht, "deflection"
@@ -651,7 +675,7 @@ def run(
         d_spar_ht, t_spar_ht, section_h_spar_ht, i.d_to_section_ratio,
         f"HT spar rod (x/c = {xc_spar_ht:.3f})",
         lambda d_cap: max(
-            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, i.defl_max),
+            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, defl_max_ht),
             _t_for_stress(M_spar_ht, sigma_lim, d_cap),
         ),
     )
@@ -669,7 +693,7 @@ def run(
 
     M_control_ht = F_ht_rod * L_ht / 16
 
-    d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, i.defl_max)
+    d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, defl_max_ht)
     d_control_comp_ht = _d_for_stress(M_control_ht, sigma_lim, t_control_ht)
     if d_control_defl_ht >= d_control_comp_ht:
         d_control_ht, fail_control_ht = d_control_defl_ht, "deflection"
@@ -680,7 +704,7 @@ def run(
         d_control_ht, t_control_ht, section_h_control_ht, i.d_to_section_ratio,
         f"HT elevator rod (x/c = {x_hinge_ht:.3f})",
         lambda d_cap: max(
-            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, i.defl_max),
+            _t_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, d_cap, defl_max_ht),
             _t_for_stress(M_control_ht, sigma_lim, d_cap),
         ),
     )
@@ -699,6 +723,11 @@ def run(
     section_h_control_vt = c_root_vt * tc_control_vt
 
     L_vt = s.bv + d_t
+    defl_max_vt = _deflection_limit_from_percent(
+        i.vertical_tail_tip_deflection_pct_span,
+        s.bv,
+        "structure.vertical_tail_tip_deflection_pct_span",
+    )
 
     if rudder is not None and CLalphav_vt != 0.0:
         # ---- loads ----
@@ -713,7 +742,7 @@ def run(
         t_spar_vt     = i.t_spar
 
         d_spar_defl_vt = _d_for_defl_half_cantilever_udl(
-            F_thrust_vt + F_fin, L_vt, E, t_spar_vt, i.defl_max
+            F_thrust_vt + F_fin, L_vt, E, t_spar_vt, defl_max_vt
         )
         d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
         if d_spar_defl_vt >= d_spar_comp_vt:
@@ -725,7 +754,7 @@ def run(
             d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
             f"VT spar rod (x/c = {xc_spar_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_thrust_vt + F_fin, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_half_cantilever_udl(F_thrust_vt + F_fin, L_vt, E, d_cap, defl_max_vt),
                 _t_for_stress(M_spar_vt, sigma_lim, d_cap),
             ),
         )
@@ -747,7 +776,7 @@ def run(
         t_control_vt  = i.t_control
 
         d_control_defl_vt = _d_for_defl_half_cantilever_udl(
-            F_thrust_vt_r + F_rudder, L_vt, E, t_control_vt, i.defl_max
+            F_thrust_vt_r + F_rudder, L_vt, E, t_control_vt, defl_max_vt
         )
         d_control_vm_vt = _d_for_von_mises(M_control_vt, T_rudder, sigma_lim, t_control_vt)
         if d_control_defl_vt >= d_control_vm_vt:
@@ -759,7 +788,7 @@ def run(
             d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
             f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_thrust_vt_r + F_rudder, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_half_cantilever_udl(F_thrust_vt_r + F_rudder, L_vt, E, d_cap, defl_max_vt),
                 _t_for_von_mises(M_control_vt, T_rudder, sigma_lim, d_cap),
             ),
         )
@@ -776,7 +805,7 @@ def run(
 
         M_spar_vt = F_vt_rod * L_vt / 16
 
-        d_spar_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_spar_vt, i.defl_max)
+        d_spar_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_spar_vt, defl_max_vt)
         d_spar_comp_vt = _d_for_stress(M_spar_vt, sigma_lim, t_spar_vt)
         if d_spar_defl_vt >= d_spar_comp_vt:
             d_spar_vt, fail_spar_vt = d_spar_defl_vt, "deflection"
@@ -787,7 +816,7 @@ def run(
             d_spar_vt, t_spar_vt, section_h_spar_vt, i.d_to_section_ratio,
             f"VT spar rod (x/c = {xc_spar_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, defl_max_vt),
                 _t_for_stress(M_spar_vt, sigma_lim, d_cap),
             ),
         )
@@ -798,7 +827,7 @@ def run(
 
         M_control_vt = F_vt_rod * L_vt / 16
 
-        d_control_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_control_vt, i.defl_max)
+        d_control_defl_vt = _d_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, t_control_vt, defl_max_vt)
         d_control_comp_vt = _d_for_stress(M_control_vt, sigma_lim, t_control_vt)
         if d_control_defl_vt >= d_control_comp_vt:
             d_control_vt, fail_control_vt = d_control_defl_vt, "deflection"
@@ -809,7 +838,7 @@ def run(
             d_control_vt, t_control_vt, section_h_control_vt, i.d_to_section_ratio,
             f"VT rudder rod (x/c = {x_hinge_vt:.3f})",
             lambda d_cap: max(
-                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, i.defl_max),
+                _t_for_defl_half_cantilever_udl(F_vt_rod, L_vt, E, d_cap, defl_max_vt),
                 _t_for_stress(M_control_vt, sigma_lim, d_cap),
             ),
         )
@@ -840,6 +869,9 @@ def run(
         F_tail_structural=F_tail,
         V_tail_structural=V_tail_structural,
         q_tail_structural=q_tail_structural,
+        defl_max_wing=defl_max_wing,
+        defl_max_ht=defl_max_ht,
+        defl_max_vt=defl_max_vt,
         eta_h=i.eta_h,
         eta_v=i.eta_v,
         d_spar_ht=d_spar_ht, t_spar_ht=t_spar_ht, mass_spar_ht=mass_spar_ht,
@@ -875,6 +907,7 @@ def summary(r: RodResult) -> None:
     print("\n--- Spar rod (one of two) ---")
     print(f"  Structural speed      : {r.V_structural:.2f}  m/s")
     print(f"  Structural q          : {r.q_structural:.2f}  Pa")
+    print(f"  Deflection limit      : {r.defl_max_wing * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_spar * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar * 1000:.2f}  mm")
@@ -884,6 +917,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar)}")
 
     print("\n--- Aileron rod (two of two) ---")
+    print(f"  Deflection limit      : {r.defl_max_wing * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_aileron * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_aileron * 1000:.2f}  mm")
@@ -907,6 +941,7 @@ def summary(r: RodResult) -> None:
         print(f"  Von Mises stress       : {r.sigma_vm_t / 1e6:.2f}  MPa")
 
     print("\n--- Spar rod horizontal tail (one of two) ---")
+    print(f"  Deflection limit      : {r.defl_max_ht * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_spar_ht * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar_ht * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar_ht * 1000:.2f}  mm")
@@ -915,6 +950,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar_ht * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_ht)}")
 
     print("\n--- Elevator rod (two of two) ---")
+    print(f"  Deflection limit      : {r.defl_max_ht * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_control_ht * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control_ht * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_control_ht * 1000:.2f}  mm")
@@ -924,6 +960,7 @@ def summary(r: RodResult) -> None:
 
     print("\n--- Spar rod vertical tail (one of two) ---")
     print(f"  VT dynamic pressure ratio (η_v) : {r.eta_v:.3f}")
+    print(f"  Deflection limit      : {r.defl_max_vt * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_spar_vt * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_spar_vt * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_spar_vt * 1000:.2f}  mm")
@@ -932,6 +969,7 @@ def summary(r: RodResult) -> None:
     print(f"  Section height at x/c  : {r.section_h_spar_vt * 1000:.2f}  mm  →  geometric fit: {_fit_marker(r.fits_spar_vt)}")
 
     print("\n--- Rudder rod (two of two) ---")
+    print(f"  Deflection limit      : {r.defl_max_vt * 1000:.2f}  mm")
     print(f"  Outer diameter         : {r.d_control_vt * 1000:.2f}  mm")
     print(f"  Wall thickness         : {r.t_control_vt * 1000:.2f}  mm")
     print(f"  Tip deflection         : {r.defl_control_vt * 1000:.2f}  mm")
