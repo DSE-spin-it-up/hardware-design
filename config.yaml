@@ -160,6 +160,17 @@ structure:
   t_t: 0.0015          # [m] minimum tail boom wall thickness
   rod_connector_mass: 0.120  # [kg] mass per rod connector (3 total)
   tail_tc: 0.10
+  # Minimum wall thicknesses [m]
+  t_spar: 0.001
+  t_control: 0.0015
+  t_spar_ht: 0.001
+  t_control_ht: 0.001
+  t_spar_vt: 0.001
+  t_control_vt: 0.001
+  # Tip deflection limits
+  wing_tip_deflection_pct_semispan: 10   # [%] of half-span
+  horizontal_tail_tip_deflection_pct_semispan: 10  # [%] of half-span
+  vertical_tail_tip_deflection_pct_span: 10        # [%] of full span
 
 # ----- Material selection -----
 materials:
