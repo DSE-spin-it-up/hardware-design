@@ -1788,7 +1788,7 @@ def run_pipeline(config) -> PipelineResult:
 
     struct = rods.apply_torsion_check(
         rod=struct,
-        rudder_hinge_moment=rudder_result.hinge_moment.H,
+        torque=rudder_result.hinge_moment.H,
         bending_force=struct.F_tail_structural,
         boom_length=rods.tail_boom_bending_length(sizing, p.control_surface),
         tube_length=sizing.L_boom,

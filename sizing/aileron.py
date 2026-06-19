@@ -6,6 +6,9 @@ from scipy.integrate import quad
 from aerodynamics.airfoil_polar import AirfoilPolar
 from sizing.wing import SizingResult
 
+from aerodynamics.llt import LLTResult
+from aerodynamics.stability import lift_slope_from_llt
+
 
 @dataclass
 class AileronInputs:
@@ -148,6 +151,7 @@ def run(
     y_cg: dict[str, float] | None = None,
     q_sizing: float | None = None,
     payload_max_tension: float | None = None,
+    llt: LLTResult | None = None,
 ) -> AileronResult:
     """Size the ailerons against two independent constraints and take the
     most conservative (largest) aileron span.
@@ -177,6 +181,11 @@ def run(
     if inputs is None:
         inputs = AileronInputs()
     i = inputs
+    if llt is not None:
+        cl_alpha_3d = lift_slope_from_llt(llt)
+    else:
+        AR = sizing.inputs.AR
+        cl_alpha_3d = i.cl_alpha * AR / (AR + 2.0)
     s = sizing
     q_size = s.q_cruise if q_sizing is None else q_sizing
 
@@ -191,7 +200,7 @@ def run(
     else:
         cd0_section = i.cd0_section
 
-    cl_p = compute_cl_p(i.cl_alpha, cd0_section, s.Sw, s.inputs.b, c_at_y_frac)
+    cl_p = compute_cl_p(cl_alpha_3d, cd0_section, s.Sw, s.inputs.b, c_at_y_frac)
 
     # ------------------------------------------------------------------
     # Payload roll-moment target

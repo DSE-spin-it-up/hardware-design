@@ -356,7 +356,7 @@ def run(
     # Downwash at cruise
     # ------------------------------------------------------------------
     CL0      = -CLalpha * wing_polar.alpha_L0
-    epsilon = scissor.dep_da * alpha  # epsilon0 ≈ 0 for symmetric tail (alpha_L0_h = 0)
+    epsilon = scissor.dep_da * (alpha - wing_polar.alpha_L0)
 
     # ------------------------------------------------------------------
     # Thrust pitching moments about the wing AC
@@ -458,8 +458,8 @@ def run(
         s.inputs.V_cruise + gust_speed,
     ):
         q_ratio = (V_case / s.inputs.V_cruise) ** 2
-        dCm_wing = (q_ratio - 1.0) * Cm_wing_body
-        Cm_tail_required = -dCm_wing
+        dCm = (q_ratio - 1.0) * (Cm_wing_body + Cm_tail_total)
+        Cm_tail_required = -dCm
         if Cm_tail_required >= 0.0:
             bE_bh_case = Cm_tail_required / (
                 control_power * q_ratio * delta_e_max

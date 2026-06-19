@@ -72,6 +72,7 @@ class RodInputs:
     wing_tip_deflection_pct_semispan: float = 3.3333333333333335
     horizontal_tail_tip_deflection_pct_semispan: float = 3.3333333333333335
     vertical_tail_tip_deflection_pct_span: float = 3.3333333333333335
+    tail_boom_tip_deflection_pct_length: float = 3.3333333333333335
     d_to_section_ratio: float = 0.8   # rod OD as a fraction of local section thickness
     CLt_max: float = 1.0              # tail max lift coefficient for tail-rod sizing
     tail_tc: float = 0.10             # tail-airfoil t/c for the geometric fit
@@ -143,6 +144,7 @@ class RodResult:
     defl_max_wing: float = 0.0
     defl_max_ht: float = 0.0
     defl_max_vt: float = 0.0
+    defl_max_t: float = 0.0
     # Tail rod torsion results (populated by apply_torsion_check)
     tau_t: float = 0.0        # torsional shear stress in tail rod [Pa]
     sigma_vm_t: float = 0.0   # von Mises stress in tail rod [Pa]
@@ -672,7 +674,12 @@ def run(
     M_t    = F_tail * L_t
     t_t    = i.t_t
 
-    d_t_defl = _d_for_defl_cantilever_point(F_tail, L_t, E, t_t, i.defl_max)
+    defl_max_t = _deflection_limit_from_percent(
+        i.tail_boom_tip_deflection_pct_length,
+        L_t,
+        "structure.tail_boom_tip_deflection_pct_length",
+    )
+    d_t_defl = _d_for_defl_cantilever_point(F_tail, L_t, E, t_t, defl_max_t)
     d_t_comp = _d_for_stress(M_t, sigma_lim, t_t)
     if d_t_defl >= d_t_comp:
         d_t, fail_t = d_t_defl, "deflection"
@@ -700,10 +707,10 @@ def run(
         L_ht / 2.0,
         "structure.horizontal_tail_tip_deflection_pct_semispan",
     )
-    F_ht_rod  = F_tail / 2
+    F_ht_rod  = F_tail 
     t_spar_ht = i.t_spar_ht
 
-    M_spar_ht = F_ht_rod * L_ht / 8
+    M_spar_ht = F_ht_rod * L_ht / 16
 
     d_spar_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_spar_ht, defl_max_ht)
     d_spar_comp_ht = _d_for_stress(M_spar_ht, sigma_lim, t_spar_ht)
@@ -732,7 +739,7 @@ def run(
 
     t_control_ht = i.t_control_ht
 
-    M_control_ht = F_ht_rod * L_ht / 8
+    M_control_ht = F_ht_rod * L_ht / 16
 
     d_control_defl_ht = _d_for_defl_half_cantilever_udl(F_ht_rod, L_ht, E, t_control_ht, defl_max_ht)
     d_control_comp_ht = _d_for_stress(M_control_ht, sigma_lim, t_control_ht)
@@ -931,6 +938,7 @@ def run(
         defl_spar_vt=defl_spar_vt, fail_mode_spar_vt=fail_spar_vt,
         d_control_vt=d_control_vt, t_control_vt=t_control_vt, mass_control_vt=mass_control_vt,
         defl_control_vt=defl_control_vt, fail_mode_control_vt=fail_control_vt,
+        defl_max_t=defl_max_t,
         # geometric fit flags
         fits_spar=fits_spar,
         fits_aileron=fits_aileron,
@@ -996,6 +1004,7 @@ def summary(r: RodResult) -> None:
     print(f"  Tip deflection         : {r.defl_t * 1000:.2f}  mm")
     print(f"  Sizing criterion       : {r.fail_mode_t}")
     print(f"  Mass                   : {r.mass_t:.3f}  kg")
+    print(f"  Deflection limit      : {r.defl_max_t * 1000:.2f}  mm")
     if r.torsion_checked:
         print(f"  Rudder side force     : {r.tail_boom_torsion_force:.2f}  N")
         print(f"  Torsion torque        : {r.tail_boom_torsion_torque:.2f}  N*m")
@@ -1054,7 +1063,6 @@ def summary(r: RodResult) -> None:
         print("  ✓ All rods fit within their respective airfoil sections.")
     else:
         print("  ✗ One or more rods exceed their airfoil section envelope — see warnings above.")
-
 
 if __name__ == "__main__":
     from sizing import aileron, wing

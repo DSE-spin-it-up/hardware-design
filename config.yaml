@@ -139,8 +139,8 @@ elevator:
 
 # ----- Rudder -----
 rudder:
-  bR_bV: 0.8 # [-] rudder span / vertical-tail span
-  cR_cV: 0.2  # [-] rudder chord / vertical-tail chord
+  bR_bV: # [-] rudder span / vertical-tail span
+  cR_cV: 0.4  # [-] rudder chord / vertical-tail chord
   max_deflection_deg: 30 # [deg] maximum rudder deflection
   front_prop_lateral_position: 0.33204 #[m] lateral arm of failed front prop for OEI yaw sizing
   oei_failed_thrust_fraction: 0.3333333333333333  # [-] failed thrust / total drone thrust
@@ -154,7 +154,7 @@ rudder:
 
 # ----- CFRP rod sizing -----
 structure:
-  safety_factor: 1.2
+  safety_factor: 1.5
   defl_max: 0.05
   d_to_section_ratio: 0.8  # [-] hard max rod OD / local airfoil height
   t_t: 0.0015          # [m] minimum tail boom wall thickness
@@ -162,7 +162,7 @@ structure:
   tail_tc: 0.10
   # Minimum wall thicknesses [m]
   t_spar: 0.001
-  t_control: 0.0015
+  t_control: 0.001
   t_spar_ht: 0.001
   t_control_ht: 0.001
   t_spar_vt: 0.001
@@ -171,6 +171,7 @@ structure:
   wing_tip_deflection_pct_semispan: 10   # [%] of half-span
   horizontal_tail_tip_deflection_pct_semispan: 10  # [%] of half-span
   vertical_tail_tip_deflection_pct_span: 10        # [%] of full span
+  tail_boom_tip_deflection_pct_length: 10  # [%] of bending arm length
 
 # ----- Material selection -----
 materials:

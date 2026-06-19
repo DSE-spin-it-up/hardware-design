@@ -10,9 +10,13 @@ Procedure
         b. Combined yaw-moment balance, including crosswind, Cn_dist, and OEI
         c. Minimum weathercock stiffness Cn_beta
 3.  Recompute all tail geometry (bv, CLα_v, Vv, Sv/S, dc, Ss) at the minimum Sv.
-4.  Solve for weathercock sideslip σ at the minimum Sv and configured rudder.
-5.  Compute all stability/control derivatives and rudder hinge moment at cruise q
-    and max deflection for boom torsion sizing.
+4.  Solve for weathercock sideslip σ at the minimum Sv and configured rudder,
+    including the cos(σ) correction on the gust side-force yaw moment.
+5.  Iterate step 2 with the converged σ so that the fin side-force and yaw-moment
+    contributions use (β − σ) rather than β, then re-solve σ.
+6.  Compute all stability/control derivatives and rudder hinge moment at cruise q
+    and max deflection for boom torsion sizing; hinge moment uses (β − σ) as the
+    effective angle of attack seen by the vertical tail.
 """
 from dataclasses import dataclass, field, replace
 
@@ -165,6 +169,33 @@ def _payload_yaw_moment(
     return float(payload_max_tension * abs(attachment_dx)), float(attachment_dx)
 
 
+def _solve_sigma(
+    Cnb: float,
+    Cndr: float,
+    beta: float,
+    delta_R_max: float,
+    q_total: float,
+    S: float,
+    b: float,
+    Fw: float,
+    dc: float,
+) -> float:
+    """Solve for weathercock sideslip σ including cos(σ) on the gust moment arm.
+
+    Yaw moment balance (eq. 29):
+        q_total * S * b * [Cnb*(β-σ) + Cndr*δR] + Fw * dc * cos(σ) = 0
+    """
+    def trim_sigma(sigma_only: list[float]) -> list[float]:
+        sigma = sigma_only[0]
+        eq1 = (
+            q_total * S * b * (Cnb * (beta - sigma) + Cndr * delta_R_max)
+            + Fw * dc * np.cos(sigma)
+        )
+        return [eq1]
+
+    return float(fsolve(trim_sigma, [0.0])[0])
+
+
 # ---------------------------------------------------------------------------
 # Requirement at a given Sv
 # ---------------------------------------------------------------------------
@@ -180,10 +211,15 @@ def _requirement_for_area(
     y_cg: dict[str, float] | None = None,
     payload_max_tension: float | None = None,
     credit_fin_for_required: bool = True,
+    sigma: float = 0.0,
 ) -> RudderAreaRequirement:
     """
     For a given vertical-tail area Sv, compute what bR/bV is needed and
     the force/moment margins at the configured bR/bV.
+
+    sigma : weathercock sideslip [rad]. Used to correct fin contributions via
+            (β − σ) rather than β alone. Pass 0.0 on the first call; iterate
+            with the converged value from _solve_sigma for accuracy.
     """
     s = sizing
     i = inputs
@@ -219,6 +255,9 @@ def _requirement_for_area(
         payload_max_tension,
     )
 
+    # Fin contributions use (β − σ) — the effective sideslip after weathercocking.
+    beta_eff = beta - sigma
+
     gust_yaw_moment = abs(Fw * dc)
     dist_yaw_moment = abs(i.Cn_dist) * q_total * S * b
     combined_yaw_moment = (
@@ -230,8 +269,8 @@ def _requirement_for_area(
     cy_required = Fw / (q_total * S)
     cn_required = combined_yaw_moment / (q_total * S * b)
 
-    cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta
-    cn_fin = i.Kf1 * CLalphav * i.eta_v * Vv * beta
+    cy_fin = i.Kf2 * CLalphav * i.eta_v * Sv / S * beta_eff
+    cn_fin = i.Kf1 * CLalphav * i.eta_v * Vv * beta_eff
 
     Cnb_value = i.Kf1 * CLalphav * i.eta_v * Sv * s.lh / (b * S)
 
@@ -305,6 +344,79 @@ def _requirement_for_area(
 # Minimum vertical-tail area bisection
 # ---------------------------------------------------------------------------
 
+def _bisect_with_sigma(
+    sizing: SizingResult,
+    fus: FuselageResult,
+    v_stall: float,
+    inputs: RudderInputs,
+    x_cg: float,
+    lo: float,
+    hi: float,
+    total_thrust: float | None,
+    y_cg: dict[str, float] | None,
+    payload_max_tension: float | None,
+    credit_fin_for_required: bool,
+    n_sigma_iter: int = 3,
+) -> tuple[float, RudderAreaRequirement]:
+    """Bisect on Sv, iterating σ at each candidate to use (β−σ) for fin terms."""
+    s = sizing
+    i = inputs
+    rho = s.rho
+    gust_speed = s.inputs.gust_speed
+    VT = np.sqrt(v_stall ** 2 + gust_speed ** 2)
+    beta = np.arctan(gust_speed / v_stall)
+    q_total = 0.5 * rho * VT ** 2
+    q_gust = 0.5 * rho * gust_speed ** 2
+    delta_R_max = np.radians(i.max_deflection_deg)
+    tau_r = tau_from_chord_ratio(i.cR_cV)
+
+    def _sigma_for_sv(Sv: float) -> float:
+        bv, CLalphav, Vv = _vertical_tail_geometry_for_area(s, Sv)
+        Cnb = i.Kf1 * CLalphav * i.eta_v * Sv * s.lh / (s.inputs.b * s.Sw)
+        bR_bV_use = 1.0 if i.bR_bV is None else i.bR_bV
+        SR_SV = i.cR_cV * bR_bV_use
+        Cndr = -CLalphav * Vv * i.eta_v * tau_r * bR_bV_use
+        A_fus = fus.length * fus.height
+        x_fus_lemac = fus.x_nose + fus.length / 2.0
+        x_vtail_lemac = 0.25 * s.c + s.lh
+        Ss = i.Ss if i.Ss is not None else A_fus + Sv
+        dc = (A_fus * x_fus_lemac + Sv * x_vtail_lemac) / Ss - x_cg
+        Fw = q_gust * Ss * i.CDY
+        return _solve_sigma(Cnb, Cndr, beta, delta_R_max, q_total, s.Sw, s.inputs.b, Fw, dc)
+
+    def _req(Sv: float, sigma: float) -> RudderAreaRequirement:
+        return _requirement_for_area(
+            sizing, fus, v_stall, inputs, x_cg, Sv, total_thrust,
+            y_cg=y_cg, payload_max_tension=payload_max_tension,
+            credit_fin_for_required=credit_fin_for_required,
+            sigma=sigma,
+        )
+
+    def _feasible(req: RudderAreaRequirement, Cnb: float) -> bool:
+        bR_bV_use = 1.0 if inputs.bR_bV is None else inputs.bR_bV
+        return req.bR_bV_required <= bR_bV_use and Cnb >= inputs.Cn_beta
+
+    # Compute best at hi with iterated sigma
+    sigma_hi = _sigma_for_sv(hi)
+    best = _req(hi, sigma_hi)
+    best_sv = hi
+
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        sigma_mid = _sigma_for_sv(mid)
+        req_mid = _req(mid, sigma_mid)
+        _, CLalphav_mid, _ = _vertical_tail_geometry_for_area(s, mid)
+        Cnb_mid = i.Kf1 * CLalphav_mid * i.eta_v * mid * s.lh / (s.inputs.b * s.Sw)
+        if _feasible(req_mid, Cnb_mid):
+            hi = mid
+            best = req_mid
+            best_sv = mid
+        else:
+            lo = mid
+
+    return best_sv, best
+
+
 def minimum_vertical_tail_area(
     sizing:  SizingResult,
     fus:     FuselageResult,
@@ -318,6 +430,9 @@ def minimum_vertical_tail_area(
     """
     Smallest Sv such that the configured rudder (bR/bV, cR/cV, δ_R_max)
     can meet the side-force, yaw-moment, and Cn_beta constraints.
+
+    Fin contributions to side-force and yaw-moment balance use (β − σ),
+    where σ is the weathercock sideslip solved iteratively during bisection.
     """
     if inputs is None:
         inputs = RudderInputs()
@@ -333,13 +448,12 @@ def minimum_vertical_tail_area(
         raise ValueError("rudder.oei_failed_thrust_fraction must satisfy 0 <= value <= 1.")
     if inputs.Cn_beta < 0.0:
         raise ValueError("rudder.Cn_beta must be non-negative.")
+
     lo = max(1.0e-6, 1.0e-6 * sizing.Sw)
     hi = max(sizing.Sv, lo * 2.0)
 
     if inputs.bR_bV is None:
-        # Auto-span mode: keep vertical-tail area tied only to Cn_beta, then
-        # solve the rudder span ratio needed for control authority at that Sv.
-        # Do not let passive fin stability reduce the solved rudder span to zero.
+        # Auto-span mode: size Sv for Cn_beta only, then solve bR/bV for control.
         for _ in range(60):
             req_hi = _requirement_for_area(
                 sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
@@ -355,23 +469,11 @@ def minimum_vertical_tail_area(
                 f"Cn_beta={inputs.Cn_beta:.3f}."
             )
 
-        best = _requirement_for_area(
-            sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
-            y_cg=y_cg, payload_max_tension=payload_max_tension,
+        _, best = _bisect_with_sigma(
+            sizing, fus, v_stall, inputs, x_cg, lo, hi,
+            total_thrust, y_cg, payload_max_tension,
             credit_fin_for_required=False,
         )
-        for _ in range(80):
-            mid     = 0.5 * (lo + hi)
-            req_mid = _requirement_for_area(
-                sizing, fus, v_stall, inputs, x_cg, mid, total_thrust,
-                y_cg=y_cg, payload_max_tension=payload_max_tension,
-                credit_fin_for_required=False,
-            )
-            if req_mid.Cnb >= inputs.Cn_beta:
-                hi   = mid
-                best = req_mid
-            else:
-                lo = mid
 
         if best.bR_bV_required > 1.0 + 1.0e-9:
             raise ValueError(
@@ -398,7 +500,7 @@ def minimum_vertical_tail_area(
         best.cnbeta_margin = best.Cnb - inputs.Cn_beta
         return best
 
-    # Expand upper bound until the configured rudder is sufficient
+    # Expand upper bound until the configured rudder is sufficient.
     for _ in range(60):
         req_hi = _requirement_for_area(
             sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
@@ -413,22 +515,12 @@ def minimum_vertical_tail_area(
             f"constraints with bR/bV={inputs.bR_bV:.3f} and Cn_beta={inputs.Cn_beta:.3f}."
         )
 
-    # Bisect to find the minimum Sv
-    best = _requirement_for_area(
-        sizing, fus, v_stall, inputs, x_cg, hi, total_thrust,
-        y_cg=y_cg, payload_max_tension=payload_max_tension,
+    # Bisect with iterated σ to find minimum Sv.
+    _, best = _bisect_with_sigma(
+        sizing, fus, v_stall, inputs, x_cg, lo, hi,
+        total_thrust, y_cg, payload_max_tension,
+        credit_fin_for_required=True,
     )
-    for _ in range(80):
-        mid     = 0.5 * (lo + hi)
-        req_mid = _requirement_for_area(
-            sizing, fus, v_stall, inputs, x_cg, mid, total_thrust,
-            y_cg=y_cg, payload_max_tension=payload_max_tension,
-        )
-        if req_mid.bR_bV_required <= inputs.bR_bV and req_mid.Cnb >= inputs.Cn_beta:
-            hi   = mid
-            best = req_mid
-        else:
-            lo = mid
 
     best.cnbeta_margin = best.Cnb - inputs.Cn_beta
     if best.Cnb < inputs.Cn_beta + 1e-9:
@@ -477,20 +569,20 @@ def run(
     s = sizing
 
     # ------------------------------------------------------------------
-    # 1. Find minimum Sv by bisection
+    # 1. Find minimum Sv by bisection (with iterated σ)
     # ------------------------------------------------------------------
     area_req = minimum_vertical_tail_area(
         sizing, fus, v_stall, i, x_cg=x_cg, total_thrust=total_thrust,
         y_cg=y_cg, payload_max_tension=payload_max_tension,
     )
-    Sv_min   = area_req.Sv
+    Sv_min       = area_req.Sv
     bR_bV_design = area_req.bR_bV_required if i.bR_bV is None else i.bR_bV
 
     # ------------------------------------------------------------------
     # 2. Recompute all tail geometry at Sv_min
     # ------------------------------------------------------------------
-    S  = s.Sw
-    b  = s.inputs.b
+    S   = s.Sw
+    b   = s.inputs.b
     rho = s.rho
     lv  = s.lh
 
@@ -505,13 +597,12 @@ def run(
     # ------------------------------------------------------------------
     # 3. Gust kinematics (independent of tail geometry)
     # ------------------------------------------------------------------
-    gust_speed = s.inputs.gust_speed
-    VT         = np.sqrt(v_stall ** 2 + gust_speed ** 2)
-    beta       = np.arctan(gust_speed / v_stall)
-    q_total    = 0.5 * rho * VT ** 2
-    q_gust     = 0.5 * rho * gust_speed ** 2
-    Fw         = q_gust * Ss * i.CDY
-
+    gust_speed  = s.inputs.gust_speed
+    VT          = np.sqrt(v_stall ** 2 + gust_speed ** 2)
+    beta        = np.arctan(gust_speed / v_stall)
+    q_total     = 0.5 * rho * VT ** 2
+    q_gust      = 0.5 * rho * gust_speed ** 2
+    Fw          = q_gust * Ss * i.CDY
     delta_R_max = np.radians(i.max_deflection_deg)
     tau_r       = tau_from_chord_ratio(i.cR_cV)
 
@@ -526,17 +617,9 @@ def run(
     Cydr  =  CLalphav * i.eta_v * tau_r * bR_bV_design * SR_SV
 
     # ------------------------------------------------------------------
-    # 5. Weathercock sideslip σ at Sv_min with configured rudder
+    # 5. Weathercock sideslip σ at Sv_min with cos(σ) correction (eq. 29)
     # ------------------------------------------------------------------
-    def trim_sigma(sigma_only: list[float]) -> list[float]:
-        sigma  = sigma_only[0]
-        eq1    = (
-            q_total * S * b * (Cnb * (beta - sigma) + Cndr * delta_R_max)
-            + Fw * dc
-        )
-        return [eq1]
-
-    sigma_final = float(fsolve(trim_sigma, [0.0])[0])
+    sigma_final = _solve_sigma(Cnb, Cndr, beta, delta_R_max, q_total, S, b, Fw, dc)
 
     # ------------------------------------------------------------------
     # 6. Rudder geometry at Sv_min
@@ -556,12 +639,12 @@ def run(
     )
 
     # ------------------------------------------------------------------
-    # 7. Hinge moment at cruise q and max deflection
-    #    Critical case for boom torsion: max speed (cruise), max deflection.
-    #    alpha used is the gust sideslip β (AoA seen by the vertical tail).
+    # 7. Hinge moment at cruise q and max deflection.
+    #    Alpha is the effective sideslip (β − σ) — the net angle of attack
+    #    seen by the vertical tail after weathercocking reduces the sideslip.
     # ------------------------------------------------------------------
     hm = compute_hinge_moment(
-        alpha  = beta,
+        alpha  = beta - sigma_final,
         delta  = delta_R_max,
         q      = s.q_cruise,
         S_ctrl = S_rudder,
@@ -642,6 +725,7 @@ def summary(r: RudderResult) -> None:
     print(f"  Cy_delta_r                  : {r.Cydr:.4f}  1/rad")
     print(f"  Gust sideslip beta          : {np.degrees(r.beta_gust):.2f}  deg")
     print(f"  Weathercock sideslip sigma  : {np.degrees(r.sigma):.2f}  deg")
+    print(f"  Effective sideslip (β−σ)    : {np.degrees(r.beta_gust - r.sigma):.2f}  deg")
     print(f"  Applied rudder deflection   : {np.degrees(r.delta_R):+.2f}  deg  (= limit)")
     print(f"  Active sizing constraint    : {r.active_constraint}")
     print(f"  Cn_beta required            : {i.Cn_beta:.4f}  1/rad")
@@ -657,6 +741,6 @@ def summary(r: RudderResult) -> None:
     print(f"  Payload yaw moment          : {r.payload_yaw_moment:.2f}  N*m")
     print(f"  Payload yaw moment margin   : {r.payload_yaw_moment_margin:+.2f}  N*m")
     print(f"  Combined yaw moment demand  : {r.combined_yaw_moment:.2f}  N*m")
-    print("  Hinge moment (cruise, delta_max)")
+    print("  Hinge moment (cruise, delta_max, alpha=β−σ)")
     print(f"    Chi                       : {hm.Chi:.4f}")
     print(f"    H                         : {hm.H:.4f}  N*m  (boom torsion input)")
