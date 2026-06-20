@@ -22,6 +22,14 @@ included in the upstream scissor-plot trim balance via `compute_cm_thrust`
 in pipeline/helpers.py.  The scissor loop therefore sizes Sh to account for
 thrust, so the elevator here is only responsible for disturbance and payload
 authority rather than compensating for an under-sized tail.
+
+Note on rear-engine-out sizing
+-------------------------------
+The rear propeller is mounted on top of the vertical tail. If it fails, its
+pitching-moment contribution (Cm_thrust_back) vanishes from the trim
+balance, and the elevator must be able to retrim against this lost moment.
+This is treated as an independent sizing case alongside disturbance,
+payload, and gust (see `bE_bh_engine_out` below).
 """
 from dataclasses import dataclass
 
@@ -114,9 +122,11 @@ class ElevatorResult:
     bE_bh_disturbance: float
     bE_bh_payload: float
     bE_bh_gust: float
+    bE_bh_engine_out: float
     bE_bh_stall_limit: float
     Cm_payload:     float
     Cm_gust:        float
+    Cm_engine_out:  float
     gust_speed:     float
     gust_case_speed: float
     payload_cable:  PayloadCableResult
@@ -471,16 +481,35 @@ def run(
         gust_cases.append((float(bE_bh_case), float(abs(Cm_tail_required)), float(V_case)))
     bE_bh_gust, Cm_gust, gust_case_speed = max(gust_cases, key=lambda case: case[0])
 
+    # ------------------------------------------------------------------
+    # Rear-propeller (mounted on top of the vertical tail) failure case.
+    #
+    # If the rear motor fails, its pitching-moment contribution
+    # (Cm_thrust_back) vanishes from the trim balance. The elevator must
+    # be able to retrim against this lost moment — an independent sizing
+    # case from disturbance, payload, and gust.
+    #
+    #   dCm = -Cm_thrust_back        (moment lost when the engine fails)
+    #   Cm_tail_required = -dCm = Cm_thrust_back
+    # ------------------------------------------------------------------
+    Cm_engine_out = float(Cm_thrust_back)
+    if Cm_engine_out >= 0.0:
+        bE_bh_engine_out = Cm_engine_out / (control_power * delta_e_max)
+    else:
+        bE_bh_engine_out = -Cm_engine_out / (control_power * delta_e_down)
+
     constraint_requirements = {
         "disturbance": bE_bh_dist,
         "payload": bE_bh_payload,
         "airspeed_gust": bE_bh_gust,
+        "rear_engine_out": bE_bh_engine_out,
     }
     driving_constraint = max(constraint_requirements, key=constraint_requirements.get)
     bE_bh_required = max(
         bE_bh_dist,
         bE_bh_payload,
         bE_bh_gust,
+        bE_bh_engine_out,
     )
 
     if bE_bh_required > 1.0:
@@ -554,6 +583,7 @@ def run(
         Cm_thrust_total = Cm_thrust,
         Cm_payload      = Cm_payload,
         Cm_gust         = Cm_gust,
+        Cm_engine_out   = Cm_engine_out,
         gust_speed      = gust_speed,
         gust_case_speed = gust_case_speed,
         payload_cable   = payload_cable,
@@ -562,6 +592,7 @@ def run(
         bE_bh_disturbance = bE_bh_dist,
         bE_bh_payload   = bE_bh_payload,
         bE_bh_gust      = bE_bh_gust,
+        bE_bh_engine_out = bE_bh_engine_out,
         bE_bh_stall_limit = bE_bh_stall_limit,
         alpha           = alpha,
         epsilon         = epsilon,
@@ -641,9 +672,11 @@ def summary(r: ElevatorResult) -> None:
     print(f"    disturbance bE/bh       : {r.bE_bh_disturbance:.4f}")
     print(f"    payload bE/bh           : {r.bE_bh_payload:.4f}")
     print(f"    airspeed gust bE/bh     : {r.bE_bh_gust:.4f}")
+    print(f"    rear engine-out bE/bh   : {r.bE_bh_engine_out:.4f}")
     print(f"  Airspeed gust             : +/-{r.gust_speed:.2f} m/s")
     print(f"  Governing gust speed      : {r.gust_case_speed:.2f} m/s")
     print(f"  Gust tail moment demand   : {r.Cm_gust:+.5f}")
+    print(f"  Rear engine-out Cm demand : {r.Cm_engine_out:+.5f}")
     print(f"  Stall-limited max bE/bh   : not applied")
     print("----- Elevator Sensitivity -----")
     print("  Sensitivity inputs:")
